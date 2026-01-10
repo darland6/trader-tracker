@@ -249,3 +249,43 @@ async def settings_page(request: Request):
         },
         "active": "settings"
     })
+
+
+@router.get("/docs", response_class=HTMLResponse)
+async def docs_page(request: Request, doc: str = "readme"):
+    """Documentation viewer page."""
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+    # Map doc names to file paths
+    doc_files = {
+        "readme": PROJECT_ROOT / "README.md",
+        "changelog": PROJECT_ROOT / "CHANGELOG.md",
+        "claude": PROJECT_ROOT / "CLAUDE.md",
+        "event-sourcing": PROJECT_ROOT / "docs" / "README_Event_Sourcing.md",
+        "ai-integration": PROJECT_ROOT / "docs" / "README_AI_Agent_Integration.md",
+        "specification": PROJECT_ROOT / "docs" / "PROJECT_SPECIFICATION.md",
+    }
+
+    # Get selected doc content
+    doc_path = doc_files.get(doc, doc_files["readme"])
+    content = ""
+    if doc_path.exists():
+        content = doc_path.read_text()
+
+    # Get list of available docs
+    available_docs = []
+    for name, path in doc_files.items():
+        if path.exists():
+            available_docs.append({
+                "id": name,
+                "name": name.replace("-", " ").title(),
+                "path": str(path.name)
+            })
+
+    return templates.TemplateResponse("docs.html", {
+        "request": request,
+        "content": content,
+        "selected_doc": doc,
+        "available_docs": available_docs,
+        "active": "docs"
+    })

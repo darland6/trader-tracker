@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="flex gap-6">
+    <!-- Sidebar -->
+    <div class="w-64 flex-shrink-0">
+        <div class="card bg-base-100 shadow-xl sticky top-4">
+            <div class="card-body p-4">
+                <h2 class="card-title text-lg mb-2">Documentation</h2>
+                <ul class="menu menu-sm bg-base-100 w-full p-0">
+                    {% for doc in available_docs %}
+                    <li>
+                        <a href="/docs?doc={{ doc.id }}"
+                           class="{% if selected_doc == doc.id %}active{% endif %}">
+                            {% if doc.id == 'readme' %}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                            </svg>
+                            {% elif doc.id == 'changelog' %}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                            </svg>
+                            {% elif doc.id == 'claude' %}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            {% else %}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            {% endif %}
+                            {{ doc.name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-grow min-w-0">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <!-- Markdown Content -->
+                <article id="markdown-content" class="prose prose-invert max-w-none">
+                    <!-- Will be rendered by marked.js -->
+                </article>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Marked.js for markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- Highlight.js for code syntax highlighting -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
+
+<style>
+    /* Override prose styles for better dark theme */
+    .prose {
+        --tw-prose-body: #d1d5db;
+        --tw-prose-headings: #f3f4f6;
+        --tw-prose-links: #60a5fa;
+        --tw-prose-bold: #f3f4f6;
+        --tw-prose-code: #f472b6;
+        --tw-prose-pre-bg: #1f2937;
+    }
+
+    .prose h1 { font-size: 2rem; border-bottom: 1px solid #374151; padding-bottom: 0.5rem; }
+    .prose h2 { font-size: 1.5rem; border-bottom: 1px solid #374151; padding-bottom: 0.3rem; margin-top: 2rem; }
+    .prose h3 { font-size: 1.25rem; margin-top: 1.5rem; }
+    .prose pre { background: #1e293b; border-radius: 0.5rem; }
+    .prose code { background: #374151; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.875em; }
+    .prose pre code { background: transparent; padding: 0; }
+    .prose table { width: 100%; }
+    .prose th, .prose td { border: 1px solid #374151; padding: 0.5rem; }
+    .prose th { background: #1f2937; }
+    .prose blockquote { border-left-color: #60a5fa; background: #1f2937; padding: 0.5rem 1rem; }
+    .prose a { color: #60a5fa; }
+    .prose a:hover { color: #93c5fd; }
+    .prose ul, .prose ol { padding-left: 1.5rem; }
+    .prose li { margin: 0.25rem 0; }
+
+    /* Code block styling */
+    .hljs { background: #1e293b !important; }
+</style>
+
+<script>
+    // Raw markdown content from server
+    const rawContent = {{ content | tojson | safe }};
+
+    // Configure marked
+    marked.setOptions({
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                return hljs.highlight(code, { language: lang }).value;
+            }
+            return hljs.highlightAuto(code).value;
+        },
+        breaks: true,
+        gfm: true
+    });
+
+    // Render markdown
+    document.getElementById('markdown-content').innerHTML = marked.parse(rawContent);
+
+    // Apply syntax highlighting to any missed code blocks
+    document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+    });
+</script>
+{% endblock %}
