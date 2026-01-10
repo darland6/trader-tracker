@@ -121,38 +121,85 @@ def setup_initial_cash():
 
 
 def setup_historical_trades():
-    """Setup historical trades from CSV file or manual input."""
+    """Setup historical trades from CSV files or manual input."""
     print("\n" + "="*60)
     print("HISTORICAL TRADES")
     print("="*60)
-    print("You can import trades from a CSV file or enter manually.\n")
-    print("CSV format: date,action,ticker,shares,price[,total][,gain_loss][,notes]")
-    print("Example: 2024-06-15,BUY,TSLA,100,180.50")
+    print("Import options:")
+    print("  1. Directory of ticker-named CSVs (e.g., TSLA.csv, META.csv)")
+    print("  2. Single CSV file with all trades")
+    print("  3. Manual entry")
     print()
 
     trades = []
 
-    # Ask for CSV file
-    csv_path = input("Path to trades CSV file (or press Enter to skip): ").strip()
+    choice = input("Import method (1=directory, 2=single file, 3=manual, Enter=skip): ").strip()
 
-    if csv_path:
-        csv_path = Path(csv_path).expanduser()
-        if csv_path.exists():
-            trades.extend(import_trades_from_csv(csv_path))
-            print(f"\nImported {len(trades)} trades from CSV")
-        else:
-            print(f"  File not found: {csv_path}")
+    if choice == '1':
+        # Batch import from directory
+        dir_path = input("Path to directory with CSV files: ").strip()
+        if dir_path:
+            dir_path = Path(dir_path).expanduser()
+            if dir_path.is_dir():
+                trades.extend(import_trades_from_directory(dir_path))
+            else:
+                print(f"  Not a valid directory: {dir_path}")
 
-    # Option to add more manually
-    add_manual = input("\nAdd trades manually? (yes/no): ").strip().lower()
-    if add_manual in ['yes', 'y']:
+    elif choice == '2':
+        # Single CSV file
+        csv_path = input("Path to trades CSV file: ").strip()
+        if csv_path:
+            csv_path = Path(csv_path).expanduser()
+            if csv_path.exists():
+                trades.extend(import_trades_from_csv(csv_path))
+                print(f"\nImported {len(trades)} trades from CSV")
+            else:
+                print(f"  File not found: {csv_path}")
+
+    elif choice == '3':
         trades.extend(manual_trade_input())
+
+    # Option to add more manually after import
+    if choice in ['1', '2'] and trades:
+        add_manual = input("\nAdd more trades manually? (yes/no): ").strip().lower()
+        if add_manual in ['yes', 'y']:
+            trades.extend(manual_trade_input())
 
     return trades
 
 
-def import_trades_from_csv(csv_path):
-    """Import trades from a CSV file."""
+def import_trades_from_directory(dir_path):
+    """Batch import trades from a directory of ticker-named CSV files."""
+    trades = []
+    csv_files = sorted(dir_path.glob('*.csv'))
+
+    if not csv_files:
+        print(f"  No CSV files found in {dir_path}")
+        return trades
+
+    print(f"\nFound {len(csv_files)} CSV files:")
+    for f in csv_files:
+        print(f"  - {f.name}")
+    print()
+
+    for csv_file in csv_files:
+        ticker = csv_file.stem.upper()  # Filename without extension
+        print(f"Processing {ticker}...")
+        file_trades = import_trades_from_csv(csv_file, ticker_override=ticker)
+        trades.extend(file_trades)
+        print(f"  → {len(file_trades)} trades for {ticker}\n")
+
+    print(f"Total imported: {len(trades)} trades")
+    return trades
+
+
+def import_trades_from_csv(csv_path, ticker_override=None):
+    """Import trades from a CSV file.
+
+    Args:
+        csv_path: Path to the CSV file
+        ticker_override: If provided, use this ticker for all rows (for ticker-named files)
+    """
     trades = []
 
     with open(csv_path, 'r') as f:
@@ -161,48 +208,82 @@ def import_trades_from_csv(csv_path):
         f.seek(0)
 
         # Check if first line looks like a header
-        has_header = any(h in first_line.lower() for h in ['date', 'ticker', 'action', 'shares'])
+        has_header = any(h in first_line.lower() for h in ['date', 'ticker', 'action', 'shares', 'price', 'quantity'])
 
         reader = csv.DictReader(f) if has_header else None
 
         if reader:
             # CSV with headers
             for row in reader:
-                trade = parse_trade_row(row)
+                trade = parse_trade_row(row, ticker_override=ticker_override)
                 if trade:
                     trades.append(trade)
                     print(f"  Imported: {trade['action']} {trade['shares']} {trade['ticker']} @ ${trade['price']:.2f}")
         else:
-            # CSV without headers - assume: date,action,ticker,shares,price[,total][,gain_loss][,notes]
+            # CSV without headers
+            # If ticker_override: assume date,action,shares,price[,total][,gain_loss][,notes]
+            # Otherwise: assume date,action,ticker,shares,price[,total][,gain_loss][,notes]
             f.seek(0)
             reader = csv.reader(f)
             for row in reader:
-                if len(row) >= 5:
-                    trade = {
-                        'date': row[0].strip(),
-                        'action': row[1].strip().upper(),
-                        'ticker': row[2].strip().upper(),
-                        'shares': float(row[3]),
-                        'price': float(row[4]),
-                        'total': float(row[5]) if len(row) > 5 and row[5] else float(row[3]) * float(row[4]),
-                        'gain_loss': float(row[6]) if len(row) > 6 and row[6] else 0,
-                        'notes': row[7].strip() if len(row) > 7 else ''
-                    }
-                    trades.append(trade)
-                    print(f"  Imported: {trade['action']} {trade['shares']} {trade['ticker']} @ ${trade['price']:.2f}")
+                if not row or not row[0].strip():
+                    continue
+
+                try:
+                    if ticker_override:
+                        # Format: date,action,shares,price[,total][,gain_loss][,notes]
+                        if len(row) >= 4:
+                            shares = float(row[2])
+                            price = float(row[3])
+                            trade = {
+                                'date': row[0].strip(),
+                                'action': row[1].strip().upper(),
+                                'ticker': ticker_override,
+                                'shares': shares,
+                                'price': price,
+                                'total': float(row[4]) if len(row) > 4 and row[4] else shares * price,
+                                'gain_loss': float(row[5]) if len(row) > 5 and row[5] else 0,
+                                'notes': row[6].strip() if len(row) > 6 else ''
+                            }
+                            trades.append(trade)
+                            print(f"  Imported: {trade['action']} {trade['shares']} {trade['ticker']} @ ${trade['price']:.2f}")
+                    else:
+                        # Format: date,action,ticker,shares,price[,total][,gain_loss][,notes]
+                        if len(row) >= 5:
+                            shares = float(row[3])
+                            price = float(row[4])
+                            trade = {
+                                'date': row[0].strip(),
+                                'action': row[1].strip().upper(),
+                                'ticker': row[2].strip().upper(),
+                                'shares': shares,
+                                'price': price,
+                                'total': float(row[5]) if len(row) > 5 and row[5] else shares * price,
+                                'gain_loss': float(row[6]) if len(row) > 6 and row[6] else 0,
+                                'notes': row[7].strip() if len(row) > 7 else ''
+                            }
+                            trades.append(trade)
+                            print(f"  Imported: {trade['action']} {trade['shares']} {trade['ticker']} @ ${trade['price']:.2f}")
+                except (ValueError, IndexError) as e:
+                    print(f"  Warning: Could not parse row: {row} - {e}")
 
     return trades
 
 
-def parse_trade_row(row):
-    """Parse a trade row from CSV with headers."""
+def parse_trade_row(row, ticker_override=None):
+    """Parse a trade row from CSV with headers.
+
+    Args:
+        row: CSV row as dict
+        ticker_override: If provided, use this ticker instead of reading from row
+    """
     try:
         # Normalize column names (handle various formats)
         normalized = {k.lower().strip().replace(' ', '_'): v for k, v in row.items()}
 
         date = normalized.get('date', normalized.get('trade_date', ''))
         action = normalized.get('action', normalized.get('type', normalized.get('side', ''))).upper()
-        ticker = normalized.get('ticker', normalized.get('symbol', '')).upper()
+        ticker = ticker_override or normalized.get('ticker', normalized.get('symbol', '')).upper()
         shares = float(normalized.get('shares', normalized.get('quantity', normalized.get('qty', 0))))
         price = float(normalized.get('price', normalized.get('price_per_share', normalized.get('avg_price', 0))))
 
