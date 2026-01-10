@@ -698,6 +698,7 @@ function showAlternateRealityModal() {
                         <button class="alt-tab active" onclick="showAltTab('list')">My Realities</button>
                         <button class="alt-tab" onclick="showAltTab('create')">Create New</button>
                         <button class="alt-tab" onclick="showAltTab('compare')">Compare</button>
+                        <button class="alt-tab future-tab" onclick="showAltTab('future')">Future</button>
                     </div>
 
                     <div id="alt-tab-list" class="alt-tab-content active">
@@ -736,6 +737,41 @@ function showAlternateRealityModal() {
                         </div>
                         <button class="alt-btn primary" onclick="compareRealities()">Compare</button>
                         <div id="compare-results"></div>
+                    </div>
+
+                    <div id="alt-tab-future" class="alt-tab-content">
+                        <div class="future-controls">
+                            <div class="future-source">
+                                <label>Project from:</label>
+                                <select id="future-source">
+                                    <option value="reality">Current Reality</option>
+                                </select>
+                            </div>
+                            <div class="future-years">
+                                <label>Years to project:</label>
+                                <select id="future-years">
+                                    <option value="1">1 Year</option>
+                                    <option value="2">2 Years</option>
+                                    <option value="3" selected>3 Years</option>
+                                    <option value="5">5 Years</option>
+                                </select>
+                            </div>
+                            <div class="future-llm">
+                                <label>
+                                    <input type="checkbox" id="future-use-llm" checked>
+                                    Use AI Analysis
+                                </label>
+                            </div>
+                        </div>
+                        <button class="alt-btn primary" onclick="generateFutureProjection()">Generate Projection</button>
+                        <div id="future-loading" style="display: none; text-align: center; padding: 40px;">
+                            <div class="loading-spinner"></div>
+                            <p>Analyzing trends and generating projection...</p>
+                        </div>
+                        <div id="future-results"></div>
+
+                        <h4 style="margin-top: 30px; color: #627eea;">Saved Projections</h4>
+                        <div id="saved-projections">Loading...</div>
                     </div>
                 </div>
             </div>
@@ -793,6 +829,59 @@ function showAlternateRealityModal() {
             .compare-diff.negative { color: #ff4444; }
             .empty-state { text-align: center; padding: 40px; opacity: 0.6; }
             .empty-state p { margin-bottom: 20px; }
+
+            /* Future Projections Styles */
+            .future-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; padding: 15px; background: #ffffff08; border-radius: 10px; }
+            .future-controls label { display: block; margin-bottom: 5px; font-size: 12px; opacity: 0.7; }
+            .future-controls select { width: 100%; padding: 10px; background: #ffffff0a; border: 1px solid #ffffff22; border-radius: 6px; color: white; }
+            .future-llm { grid-column: span 2; display: flex; align-items: center; gap: 10px; }
+            .future-llm label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+            .loading-spinner { width: 40px; height: 40px; border: 3px solid #627eea33; border-top-color: #627eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+
+            .projection-result { margin-top: 20px; }
+            .projection-summary { background: linear-gradient(135deg, #627eea22, #627eea08); border: 1px solid #627eea44; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+            .projection-summary h3 { color: #627eea; margin: 0 0 15px 0; }
+            .projection-scenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+            .scenario-card { background: #ffffff08; border-radius: 8px; padding: 15px; text-align: center; }
+            .scenario-card.pessimistic { border-top: 3px solid #ff4444; }
+            .scenario-card.base { border-top: 3px solid #627eea; }
+            .scenario-card.optimistic { border-top: 3px solid #00ff88; }
+            .scenario-card h4 { margin: 0 0 10px 0; font-size: 14px; opacity: 0.7; }
+            .scenario-card .value { font-size: 24px; font-weight: bold; }
+            .scenario-card.pessimistic .value { color: #ff4444; }
+            .scenario-card.base .value { color: #627eea; }
+            .scenario-card.optimistic .value { color: #00ff88; }
+
+            .projection-analysis { background: #ffffff08; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+            .projection-analysis h3 { color: #627eea; margin: 0 0 15px 0; }
+            .macro-outlook { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
+            .macro-item { background: #ffffff08; padding: 10px; border-radius: 6px; }
+            .macro-item label { font-size: 11px; opacity: 0.6; display: block; margin-bottom: 3px; }
+            .macro-item span { font-size: 13px; }
+
+            .ticker-analyses { margin-top: 15px; }
+            .ticker-analysis { background: #ffffff08; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+            .ticker-analysis h4 { color: #627eea; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
+            .ticker-analysis .confidence { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #ffffff15; }
+            .ticker-analysis .confidence.high { background: #00ff8833; color: #00ff88; }
+            .ticker-analysis .confidence.medium { background: #ffaa0033; color: #ffaa00; }
+            .ticker-analysis .confidence.low { background: #ff444433; color: #ff4444; }
+            .ticker-growth-rates { display: flex; gap: 10px; margin: 10px 0; font-size: 13px; }
+            .ticker-growth-rates span { padding: 4px 8px; border-radius: 4px; background: #ffffff08; }
+            .ticker-catalysts { font-size: 12px; opacity: 0.8; margin-top: 10px; }
+            .ticker-catalysts ul { margin: 5px 0; padding-left: 20px; }
+
+            .projection-timeline { background: #ffffff08; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+            .projection-timeline h3 { color: #627eea; margin: 0 0 15px 0; }
+            .timeline-chart { height: 200px; position: relative; }
+            .timeline-bar { position: absolute; bottom: 0; background: linear-gradient(to top, #627eea, #627eea88); border-radius: 4px 4px 0 0; transition: height 0.3s; }
+            .timeline-labels { display: flex; justify-content: space-between; margin-top: 10px; font-size: 11px; opacity: 0.6; }
+
+            .saved-projection-item { background: #ffffff0a; border: 1px solid #ffffff15; border-radius: 8px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+            .saved-projection-item h4 { margin: 0; color: #627eea; font-size: 14px; }
+            .saved-projection-item p { margin: 5px 0 0 0; font-size: 12px; opacity: 0.6; }
+            .saved-projection-item .actions { display: flex; gap: 8px; }
         `;
         document.head.appendChild(styles);
         document.body.appendChild(modal);
@@ -816,6 +905,10 @@ function showAltTab(tabName) {
     document.getElementById(`alt-tab-${tabName}`).classList.add('active');
 
     if (tabName === 'compare') loadCompareOptions();
+    if (tabName === 'future') {
+        loadFutureSourceOptions();
+        loadSavedProjections();
+    }
 }
 window.showAltTab = showAltTab;
 
@@ -1134,6 +1227,250 @@ async function quickScenario(scenario) {
     }
 }
 window.quickScenario = quickScenario;
+
+// ============ Future Projection Functions ============
+
+function loadFutureSourceOptions() {
+    const select = document.getElementById('future-source');
+    const options = altHistoryData.histories.map(h =>
+        `<option value="${h.id}">${h.name}</option>`
+    ).join('');
+    select.innerHTML = `<option value="reality">Current Reality</option>${options}`;
+}
+
+async function loadSavedProjections() {
+    const container = document.getElementById('saved-projections');
+    try {
+        const response = await fetch('/api/alt-history/projections');
+        const data = await response.json();
+        const projections = data.projections || [];
+
+        if (projections.length === 0) {
+            container.innerHTML = '<p style="opacity: 0.6; text-align: center;">No saved projections yet.</p>';
+            return;
+        }
+
+        container.innerHTML = projections.map(p => `
+            <div class="saved-projection-item">
+                <div>
+                    <h4>${p.history_id === 'reality' ? 'Reality' : p.history_id} - ${p.years}yr Projection</h4>
+                    <p>Created: ${new Date(p.created_at).toLocaleDateString()} | Ends: ${new Date(p.end_date).toLocaleDateString()}</p>
+                </div>
+                <div class="actions">
+                    <button class="alt-btn secondary" onclick="viewProjection('${p.id}')">View</button>
+                    <button class="alt-btn danger" onclick="deleteProjection('${p.id}')">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load projections:', error);
+        container.innerHTML = '<p style="color: #ff4444;">Failed to load projections</p>';
+    }
+}
+window.loadSavedProjections = loadSavedProjections;
+
+async function generateFutureProjection() {
+    const historyId = document.getElementById('future-source').value;
+    const years = parseInt(document.getElementById('future-years').value);
+    const useLlm = document.getElementById('future-use-llm').checked;
+
+    const loading = document.getElementById('future-loading');
+    const results = document.getElementById('future-results');
+
+    loading.style.display = 'block';
+    results.innerHTML = '';
+
+    try {
+        const response = await fetch('/api/alt-history/projections/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                history_id: historyId,
+                years: years,
+                use_llm: useLlm
+            })
+        });
+
+        const data = await response.json();
+        loading.style.display = 'none';
+
+        if (data.error) {
+            results.innerHTML = `<p style="color: #ff4444;">Error: ${data.error}</p>`;
+            return;
+        }
+
+        showProjectionResults(data);
+        loadSavedProjections();
+    } catch (error) {
+        console.error('Failed to generate projection:', error);
+        loading.style.display = 'none';
+        results.innerHTML = `<p style="color: #ff4444;">Failed to generate projection: ${error.message}</p>`;
+    }
+}
+window.generateFutureProjection = generateFutureProjection;
+
+function showProjectionResults(projection) {
+    const results = document.getElementById('future-results');
+    const analysis = projection.analysis || {};
+    const currentState = projection.current_state || {};
+    const projectedState = projection.projected_state || {};
+    const portfolioProjection = analysis.portfolio_projection || {};
+
+    // Calculate projected values
+    const currentValue = currentState.total_value || 0;
+    const lastYearKey = `year_${projection.years}`;
+    const lastYearProjection = portfolioProjection[lastYearKey] || { pessimistic: 0, base: 0, optimistic: 0 };
+
+    const formatMoney = n => '$' + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const formatPct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+
+    // Build ticker analysis HTML
+    const tickerAnalyses = Object.entries(analysis.ticker_analysis || {}).map(([ticker, ta]) => {
+        const rates = ta.annual_growth_rates || {};
+        const catalysts = ta.current_catalysts || [];
+        const confidence = ta.confidence || 'low';
+
+        return `
+            <div class="ticker-analysis">
+                <h4>
+                    ${ticker}
+                    <span class="confidence ${confidence}">${confidence.toUpperCase()}</span>
+                </h4>
+                <div class="ticker-growth-rates">
+                    <span style="color: #ff4444;">📉 ${formatPct(rates.pessimistic || 0)}</span>
+                    <span style="color: #627eea;">📊 ${formatPct(rates.base || 0)}</span>
+                    <span style="color: #00ff88;">📈 ${formatPct(rates.optimistic || 0)}</span>
+                </div>
+                <p style="margin: 8px 0; font-size: 13px; opacity: 0.8;">${ta.industry_trend || 'N/A'}</p>
+                ${catalysts.length > 0 ? `
+                    <div class="ticker-catalysts">
+                        <strong>Catalysts:</strong>
+                        <ul>${catalysts.map(c => `<li>${c}</li>`).join('')}</ul>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    // Build timeline bars
+    const frames = projection.frames || [];
+    const maxValue = Math.max(...frames.map(f => f.total_value));
+    const minValue = Math.min(...frames.map(f => f.total_value));
+    const valueRange = maxValue - minValue || 1;
+    const sampleSize = Math.min(12, frames.length); // Show up to 12 bars
+    const step = Math.max(1, Math.floor(frames.length / sampleSize));
+    const sampledFrames = frames.filter((_, i) => i % step === 0 || i === frames.length - 1);
+
+    const timelineBars = sampledFrames.map((frame, i) => {
+        const height = ((frame.total_value - minValue) / valueRange) * 180 + 10;
+        const width = 100 / sampledFrames.length - 1;
+        const left = i * (100 / sampledFrames.length);
+        return `<div class="timeline-bar" style="left: ${left}%; width: ${width}%; height: ${height}px;" title="${formatMoney(frame.total_value)} - ${frame.date}"></div>`;
+    }).join('');
+
+    const timelineLabels = sampledFrames.filter((_, i) => i % 3 === 0 || i === sampledFrames.length - 1).map(f => f.date.substring(0, 7)).join('</span><span>');
+
+    // Build macro outlook
+    const macro = analysis.macro_outlook || {};
+
+    results.innerHTML = `
+        <div class="projection-result">
+            <div class="projection-summary">
+                <h3>📊 ${projection.years}-Year Portfolio Projection</h3>
+                <p style="opacity: 0.7; margin-bottom: 15px;">Starting value: ${formatMoney(currentValue)} | Source: ${analysis.source || 'statistical'}</p>
+                <div class="projection-scenarios">
+                    <div class="scenario-card pessimistic">
+                        <h4>Pessimistic</h4>
+                        <div class="value">${formatMoney(currentValue * (1 + lastYearProjection.pessimistic / 100))}</div>
+                        <p style="font-size: 12px; opacity: 0.7; margin-top: 5px;">${formatPct(lastYearProjection.pessimistic)}</p>
+                    </div>
+                    <div class="scenario-card base">
+                        <h4>Base Case</h4>
+                        <div class="value">${formatMoney(currentValue * (1 + lastYearProjection.base / 100))}</div>
+                        <p style="font-size: 12px; opacity: 0.7; margin-top: 5px;">${formatPct(lastYearProjection.base)}</p>
+                    </div>
+                    <div class="scenario-card optimistic">
+                        <h4>Optimistic</h4>
+                        <div class="value">${formatMoney(currentValue * (1 + lastYearProjection.optimistic / 100))}</div>
+                        <p style="font-size: 12px; opacity: 0.7; margin-top: 5px;">${formatPct(lastYearProjection.optimistic)}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="projection-timeline">
+                <h3>📈 Value Timeline (Base Case)</h3>
+                <div class="timeline-chart">
+                    ${timelineBars}
+                </div>
+                <div class="timeline-labels">
+                    <span>${timelineLabels}</span>
+                </div>
+            </div>
+
+            <div class="projection-analysis">
+                <h3>🌍 Macro Outlook</h3>
+                <div class="macro-outlook">
+                    <div class="macro-item">
+                        <label>Summary</label>
+                        <span>${macro.summary || 'N/A'}</span>
+                    </div>
+                    <div class="macro-item">
+                        <label>Interest Rates</label>
+                        <span>${macro.interest_rates || 'N/A'}</span>
+                    </div>
+                    <div class="macro-item">
+                        <label>Inflation</label>
+                        <span>${macro.inflation || 'N/A'}</span>
+                    </div>
+                    <div class="macro-item">
+                        <label>GDP Growth</label>
+                        <span>${macro.gdp_growth || 'N/A'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="projection-analysis">
+                <h3>📊 Ticker Analysis</h3>
+                <div class="ticker-analyses">
+                    ${tickerAnalyses || '<p style="opacity: 0.6;">No ticker analysis available</p>'}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function viewProjection(projectionId) {
+    try {
+        const response = await fetch(`/api/alt-history/projections/${projectionId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            alert('Error loading projection: ' + data.error);
+            return;
+        }
+
+        showProjectionResults(data);
+    } catch (error) {
+        console.error('Failed to load projection:', error);
+        alert('Failed to load projection');
+    }
+}
+window.viewProjection = viewProjection;
+
+async function deleteProjection(projectionId) {
+    if (!confirm('Delete this projection? This cannot be undone.')) return;
+
+    try {
+        await fetch(`/api/alt-history/projections/${projectionId}`, { method: 'DELETE' });
+        loadSavedProjections();
+        document.getElementById('future-results').innerHTML = '';
+    } catch (error) {
+        console.error('Failed to delete projection:', error);
+    }
+}
+window.deleteProjection = deleteProjection;
+
+// ============ End Future Projection Functions ============
 
 function createPlanet(holding, index, total, portfolioTotal) {
     const { ticker, shares, market_value, unrealized_gain_pct, current_price } = holding;

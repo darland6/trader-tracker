@@ -72,3 +72,7 @@ htmlcov/
 
 # Excel temp files
 ~$*.xlsx
+
+# Alternate history and projection data
+data/alt_histories/
+data/projections/

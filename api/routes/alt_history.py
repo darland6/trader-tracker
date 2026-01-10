@@ -1,4 +1,4 @@
-"""Alternate History API - Manage alternate portfolio realities."""
+"""Alternate History API - Manage alternate portfolio realities and future projections."""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -17,6 +17,12 @@ from api.services.alt_history import (
     compare_histories,
     get_history_events,
     apply_modifications
+)
+from api.services.future_projection import (
+    generate_projection,
+    load_projection,
+    list_projections,
+    delete_projection
 )
 from reconstruct_state import reconstruct_state
 
@@ -65,6 +71,69 @@ async def create_alternate_history(request: CreateHistoryRequest):
     )
     return {"success": True, "history": history}
 
+
+# ============ Future Projection Endpoints ============
+# These must come BEFORE /{history_id} routes to avoid path matching issues
+
+class ProjectionRequest(BaseModel):
+    history_id: str = "reality"
+    years: int = 3
+    use_llm: bool = True
+
+
+@router.get("/projections")
+async def list_future_projections():
+    """List all saved future projections."""
+    return {
+        "projections": list_projections()
+    }
+
+
+@router.post("/projections/generate")
+async def create_future_projection(request: ProjectionRequest):
+    """Generate a new future projection for a portfolio.
+
+    Args:
+        history_id: "reality" or an alternate history ID
+        years: 1-5 years to project
+        use_llm: Use LLM for analysis (more accurate but slower)
+
+    Returns:
+        Projection with analysis and future frames
+    """
+    if request.years < 1 or request.years > 5:
+        raise HTTPException(status_code=400, detail="Years must be between 1 and 5")
+
+    projection = generate_projection(
+        history_id=request.history_id,
+        years=request.years,
+        use_llm=request.use_llm
+    )
+
+    if "error" in projection:
+        raise HTTPException(status_code=404, detail=projection["error"])
+
+    return projection
+
+
+@router.get("/projections/{projection_id}")
+async def get_future_projection(projection_id: str):
+    """Get a saved future projection."""
+    projection = load_projection(projection_id)
+    if not projection:
+        raise HTTPException(status_code=404, detail="Projection not found")
+    return projection
+
+
+@router.delete("/projections/{projection_id}")
+async def remove_future_projection(projection_id: str):
+    """Delete a future projection."""
+    if delete_projection(projection_id):
+        return {"success": True, "message": "Projection deleted"}
+    raise HTTPException(status_code=404, detail="Projection not found")
+
+
+# ============ Alternate History Endpoints (with path params) ============
 
 @router.get("/{history_id}")
 async def get_alternate_history(history_id: str):
@@ -222,3 +291,21 @@ async def what_if_doubled_position(ticker: str, name: str = None):
         "history": history,
         "comparison": comparison
     }
+
+
+@router.get("/{history_id}/project")
+async def project_history_future(history_id: str, years: int = 3, use_llm: bool = True):
+    """Generate a future projection for a specific history.
+
+    Shortcut endpoint that creates a projection for the given history.
+    """
+    projection = generate_projection(
+        history_id=history_id,
+        years=min(max(years, 1), 5),
+        use_llm=use_llm
+    )
+
+    if "error" in projection:
+        raise HTTPException(status_code=404, detail=projection["error"])
+
+    return projection
