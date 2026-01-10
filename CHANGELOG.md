@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Portfolio Reconciliation Tools (2026-01-10)
+
+Tools and fixes for reconciling imported portfolio data with actual brokerage positions:
+
+#### State Reconstruction Fixes
+- **`reconstruct_state.py`** - Fixed option close matching logic
+  - Now tries `option_id` first (most reliable for imported data)
+  - Falls back to `position_id`, then `uuid`
+  - Properly handles ADJUSTMENT and INSIGHT_LOG event types
+- **ADJUSTMENT event type** - New event type for cash reconciliation and position cleanup
+
+#### Position Cleanup
+- Fractional share cleanup (sells tiny positions at $0)
+- Expired option cleanup (auto-expire old options from transaction history)
+- Option position consolidation (combine multiple open events into single position)
+- Cash reconciliation to match exact account balance
+
+#### Debug Tools
+- **`scripts/llm_debug.py`** - LLM connection diagnostics
+  - Tests local LLM server connectivity
+  - Validates model availability
+  - Tests chat completion endpoint
+  - Shows detailed error messages
+
+#### Usage
+```bash
+# Run LLM diagnostics
+python scripts/llm_debug.py
+
+# Portfolio reconciliation is done via event adjustments
+# See /reconcile skill for guided workflow
+```
+
 ### Added - Schwab Transaction History Import (2026-01-10)
 
 Complete brokerage history import from Schwab CSV exports:

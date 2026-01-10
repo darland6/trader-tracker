@@ -162,20 +162,28 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
             state['cash'] += event['cash_delta']
         
         elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
-            # Remove from active options (try position_id, uuid, then event_id)
+            # Remove from active options - try multiple matching strategies
             position_id = data.get('position_id')
             option_id = data.get('option_id')
             uuid = data.get('uuid')
 
-            if position_id:
-                state['active_options'] = [opt for opt in state['active_options']
-                                          if opt.get('position_id') != position_id]
-            elif uuid:
-                state['active_options'] = [opt for opt in state['active_options']
-                                          if opt.get('uuid') != uuid]
-            elif option_id:
+            # Track initial count to see if we matched
+            initial_count = len(state['active_options'])
+
+            # Try option_id first (most reliable for imported data)
+            if option_id:
                 state['active_options'] = [opt for opt in state['active_options']
                                           if opt['event_id'] != option_id]
+
+            # If no match, try position_id
+            if len(state['active_options']) == initial_count and position_id:
+                state['active_options'] = [opt for opt in state['active_options']
+                                          if opt.get('position_id') != position_id]
+
+            # If still no match, try uuid
+            if len(state['active_options']) == initial_count and uuid:
+                state['active_options'] = [opt for opt in state['active_options']
+                                          if opt.get('uuid') != uuid]
 
             # Track profit
             profit = data.get('profit', 0)
