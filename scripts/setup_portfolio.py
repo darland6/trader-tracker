@@ -203,6 +203,13 @@ def import_trades_from_csv(csv_path, ticker_override=None):
     trades = []
 
     with open(csv_path, 'r') as f:
+        content = f.read()
+
+    # Detect Schwab lot export format (has "Lot Details" in first line)
+    if 'Lot Details' in content:
+        return schwab_csv_adapter(csv_path, ticker_override)
+
+    with open(csv_path, 'r') as f:
         # Try to detect if there's a header
         first_line = f.readline().strip()
         f.seek(0)
@@ -266,6 +273,123 @@ def import_trades_from_csv(csv_path, ticker_override=None):
                             print(f"  Imported: {trade['action']} {trade['shares']} {trade['ticker']} @ ${trade['price']:.2f}")
                 except (ValueError, IndexError) as e:
                     print(f"  Warning: Could not parse row: {row} - {e}")
+
+    return trades
+
+
+def schwab_csv_adapter(csv_path, ticker_override=None):
+    """Import from Schwab lot details export format.
+
+    Schwab exports lot details in CSV format with:
+    - First row: "TICKER Lot Details for..." title
+    - Header row with: Open Date, [Transaction Open], Quantity, Price, Cost/Share, etc.
+    - Data rows for each lot
+    - Total row at the end
+    """
+    trades = []
+
+    with open(csv_path, 'r') as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+
+    if not rows:
+        return trades
+
+    # Extract ticker from first row if not overridden (format: "BMNR Lot Details for...")
+    ticker = ticker_override
+    if not ticker and rows[0]:
+        first_cell = rows[0][0]
+        if 'Lot Details' in first_cell:
+            ticker = first_cell.split()[0].upper()
+
+    if not ticker:
+        print(f"  Could not determine ticker for {csv_path}")
+        return trades
+
+    # Find header row (contains "Open Date" and "Quantity")
+    header_idx = None
+    for i, row in enumerate(rows):
+        if row and 'Open Date' in row[0] and any('Quantity' in str(c) for c in row):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        print(f"  Could not find header row in {csv_path}")
+        return trades
+
+    # Map column indices
+    header = rows[header_idx]
+    col_map = {}
+    for i, col in enumerate(header):
+        col_lower = col.lower().strip()
+        if 'open date' in col_lower:
+            col_map['date'] = i
+        elif col_lower == 'quantity':
+            col_map['quantity'] = i
+        elif 'cost/share' in col_lower or 'cost per share' in col_lower:
+            col_map['cost_share'] = i
+        elif 'cost basis' in col_lower and 'transaction' not in col_lower:
+            col_map['cost_basis'] = i
+
+    if 'date' not in col_map or 'quantity' not in col_map:
+        print(f"  Missing required columns in {csv_path}")
+        return trades
+
+    # Parse data rows
+    for row in rows[header_idx + 1:]:
+        if not row or not row[0].strip():
+            continue
+
+        # Skip total row
+        if row[0].strip().lower() == 'total':
+            continue
+
+        try:
+            date_str = row[col_map['date']].strip()
+            quantity_str = row[col_map['quantity']].strip().replace(',', '')
+
+            # Skip if not a valid date
+            if not date_str or date_str == '--':
+                continue
+
+            quantity = float(quantity_str)
+            if quantity <= 0:
+                continue
+
+            # Get cost per share (preferred) or calculate from cost basis
+            if 'cost_share' in col_map:
+                cost_str = row[col_map['cost_share']].strip().replace('$', '').replace(',', '')
+                price = float(cost_str)
+            elif 'cost_basis' in col_map:
+                cost_basis_str = row[col_map['cost_basis']].strip().replace('$', '').replace(',', '')
+                cost_basis = float(cost_basis_str)
+                price = cost_basis / quantity
+            else:
+                print(f"  Skipping row - no price data: {row}")
+                continue
+
+            # Convert date format MM/DD/YYYY to YYYY-MM-DD
+            if '/' in date_str:
+                parts = date_str.split('/')
+                if len(parts) == 3:
+                    date_str = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+
+            trade = {
+                'date': date_str,
+                'action': 'BUY',
+                'ticker': ticker,
+                'shares': quantity,
+                'price': round(price, 2),
+                'total': round(quantity * price, 2),
+                'gain_loss': 0,
+                'notes': 'Imported from brokerage lot export'
+            }
+            trades.append(trade)
+            print(f"  Imported: BUY {quantity} {ticker} @ ${price:.2f} on {date_str}")
+
+        except (ValueError, IndexError, KeyError) as e:
+            # Skip rows that can't be parsed (empty rows, headers, etc.)
+            continue
 
     return trades
 
@@ -615,5 +739,93 @@ def main():
     print(f"\nTo add more events, use the web UI or edit the CSV directly.")
 
 
+def quick_import(file_paths, output_csv=None):
+    """Quick import from multiple CSV files.
+
+    Args:
+        file_paths: List of CSV file paths to import
+        output_csv: Output path for combined events (default: data/event_log_enhanced.csv)
+    """
+    import sys
+
+    all_trades = []
+
+    for path in file_paths:
+        path = Path(path).expanduser()
+        if not path.exists():
+            print(f"File not found: {path}")
+            continue
+
+        print(f"\n=== Importing {path.name} ===")
+        trades = import_trades_from_csv(path)
+        all_trades.extend(trades)
+
+    if not all_trades:
+        print("\nNo trades imported.")
+        return
+
+    # Sort by date
+    all_trades.sort(key=lambda x: x['date'])
+
+    # Generate events
+    events = []
+    for i, trade in enumerate(all_trades, 1):
+        timestamp = f"{trade['date']} 10:00:00"
+
+        data = {
+            'action': trade['action'],
+            'ticker': trade['ticker'],
+            'shares': trade['shares'],
+            'price': trade['price'],
+            'total': trade['total'],
+            'gain_loss': trade['gain_loss']
+        }
+
+        cash_delta = -trade['total'] if trade['action'] == 'BUY' else trade['total']
+
+        events.append(create_event(
+            i, timestamp, 'TRADE', data,
+            reason={'primary': 'INITIAL_SETUP'},
+            notes=trade.get('notes', ''),
+            tags=['trade', trade['ticker'].lower()],
+            affects_cash=True,
+            cash_delta=cash_delta
+        ))
+
+    # Write to CSV
+    output_path = Path(output_csv) if output_csv else EVENT_LOG_PATH
+    output_path.parent.mkdir(exist_ok=True)
+
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        writer.writerows(events)
+
+    print(f"\n{'='*60}")
+    print(f"Imported {len(all_trades)} trades as {len(events)} events")
+    print(f"Output: {output_path}")
+
+    # Summary by ticker
+    by_ticker = {}
+    for t in all_trades:
+        ticker = t['ticker']
+        if ticker not in by_ticker:
+            by_ticker[ticker] = {'count': 0, 'shares': 0, 'total': 0}
+        by_ticker[ticker]['count'] += 1
+        by_ticker[ticker]['shares'] += t['shares']
+        by_ticker[ticker]['total'] += t['total']
+
+    print(f"\nSummary:")
+    for ticker, data in sorted(by_ticker.items()):
+        print(f"  {ticker}: {data['count']} lots, {data['shares']:.0f} shares, ${data['total']:,.2f}")
+
+
 if __name__ == '__main__':
-    main()
+    import sys
+
+    if len(sys.argv) > 1:
+        # Quick import mode: python setup_portfolio.py file1.csv file2.csv ...
+        files = sys.argv[1:]
+        quick_import(files)
+    else:
+        main()
