@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-EVENT_LOG = SCRIPT_DIR / 'event_log_enhanced.csv'
+EVENT_LOG = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 
 
 def _generate_ai_insights(event_type: str, data: dict, reason: dict, notes: str) -> dict:

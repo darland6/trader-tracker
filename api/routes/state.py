@@ -19,7 +19,7 @@ SCRIPT_DIR = Path(__file__).parent.parent.parent.resolve()
 
 def build_portfolio_state() -> dict:
     """Build portfolio state from event log."""
-    events_df = load_event_log(str(SCRIPT_DIR / 'event_log_enhanced.csv'))
+    events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
     state = reconstruct_state(events_df)
 
     # Get cached prices if available

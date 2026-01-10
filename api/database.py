@@ -9,7 +9,7 @@ from contextlib import contextmanager
 
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 DB_PATH = SCRIPT_DIR / 'portfolio.db'
-CSV_PATH = SCRIPT_DIR / 'event_log_enhanced.csv'
+CSV_PATH = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 
 
 def get_db_path():

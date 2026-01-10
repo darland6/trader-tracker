@@ -162,7 +162,7 @@ def generate_event_insights(event_type: str, event_data: dict,
 
     # Load current state and history
     script_dir = Path(__file__).parent.parent.resolve()
-    event_log_path = script_dir / 'event_log_enhanced.csv'
+    event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
     try:
         events_df = load_event_log(str(event_log_path))

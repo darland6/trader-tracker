@@ -483,7 +483,7 @@ def is_demo_mode() -> bool:
 def get_demo_status() -> dict:
     """Get current demo/database status."""
     real_db = SCRIPT_DIR / 'portfolio.db'
-    real_csv = SCRIPT_DIR / 'event_log_enhanced.csv'
+    real_csv = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 
     return {
         'has_real_db': real_db.exists(),

@@ -124,7 +124,7 @@ async def update_prices(save_to_log: bool = True):
     """Fetch live prices and optionally save to event log."""
     try:
         # Get current holdings
-        events_df = load_event_log(str(SCRIPT_DIR / 'event_log_enhanced.csv'))
+        events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
         state = reconstruct_state(events_df)
         tickers = list(state.get('holdings', {}).keys())
 

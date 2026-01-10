@@ -19,8 +19,11 @@ from datetime import datetime
 from collections import Counter
 from pathlib import Path
 
-# Get the directory where this script is located
-SCRIPT_DIR = Path(__file__).parent.resolve()
+# Get the project root directory (one level up from scripts/)
+SCRIPT_DIR = Path(__file__).parent.parent.resolve()
+
+# Add project root to path for imports
+sys.path.insert(0, str(SCRIPT_DIR))
 
 def load_event_log(filepath='event_log_enhanced.csv'):
     """Load enhanced event log with reason field"""
@@ -202,9 +205,9 @@ def main():
     parser.add_argument('--since', help='Include events since date (YYYY-MM-DD)')
     parser.add_argument('--ticker', help='Filter by ticker')
     parser.add_argument('--reason-analysis', action='store_true', help='Analyze reason patterns')
-    parser.add_argument('--output', default=str(SCRIPT_DIR / 'agent_context.json'),
+    parser.add_argument('--output', default=str(SCRIPT_DIR / 'data' / 'agent_context.json'),
                        help='Output file path')
-    parser.add_argument('--event-log', default=str(SCRIPT_DIR / 'event_log_enhanced.csv'),
+    parser.add_argument('--event-log', default=str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'),
                        help='Input event log path')
     
     args = parser.parse_args()

@@ -126,7 +126,7 @@ async def get_snapshot_at_event(event_id: int):
     """Get portfolio state after a specific event was applied."""
     try:
         # Load all events up to and including the target event
-        events_df = load_event_log(str(SCRIPT_DIR / 'event_log_enhanced.csv'))
+        events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
 
         # Filter to events up to the target
         events_up_to = events_df[events_df['event_id'] <= event_id]
@@ -179,7 +179,7 @@ async def get_all_snapshots(step: int = 1):
         step: Get every Nth event's snapshot (default 1 = all events)
     """
     try:
-        events_df = load_event_log(str(SCRIPT_DIR / 'event_log_enhanced.csv'))
+        events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
 
         # Skip price updates for cleaner animation
         events_df = events_df[events_df['event_type'] != 'PRICE_UPDATE']
@@ -195,7 +195,7 @@ async def get_all_snapshots(step: int = 1):
             events_up_to = events_df[events_df['event_id'] <= event_id]
 
             # Reload full df for reconstruction (need price updates for accurate values)
-            full_df = load_event_log(str(SCRIPT_DIR / 'event_log_enhanced.csv'))
+            full_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
             full_up_to = full_df[full_df['event_id'] <= event_id]
 
             state = reconstruct_state(full_up_to)

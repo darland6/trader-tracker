@@ -11,7 +11,7 @@ import os
 router = APIRouter(prefix="/api/backup", tags=["backup"])
 
 SCRIPT_DIR = Path(__file__).parent.parent.parent.resolve()
-EVENT_LOG = SCRIPT_DIR / 'event_log_enhanced.csv'
+EVENT_LOG = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 BACKUP_DIR = SCRIPT_DIR / 'backups'
 
 

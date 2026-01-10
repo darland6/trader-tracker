@@ -97,7 +97,7 @@ async def startup_event():
     """Initialize database and sync on startup if data exists."""
     from pathlib import Path
     SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-    CSV_PATH = SCRIPT_DIR / 'event_log_enhanced.csv'
+    CSV_PATH = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 
     # Only init database if CSV exists (real or demo data)
     if CSV_PATH.exists():

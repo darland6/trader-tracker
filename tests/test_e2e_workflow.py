@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from reconstruct_state import load_event_log, load_starting_state, reconstruct_state
-from prepare_for_agent import load_event_log as load_enhanced_log, prepare_agent_context, analyze_reasons
+from scripts.prepare_for_agent import load_event_log as load_enhanced_log, prepare_agent_context, analyze_reasons
 
 
 class TestEventLogLoading:
@@ -29,7 +29,7 @@ class TestEventLogLoading:
     def test_load_event_log_exists(self):
         """Test that the event log file exists and can be loaded"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         assert event_log_path.exists(), f"Event log not found at {event_log_path}"
 
@@ -39,7 +39,7 @@ class TestEventLogLoading:
     def test_event_log_has_required_columns(self):
         """Test that event log has all required columns"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -50,7 +50,7 @@ class TestEventLogLoading:
     def test_event_log_data_parsed_as_dict(self):
         """Test that data_json is properly parsed into dict"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -60,7 +60,7 @@ class TestEventLogLoading:
     def test_event_log_timestamps_parsed(self):
         """Test that timestamps are properly parsed as datetime"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -73,14 +73,14 @@ class TestStartingState:
     def test_starting_state_exists(self):
         """Test that starting state file exists"""
         script_dir = Path(__file__).parent.parent
-        starting_state_path = script_dir / 'starting_state.json'
+        starting_state_path = script_dir / 'data' / 'starting_state.json'
 
         assert starting_state_path.exists(), f"Starting state not found at {starting_state_path}"
 
     def test_starting_state_has_required_fields(self):
         """Test that starting state has required fields"""
         script_dir = Path(__file__).parent.parent
-        starting_state_path = script_dir / 'starting_state.json'
+        starting_state_path = script_dir / 'data' / 'starting_state.json'
 
         state = load_starting_state(str(starting_state_path))
 
@@ -91,7 +91,7 @@ class TestStartingState:
     def test_starting_state_holdings_structure(self):
         """Test that holdings have proper structure"""
         script_dir = Path(__file__).parent.parent
-        starting_state_path = script_dir / 'starting_state.json'
+        starting_state_path = script_dir / 'data' / 'starting_state.json'
 
         state = load_starting_state(str(starting_state_path))
 
@@ -106,7 +106,7 @@ class TestStateReconstruction:
     def test_reconstruct_state_basic(self):
         """Test basic state reconstruction"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
         state = reconstruct_state(df)
@@ -119,8 +119,8 @@ class TestStateReconstruction:
     def test_reconstruct_state_cash_calculation(self):
         """Test that cash is calculated correctly from events"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
-        starting_state_path = script_dir / 'starting_state.json'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
+        starting_state_path = script_dir / 'data' / 'starting_state.json'
 
         df = load_event_log(str(event_log_path))
         starting = load_starting_state(str(starting_state_path))
@@ -136,7 +136,7 @@ class TestStateReconstruction:
     def test_reconstruct_state_income_tracking(self):
         """Test that YTD income is tracked correctly"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
         state = reconstruct_state(df)
@@ -148,8 +148,8 @@ class TestStateReconstruction:
     def test_reconstruct_state_holdings_from_starting(self):
         """Test that holdings are initialized from starting state"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
-        starting_state_path = script_dir / 'starting_state.json'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
+        starting_state_path = script_dir / 'data' / 'starting_state.json'
 
         df = load_event_log(str(event_log_path))
         starting = load_starting_state(str(starting_state_path))
@@ -162,7 +162,7 @@ class TestStateReconstruction:
     def test_reconstruct_state_active_options(self):
         """Test that active options are tracked"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
         state = reconstruct_state(df)
@@ -177,7 +177,7 @@ class TestStateReconstruction:
     def test_reconstruct_state_as_of_timestamp(self):
         """Test state reconstruction at a specific timestamp"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -198,7 +198,7 @@ class TestAgentContextPreparation:
     def test_prepare_agent_context_structure(self):
         """Test that agent context has expected structure"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         context = prepare_agent_context(df)
@@ -211,7 +211,7 @@ class TestAgentContextPreparation:
     def test_prepare_agent_context_metadata(self):
         """Test that metadata is correctly populated"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         context = prepare_agent_context(df)
@@ -223,7 +223,7 @@ class TestAgentContextPreparation:
     def test_prepare_agent_context_portfolio(self):
         """Test that portfolio data is correctly extracted"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         context = prepare_agent_context(df)
@@ -236,7 +236,7 @@ class TestAgentContextPreparation:
     def test_prepare_agent_context_goals(self):
         """Test that goals are correctly set"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         context = prepare_agent_context(df)
@@ -249,7 +249,7 @@ class TestAgentContextPreparation:
     def test_prepare_agent_context_events_included(self):
         """Test that events are included in context"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         context = prepare_agent_context(df, include_full_history=True)
@@ -268,7 +268,7 @@ class TestReasonAnalysis:
     def test_analyze_reasons_basic(self):
         """Test basic reason analysis"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         analysis = analyze_reasons(df)
@@ -280,7 +280,7 @@ class TestReasonAnalysis:
     def test_analyze_reasons_distribution(self):
         """Test that reason distribution is calculated"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         analysis = analyze_reasons(df)
@@ -295,7 +295,7 @@ class TestFullWorkflowE2E:
     def test_full_workflow_reconstruct_to_agent_context(self):
         """Test the complete workflow from events to agent context"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         # Step 1: Load events
         df = load_enhanced_log(str(event_log_path))
@@ -316,7 +316,7 @@ class TestFullWorkflowE2E:
     def test_workflow_consistency(self):
         """Test that state and context are consistent"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
         state = reconstruct_state(df)
@@ -330,7 +330,7 @@ class TestFullWorkflowE2E:
     def test_workflow_with_empty_events(self):
         """Test workflow handles edge case of filtering to no events"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_enhanced_log(str(event_log_path))
 
@@ -348,7 +348,7 @@ class TestDataIntegrity:
     def test_cash_delta_integrity(self):
         """Test that cash deltas are consistent with affects_cash flag"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -365,7 +365,7 @@ class TestDataIntegrity:
         ]
 
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -375,7 +375,7 @@ class TestDataIntegrity:
     def test_event_ids_unique(self):
         """Test that event IDs are unique"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 
@@ -384,7 +384,7 @@ class TestDataIntegrity:
     def test_timestamps_sorted(self):
         """Test that events can be sorted by timestamp"""
         script_dir = Path(__file__).parent.parent
-        event_log_path = script_dir / 'event_log_enhanced.csv'
+        event_log_path = script_dir / 'data' / 'event_log_enhanced.csv'
 
         df = load_event_log(str(event_log_path))
 

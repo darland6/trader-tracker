@@ -69,7 +69,7 @@ def cmd_view(args):
     print_info("Loading portfolio...")
 
     # Load and reconstruct state
-    events_df = load_event_log(SCRIPT_DIR / 'event_log_enhanced.csv')
+    events_df = load_event_log(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv')
     state = reconstruct_state(events_df)
 
     # Fetch live prices unless --no-prices
@@ -265,7 +265,7 @@ def cmd_prices(args):
     print_info("Fetching prices...")
 
     # Get holdings from current state
-    events_df = load_event_log(SCRIPT_DIR / 'event_log_enhanced.csv')
+    events_df = load_event_log(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv')
     state = reconstruct_state(events_df)
     tickers = list(state['holdings'].keys())
 

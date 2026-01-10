@@ -15,7 +15,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-# Get the directory where this script is located
+# Get the directory where this script is located (project root)
 SCRIPT_DIR = Path(__file__).parent.resolve()
 
 def load_event_log(filepath='event_log.csv'):
@@ -53,7 +53,7 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
     """
     
     # Load starting state
-    starting = load_starting_state(SCRIPT_DIR / 'starting_state.json')
+    starting = load_starting_state(SCRIPT_DIR / 'data' / 'starting_state.json')
     
     state = {
         'as_of': as_of_timestamp or datetime.now(),
@@ -298,7 +298,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Reconstruct portfolio state from event log')
     parser.add_argument('--as-of', help='Reconstruct state as of timestamp (YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--ticker', help='Filter events by ticker')
-    parser.add_argument('--event-log', default=str(SCRIPT_DIR / 'event_log_enhanced.csv'), help='Path to event log')
+    parser.add_argument('--event-log', default=str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'), help='Path to event log')
     
     args = parser.parse_args()
     

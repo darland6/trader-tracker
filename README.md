@@ -14,13 +14,13 @@ A personal financial portfolio management system with event sourcing, 3D visuali
 ## Architecture
 
 ```
-event_log_enhanced.csv  <-- Source of truth (event log)
+data/event_log_enhanced.csv  <-- Source of truth (event log)
         |
         v
-   portfolio.db         <-- SQLite cache (synced from CSV on startup)
+   portfolio.db              <-- SQLite cache (synced from CSV on startup)
         |
         v
-    FastAPI Backend     <-- REST API + WebSocket
+    FastAPI Backend          <-- REST API + WebSocket
         |
     +---+---+
     |       |
@@ -199,7 +199,7 @@ uvicorn api.main:app --reload --port 8000
 ### Project Structure
 
 ```
-finances/
+trader-tracker/
 ├── api/                    # FastAPI backend
 │   ├── routes/            # API endpoints
 │   ├── database.py        # SQLite operations
@@ -209,14 +209,26 @@ finances/
 ├── dashboard/              # Three.js frontend
 │   ├── src/main.js        # 3D visualization
 │   └── index.html         # Dashboard UI
+├── data/                   # Data files
+│   ├── event_log_enhanced.csv  # Source of truth
+│   ├── starting_state.json     # Initial portfolio state
+│   └── *.json             # Config and context files
+├── docs/                   # Documentation
+│   ├── PROJECT_SPECIFICATION.md
+│   ├── README_Event_Sourcing.md
+│   └── *.md               # Additional docs
+├── scripts/                # Utility scripts
+│   ├── prepare_for_agent.py
+│   └── update_prices_*.py
+├── assets/                 # Images, PDFs, Excel files
 ├── llm/                    # LLM integration
 │   ├── client.py          # LLM client
 │   ├── config.py          # Configuration
 │   └── prompts.py         # System prompts
 ├── web/                    # Web management UI
 │   └── templates/         # Jinja2 templates
-├── event_log_enhanced.csv # Source of truth
 ├── portfolio.py           # CLI entry point
+├── reconstruct_state.py   # State reconstruction module
 └── requirements.txt       # Python dependencies
 ```
 
@@ -226,10 +238,10 @@ The event log CSV is portable:
 
 ```bash
 # Backup
-cp event_log_enhanced.csv ~/backups/portfolio_$(date +%Y%m%d).csv
+cp data/event_log_enhanced.csv ~/backups/portfolio_$(date +%Y%m%d).csv
 
 # Restore (via UI or copy)
-cp ~/backups/portfolio_20240115.csv event_log_enhanced.csv
+cp ~/backups/portfolio_20240115.csv data/event_log_enhanced.csv
 # Restart the server to sync
 ```
 

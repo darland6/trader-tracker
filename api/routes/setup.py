@@ -45,7 +45,7 @@ async def get_setup_status():
     from pathlib import Path
 
     # Check for actual data files
-    real_csv = SCRIPT_DIR / 'event_log_enhanced.csv'
+    real_csv = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
     real_db = SCRIPT_DIR / 'portfolio.db'
 
     has_real_csv = real_csv.exists()
