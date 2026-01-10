@@ -535,6 +535,606 @@ function createPartialRing(innerRadius, outerRadius, startAngle, endAngle, color
     return new THREE.Mesh(geometry, material);
 }
 
+// Alternate Reality Pyramid - Ethereum-style mysterious object
+let alternateRealityPyramid = null;
+let altHistoryData = { histories: [], selectedId: null, compareId: null };
+
+function createAlternateRealityPyramid() {
+    // Create Ethereum-style pyramid (octahedron - diamond shape)
+    const geometry = new THREE.OctahedronGeometry(2, 0);
+
+    // Ethereal purple/blue material with glow
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x627eea,  // Ethereum blue
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: 0x3d5afe,
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity: 0.85
+    });
+
+    const pyramid = new THREE.Mesh(geometry, material);
+
+    // Create group to hold pyramid and effects
+    const pyramidGroup = new THREE.Group();
+    pyramidGroup.add(pyramid);
+
+    // Add ethereal glow layers
+    for (let i = 1; i <= 3; i++) {
+        const glowGeometry = new THREE.OctahedronGeometry(2 + i * 0.3, 0);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x627eea,
+            transparent: true,
+            opacity: 0.1 / i,
+            side: THREE.BackSide,
+            wireframe: i === 3
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        pyramidGroup.add(glow);
+    }
+
+    // Add orbiting particles (mystical effect)
+    const particleCount = 100;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+
+    for (let i = 0; i < particleCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        const r = 2.5 + Math.random() * 1.5;
+
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = r * Math.cos(phi);
+        positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+        // Purple/blue colors
+        colors[i * 3] = 0.4 + Math.random() * 0.3;
+        colors[i * 3 + 1] = 0.5 + Math.random() * 0.3;
+        colors[i * 3 + 2] = 0.9 + Math.random() * 0.1;
+    }
+
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const particleMaterial = new THREE.PointsMaterial({
+        size: 0.08,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending
+    });
+
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    pyramidGroup.add(particles);
+
+    // Add inner wireframe for extra effect
+    const wireGeometry = new THREE.OctahedronGeometry(1.5, 0);
+    const wireMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.3
+    });
+    const wireframe = new THREE.Mesh(wireGeometry, wireMaterial);
+    pyramidGroup.add(wireframe);
+
+    // Position far out in the system - mysterious distant object
+    const orbitRadius = 45;
+    const angle = Math.PI * 1.5; // Position it away from main planets
+    pyramidGroup.position.x = Math.cos(angle) * orbitRadius;
+    pyramidGroup.position.z = Math.sin(angle) * orbitRadius;
+    pyramidGroup.position.y = 8; // Float above the orbital plane
+
+    // Store data
+    pyramidGroup.userData = {
+        type: 'alternate-reality',
+        name: 'Alternate Realities',
+        orbitRadius,
+        orbitAngle: angle,
+        orbitSpeed: 0.00005, // Very slow orbit
+        rotationSpeed: 0.005,
+        pyramid,
+        particles,
+        wireframe
+    };
+
+    scene.add(pyramidGroup);
+    alternateRealityPyramid = pyramidGroup;
+    planets.set('ALT_REALITY', { group: pyramidGroup, orbit: null });
+
+    return pyramidGroup;
+}
+
+// Update pyramid animation
+function updateAlternateRealityPyramid(deltaTime) {
+    if (!alternateRealityPyramid) return;
+
+    const userData = alternateRealityPyramid.userData;
+
+    // Slow orbit
+    userData.orbitAngle += userData.orbitSpeed;
+    alternateRealityPyramid.position.x = Math.cos(userData.orbitAngle) * userData.orbitRadius;
+    alternateRealityPyramid.position.z = Math.sin(userData.orbitAngle) * userData.orbitRadius;
+
+    // Gentle floating motion
+    alternateRealityPyramid.position.y = 8 + Math.sin(Date.now() * 0.001) * 0.5;
+
+    // Rotate pyramid
+    if (userData.pyramid) {
+        userData.pyramid.rotation.y += userData.rotationSpeed;
+        userData.pyramid.rotation.x = Math.sin(Date.now() * 0.0005) * 0.1;
+    }
+
+    // Counter-rotate wireframe
+    if (userData.wireframe) {
+        userData.wireframe.rotation.y -= userData.rotationSpeed * 0.5;
+        userData.wireframe.rotation.z += userData.rotationSpeed * 0.3;
+    }
+
+    // Rotate particles
+    if (userData.particles) {
+        userData.particles.rotation.y += userData.rotationSpeed * 0.2;
+    }
+}
+
+// Show Alternate Reality Modal
+function showAlternateRealityModal() {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('alt-reality-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'alt-reality-modal';
+        modal.innerHTML = `
+            <div class="alt-modal-backdrop" onclick="closeAltRealityModal()"></div>
+            <div class="alt-modal-content">
+                <div class="alt-modal-header">
+                    <h2>Alternate Realities</h2>
+                    <button class="alt-modal-close" onclick="closeAltRealityModal()">&times;</button>
+                </div>
+                <div class="alt-modal-body">
+                    <div class="alt-tabs">
+                        <button class="alt-tab active" onclick="showAltTab('list')">My Realities</button>
+                        <button class="alt-tab" onclick="showAltTab('create')">Create New</button>
+                        <button class="alt-tab" onclick="showAltTab('compare')">Compare</button>
+                    </div>
+
+                    <div id="alt-tab-list" class="alt-tab-content active">
+                        <div id="alt-history-list">Loading...</div>
+                    </div>
+
+                    <div id="alt-tab-create" class="alt-tab-content">
+                        <div class="alt-create-form">
+                            <input type="text" id="alt-name" placeholder="Reality Name (e.g., 'What if I bought more TSLA')" />
+                            <textarea id="alt-description" placeholder="Describe this alternate reality..."></textarea>
+
+                            <h4>Modifications</h4>
+                            <div id="alt-modifications"></div>
+                            <button class="alt-btn secondary" onclick="addModification()">+ Add Modification</button>
+
+                            <h4>Quick Scenarios</h4>
+                            <div class="alt-quick-scenarios">
+                                <button onclick="quickScenario('never-bought')">What if I never bought...</button>
+                                <button onclick="quickScenario('doubled')">What if I doubled...</button>
+                                <button onclick="quickScenario('sold-early')">What if I sold early...</button>
+                            </div>
+
+                            <button class="alt-btn primary" onclick="createAlternateHistory()">Create Reality</button>
+                        </div>
+                    </div>
+
+                    <div id="alt-tab-compare" class="alt-tab-content">
+                        <div class="alt-compare-selectors">
+                            <select id="compare-history-1">
+                                <option value="reality">Reality (Current Portfolio)</option>
+                            </select>
+                            <span class="vs">VS</span>
+                            <select id="compare-history-2">
+                                <option value="">Select alternate reality...</option>
+                            </select>
+                        </div>
+                        <button class="alt-btn primary" onclick="compareRealities()">Compare</button>
+                        <div id="compare-results"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Add styles
+        const styles = document.createElement('style');
+        styles.textContent = `
+            #alt-reality-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; }
+            #alt-reality-modal.active { display: block; }
+            .alt-modal-backdrop { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); }
+            .alt-modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 700px; max-height: 80vh; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid #627eea; border-radius: 16px; overflow: hidden; box-shadow: 0 0 50px rgba(98, 126, 234, 0.3); }
+            .alt-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #627eea33; background: linear-gradient(90deg, #627eea22, transparent); }
+            .alt-modal-header h2 { margin: 0; color: #627eea; font-size: 24px; }
+            .alt-modal-close { background: none; border: none; color: #fff; font-size: 28px; cursor: pointer; opacity: 0.7; }
+            .alt-modal-close:hover { opacity: 1; }
+            .alt-modal-body { padding: 20px; overflow-y: auto; max-height: calc(80vh - 80px); }
+            .alt-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+            .alt-tab { background: #ffffff11; border: 1px solid #ffffff22; padding: 10px 20px; border-radius: 8px; color: #fff; cursor: pointer; transition: all 0.2s; }
+            .alt-tab:hover { background: #627eea33; }
+            .alt-tab.active { background: #627eea; border-color: #627eea; }
+            .alt-tab-content { display: none; }
+            .alt-tab-content.active { display: block; }
+            .alt-history-item { background: #ffffff0a; border: 1px solid #ffffff15; border-radius: 8px; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+            .alt-history-item:hover { background: #627eea22; border-color: #627eea44; }
+            .alt-history-item h4 { margin: 0 0 5px 0; color: #627eea; }
+            .alt-history-item p { margin: 0; font-size: 13px; opacity: 0.7; }
+            .alt-history-item .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; opacity: 0.5; }
+            .alt-history-item .actions { margin-top: 10px; display: flex; gap: 10px; }
+            .alt-btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 500; transition: all 0.2s; }
+            .alt-btn.primary { background: #627eea; color: white; }
+            .alt-btn.primary:hover { background: #7c93ed; }
+            .alt-btn.secondary { background: #ffffff15; color: white; border: 1px solid #ffffff30; }
+            .alt-btn.secondary:hover { background: #ffffff25; }
+            .alt-btn.danger { background: #ff4444; color: white; }
+            .alt-btn.danger:hover { background: #ff6666; }
+            .alt-create-form input, .alt-create-form textarea, .alt-create-form select { width: 100%; padding: 12px; margin-bottom: 15px; background: #ffffff0a; border: 1px solid #ffffff22; border-radius: 8px; color: white; font-size: 14px; }
+            .alt-create-form textarea { min-height: 80px; resize: vertical; }
+            .alt-create-form h4 { color: #627eea; margin: 20px 0 10px 0; }
+            .alt-quick-scenarios { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+            .alt-quick-scenarios button { background: #ffffff0a; border: 1px solid #627eea44; padding: 8px 12px; border-radius: 6px; color: #627eea; cursor: pointer; font-size: 13px; }
+            .alt-quick-scenarios button:hover { background: #627eea22; }
+            .alt-modification { background: #ffffff0a; border: 1px solid #ffffff15; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+            .alt-modification select, .alt-modification input { margin-bottom: 10px; }
+            .alt-compare-selectors { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+            .alt-compare-selectors select { flex: 1; padding: 12px; background: #ffffff0a; border: 1px solid #ffffff22; border-radius: 8px; color: white; }
+            .vs { color: #627eea; font-weight: bold; font-size: 18px; }
+            #compare-results { margin-top: 20px; }
+            .compare-card { background: #ffffff0a; border-radius: 12px; padding: 20px; margin-bottom: 15px; }
+            .compare-card h3 { color: #627eea; margin: 0 0 15px 0; }
+            .compare-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ffffff11; }
+            .compare-row:last-child { border-bottom: none; }
+            .compare-diff { font-weight: bold; }
+            .compare-diff.positive { color: #00ff88; }
+            .compare-diff.negative { color: #ff4444; }
+            .empty-state { text-align: center; padding: 40px; opacity: 0.6; }
+            .empty-state p { margin-bottom: 20px; }
+        `;
+        document.head.appendChild(styles);
+        document.body.appendChild(modal);
+    }
+
+    modal.classList.add('active');
+    loadAlternateHistories();
+}
+window.showAlternateRealityModal = showAlternateRealityModal;
+
+function closeAltRealityModal() {
+    const modal = document.getElementById('alt-reality-modal');
+    if (modal) modal.classList.remove('active');
+}
+window.closeAltRealityModal = closeAltRealityModal;
+
+function showAltTab(tabName) {
+    document.querySelectorAll('.alt-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.alt-tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.alt-tab[onclick="showAltTab('${tabName}')"]`).classList.add('active');
+    document.getElementById(`alt-tab-${tabName}`).classList.add('active');
+
+    if (tabName === 'compare') loadCompareOptions();
+}
+window.showAltTab = showAltTab;
+
+async function loadAlternateHistories() {
+    try {
+        const response = await fetch('/api/alt-history');
+        const data = await response.json();
+        altHistoryData.histories = data.histories || [];
+
+        const container = document.getElementById('alt-history-list');
+
+        if (altHistoryData.histories.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <p>No alternate realities created yet.</p>
+                    <button class="alt-btn primary" onclick="showAltTab('create')">Create Your First Reality</button>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = altHistoryData.histories.map(h => `
+            <div class="alt-history-item" onclick="viewAlternateHistory('${h.id}')">
+                <h4>${h.name}</h4>
+                <p>${h.description || 'No description'}</p>
+                <div class="meta">
+                    <span>Created: ${new Date(h.created_at).toLocaleDateString()}</span>
+                    <span>${h.modifications?.length || 0} modifications</span>
+                </div>
+                <div class="actions" onclick="event.stopPropagation()">
+                    <button class="alt-btn secondary" onclick="compareWithReality('${h.id}')">Compare to Reality</button>
+                    <button class="alt-btn danger" onclick="deleteAlternateHistory('${h.id}')">Delete</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load alternate histories:', error);
+        document.getElementById('alt-history-list').innerHTML = '<p style="color: #ff4444;">Failed to load alternate histories</p>';
+    }
+}
+
+async function viewAlternateHistory(historyId) {
+    try {
+        const response = await fetch(`/api/alt-history/${historyId}`);
+        const data = await response.json();
+
+        // Show state comparison
+        const comparison = await fetch(`/api/alt-history/${historyId}/compare/reality`).then(r => r.json());
+        showComparisonResults(comparison);
+        showAltTab('compare');
+    } catch (error) {
+        console.error('Failed to view history:', error);
+    }
+}
+window.viewAlternateHistory = viewAlternateHistory;
+
+async function deleteAlternateHistory(historyId) {
+    if (!confirm('Delete this alternate reality? This cannot be undone.')) return;
+
+    try {
+        await fetch(`/api/alt-history/${historyId}`, { method: 'DELETE' });
+        loadAlternateHistories();
+        loadCompareOptions();
+    } catch (error) {
+        console.error('Failed to delete history:', error);
+    }
+}
+window.deleteAlternateHistory = deleteAlternateHistory;
+
+function loadCompareOptions() {
+    const select1 = document.getElementById('compare-history-1');
+    const select2 = document.getElementById('compare-history-2');
+
+    const options = altHistoryData.histories.map(h =>
+        `<option value="${h.id}">${h.name}</option>`
+    ).join('');
+
+    select1.innerHTML = `<option value="reality">Reality (Current Portfolio)</option>${options}`;
+    select2.innerHTML = `<option value="">Select alternate reality...</option><option value="reality">Reality</option>${options}`;
+}
+
+async function compareRealities() {
+    const id1 = document.getElementById('compare-history-1').value;
+    const id2 = document.getElementById('compare-history-2').value;
+
+    if (!id2) {
+        alert('Please select a second reality to compare');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/alt-history/${id1}/compare/${id2}`);
+        const data = await response.json();
+        showComparisonResults(data);
+    } catch (error) {
+        console.error('Failed to compare:', error);
+    }
+}
+window.compareRealities = compareRealities;
+
+async function compareWithReality(historyId) {
+    try {
+        const response = await fetch(`/api/alt-history/${historyId}/compare/reality`);
+        const data = await response.json();
+        showComparisonResults(data);
+        showAltTab('compare');
+
+        // Set the selectors
+        document.getElementById('compare-history-1').value = 'reality';
+        document.getElementById('compare-history-2').value = historyId;
+    } catch (error) {
+        console.error('Failed to compare:', error);
+    }
+}
+window.compareWithReality = compareWithReality;
+
+function showComparisonResults(data) {
+    const container = document.getElementById('compare-results');
+    const diff = data.comparison;
+    const h1 = data.history_1;
+    const h2 = data.history_2;
+
+    const formatMoney = n => '$' + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const diffClass = n => n >= 0 ? 'positive' : 'negative';
+    const diffSign = n => n >= 0 ? '+' : '-';
+
+    container.innerHTML = `
+        <div class="compare-card">
+            <h3>Portfolio Value</h3>
+            <div class="compare-row">
+                <span>${h1.name}</span>
+                <span>${formatMoney(h1.total_value)}</span>
+            </div>
+            <div class="compare-row">
+                <span>${h2.name}</span>
+                <span>${formatMoney(h2.total_value)}</span>
+            </div>
+            <div class="compare-row">
+                <span>Difference</span>
+                <span class="compare-diff ${diffClass(diff.total_value_diff)}">${diffSign(diff.total_value_diff)}${formatMoney(diff.total_value_diff)}</span>
+            </div>
+        </div>
+
+        <div class="compare-card">
+            <h3>YTD Income</h3>
+            <div class="compare-row">
+                <span>${h1.name}</span>
+                <span>${formatMoney(h1.ytd_income)}</span>
+            </div>
+            <div class="compare-row">
+                <span>${h2.name}</span>
+                <span>${formatMoney(h2.ytd_income)}</span>
+            </div>
+            <div class="compare-row">
+                <span>Difference</span>
+                <span class="compare-diff ${diffClass(diff.income_diff)}">${diffSign(diff.income_diff)}${formatMoney(diff.income_diff)}</span>
+            </div>
+        </div>
+
+        <div class="compare-card">
+            <h3>Holdings Differences</h3>
+            ${Object.entries(diff.holdings_diff).map(([ticker, d]) => `
+                <div class="compare-row">
+                    <span>${ticker}</span>
+                    <span class="compare-diff ${diffClass(d.value_diff)}">${diffSign(d.value_diff)}${formatMoney(d.value_diff)} (${d.diff > 0 ? '+' : ''}${d.diff.toFixed(1)} shares)</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+let modificationCount = 0;
+
+function addModification() {
+    const container = document.getElementById('alt-modifications');
+    const id = modificationCount++;
+
+    const div = document.createElement('div');
+    div.className = 'alt-modification';
+    div.id = `mod-${id}`;
+    div.innerHTML = `
+        <select onchange="updateModificationFields(${id})">
+            <option value="">Select modification type...</option>
+            <option value="remove_ticker">Remove all trades for ticker</option>
+            <option value="scale_position">Scale position size</option>
+            <option value="add_trade">Add hypothetical trade</option>
+        </select>
+        <div id="mod-fields-${id}"></div>
+        <button class="alt-btn danger" onclick="document.getElementById('mod-${id}').remove()" style="margin-top: 10px;">Remove</button>
+    `;
+    container.appendChild(div);
+}
+window.addModification = addModification;
+
+function updateModificationFields(id) {
+    const select = document.querySelector(`#mod-${id} select`);
+    const fieldsContainer = document.getElementById(`mod-fields-${id}`);
+    const type = select.value;
+
+    const tickers = portfolioData?.holdings?.map(h => h.ticker) || [];
+    const tickerOptions = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+
+    if (type === 'remove_ticker') {
+        fieldsContainer.innerHTML = `
+            <select data-field="ticker">
+                <option value="">Select ticker to remove...</option>
+                ${tickerOptions}
+            </select>
+        `;
+    } else if (type === 'scale_position') {
+        fieldsContainer.innerHTML = `
+            <select data-field="ticker">
+                <option value="">Select ticker...</option>
+                ${tickerOptions}
+            </select>
+            <input type="number" data-field="scale" placeholder="Scale factor (e.g., 2.0 = double, 0.5 = half)" step="0.1" />
+        `;
+    } else if (type === 'add_trade') {
+        fieldsContainer.innerHTML = `
+            <select data-field="action">
+                <option value="BUY">BUY</option>
+                <option value="SELL">SELL</option>
+            </select>
+            <input type="text" data-field="ticker" placeholder="Ticker (e.g., NVDA)" />
+            <input type="number" data-field="shares" placeholder="Shares" />
+            <input type="number" data-field="price" placeholder="Price per share" step="0.01" />
+            <input type="date" data-field="timestamp" />
+        `;
+    } else {
+        fieldsContainer.innerHTML = '';
+    }
+}
+window.updateModificationFields = updateModificationFields;
+
+async function createAlternateHistory() {
+    const name = document.getElementById('alt-name').value;
+    const description = document.getElementById('alt-description').value;
+
+    if (!name) {
+        alert('Please enter a name for this alternate reality');
+        return;
+    }
+
+    // Collect modifications
+    const modifications = [];
+    document.querySelectorAll('.alt-modification').forEach(mod => {
+        const type = mod.querySelector('select').value;
+        if (!type) return;
+
+        const modification = { type };
+        mod.querySelectorAll('[data-field]').forEach(field => {
+            const fieldName = field.dataset.field;
+            let value = field.value;
+            if (field.type === 'number') value = parseFloat(value);
+            if (value) modification[fieldName] = value;
+        });
+        modifications.push(modification);
+    });
+
+    try {
+        const response = await fetch('/api/alt-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description, modifications })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Clear form
+            document.getElementById('alt-name').value = '';
+            document.getElementById('alt-description').value = '';
+            document.getElementById('alt-modifications').innerHTML = '';
+            modificationCount = 0;
+
+            // Switch to list view
+            showAltTab('list');
+            loadAlternateHistories();
+        } else {
+            alert('Failed to create alternate reality: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Failed to create history:', error);
+        alert('Failed to create alternate reality');
+    }
+}
+window.createAlternateHistory = createAlternateHistory;
+
+async function quickScenario(scenario) {
+    const tickers = portfolioData?.holdings?.map(h => h.ticker) || [];
+    const ticker = prompt(`Enter ticker symbol:\n\nAvailable: ${tickers.join(', ')}`);
+
+    if (!ticker) return;
+
+    try {
+        let endpoint;
+        if (scenario === 'never-bought') {
+            endpoint = `/api/alt-history/what-if/never-bought?ticker=${ticker}`;
+        } else if (scenario === 'doubled') {
+            endpoint = `/api/alt-history/what-if/doubled-position?ticker=${ticker}`;
+        } else {
+            alert('Coming soon!');
+            return;
+        }
+
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+
+        if (data.history) {
+            showComparisonResults(data.comparison);
+            showAltTab('compare');
+            loadAlternateHistories();
+        }
+    } catch (error) {
+        console.error('Quick scenario failed:', error);
+    }
+}
+window.quickScenario = quickScenario;
+
 function createPlanet(holding, index, total, portfolioTotal) {
     const { ticker, shares, market_value, unrealized_gain_pct, current_price } = holding;
 
@@ -744,6 +1344,9 @@ function animate() {
     // Update planet orbits and effects
     updatePlanets(deltaTime);
 
+    // Update alternate reality pyramid
+    updateAlternateRealityPyramid(deltaTime);
+
     // Update popup position if a planet is selected
     if (selectedPlanet) {
         updatePopupPosition(selectedPlanet);
@@ -932,6 +1535,15 @@ function onCanvasClick(event) {
         }
     }
 
+    // Check alternate reality pyramid
+    if (alternateRealityPyramid) {
+        const pyramidIntersects = raycaster.intersectObject(alternateRealityPyramid, true);
+        if (pyramidIntersects.length > 0) {
+            showAlternateRealityModal();
+            return;
+        }
+    }
+
     // Check planets
     const planetObjects = [];
     planets.forEach((data, ticker) => {
@@ -967,8 +1579,11 @@ function onCanvasMouseMove(event) {
 
     const intersects = raycaster.intersectObjects(planetObjects);
 
+    // Check pyramid hover
+    const pyramidHover = alternateRealityPyramid && raycaster.intersectObject(alternateRealityPyramid, true).length > 0;
+
     // Update cursor
-    if (intersects.length > 0 || (sun && raycaster.intersectObject(sun).length > 0)) {
+    if (intersects.length > 0 || (sun && raycaster.intersectObject(sun).length > 0) || pyramidHover) {
         renderer.domElement.style.cursor = 'pointer';
     } else {
         renderer.domElement.style.cursor = 'default';
@@ -2615,6 +3230,9 @@ async function main() {
         portfolioData.holdings.forEach((holding, index) => {
             createPlanet(holding, index, portfolioData.holdings.length, totalValue);
         });
+
+        // Create the mysterious Alternate Reality pyramid
+        createAlternateRealityPyramid();
 
         // Fetch AI insights in background (non-blocking)
         fetchInsights();

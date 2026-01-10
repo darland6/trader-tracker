@@ -15,7 +15,7 @@ from pathlib import Path
 import json
 
 from api.database import init_database, sync_csv_to_db
-from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications
+from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications, alt_history
 
 # Static files directory
 STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
@@ -55,6 +55,7 @@ app.include_router(config.router)  # LLM configuration
 app.include_router(history.router)  # History playback
 app.include_router(setup.router)  # Setup and initialization
 app.include_router(notifications.router)  # Agent notifications
+app.include_router(alt_history.router)  # Alternate history / what-if scenarios
 app.include_router(web.router)  # Web UI routes
 
 
