@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed - Database Sync on Import (2026-01-10)
+
+- Fixed database not syncing from CSV on module import
+- Previously, sync only occurred during FastAPI startup event
+- Now `sync_csv_to_db()` runs automatically when `api.database` is imported
+- This ensures database always reflects CSV content regardless of how the code is accessed
+
 ### Fixed - Cash Calculation Bug (2026-01-10)
 
 - Fixed `reconstruct_state.py` not applying `cash_delta` for OPTION_CLOSE, OPTION_EXPIRE, and OPTION_ASSIGN events

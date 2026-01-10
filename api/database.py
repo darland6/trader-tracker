@@ -190,5 +190,7 @@ def get_cached_prices():
         }
 
 
-# Initialize database on module load
+# Initialize database and sync from CSV on module load
 init_database()
+if CSV_PATH.exists():
+    sync_csv_to_db()
