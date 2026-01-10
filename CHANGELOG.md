@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Schwab Transaction History Import (2026-01-10)
+
+Complete brokerage history import from Schwab CSV exports:
+
+#### New Adapter Function
+- **`schwab_transaction_history_adapter()`** in `scripts/setup_portfolio.py`
+  - Parses Schwab "Transactions" CSV export format
+  - Handles all transaction types:
+    - **Buy/Sell** - Stock trades with price, quantity, fees
+    - **MoneyLink Transfer** - Deposits from linked bank accounts
+    - **Qualified Dividend / Non-Qualified Div** - Dividend income
+    - **Bank Interest** - Interest on cash balance
+    - **Sell to Open / Buy to Close** - Short option trades
+    - **Buy to Open / Sell to Close** - Long option trades
+    - **Expired** - Option expirations
+    - **Stock Plan Activity** - RSU vesting (recorded as $0 cost buys)
+    - **Journal** - Tax withholding and internal transfers
+    - **Wire Funds Received** - Wire transfer deposits
+  - Parses option symbols (e.g., "BMNR 01/30/2026 31.00 P") to extract ticker, expiration, strike, type
+  - Converts dates from MM/DD/YYYY to ISO format
+
+#### New Import Function
+- **`rebuild_from_schwab_history()`** - Rebuilds entire event log from Schwab export
+  - Creates chronologically sorted events from all transactions
+  - Shows summary by event type with cash impact
+  - Calculates and displays final holdings
+  - Reports final cash balance
+
+#### Prior Position Reconciliation
+- Automatically detects positions sold without corresponding buys (transferred in, vested before history)
+- Adds adjustment events at start of history to reconcile holdings
+- Cash balance adjustment to match actual account balance
+
+#### Usage
+```bash
+python scripts/setup_portfolio.py /path/to/Schwab_Transactions.csv
+```
+
 ### Added - Daily AI Insight Logging (2026-01-10)
 
 New `INSIGHT_LOG` event type tracks AI insight generation:

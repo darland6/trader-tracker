@@ -291,6 +291,22 @@ npm run dev      # Development (port 5173)
 npm run build    # Production build to dist/
 ```
 
+### Portfolio Setup (scripts/setup_portfolio.py)
+```bash
+# Interactive setup wizard
+python scripts/setup_portfolio.py
+
+# Import from Schwab transaction history CSV
+python scripts/setup_portfolio.py /path/to/Schwab_Transactions.csv
+
+# Import from ticker-named lot export CSVs
+python scripts/setup_portfolio.py /path/to/TSLA.csv /path/to/META.csv
+```
+
+**Schwab CSV Formats Supported:**
+- **Transaction History** - Complete history export with all transaction types
+- **Lot Details** - Per-ticker lot breakdown (e.g., "TSLA Lot Details for...")
+
 ---
 
 ## Web UI Routes

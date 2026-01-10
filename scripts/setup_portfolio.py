@@ -277,6 +277,328 @@ def import_trades_from_csv(csv_path, ticker_override=None):
     return trades
 
 
+def schwab_transaction_history_adapter(csv_path):
+    """Import from Schwab transaction history export format.
+
+    This is the complete transaction history from Schwab with columns:
+    "Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"
+
+    Handles:
+    - Buy/Sell trades
+    - MoneyLink Transfer (deposits)
+    - Qualified Dividend / Non-Qualified Dividend / Reinvest Dividend
+    - Bank Interest
+    - Sell to Open / Buy to Close / Sell to Close / Buy to Open (options)
+    - Expired options
+    - Stock Plan Activity (RSU vesting)
+    - Journal entries
+    """
+    import re
+    import uuid
+
+    events = []
+    option_positions = {}  # Track open option positions by symbol
+
+    with open(csv_path, 'r') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    # Reverse to process chronologically (oldest first)
+    rows = rows[::-1]
+
+    for row in rows:
+        date_str = row.get('Date', '').strip()
+        action = row.get('Action', '').strip()
+        symbol = row.get('Symbol', '').strip()
+        description = row.get('Description', '').strip()
+        quantity_str = row.get('Quantity', '').strip().replace(',', '')
+        price_str = row.get('Price', '').strip().replace('$', '').replace(',', '')
+        fees_str = row.get('Fees & Comm', '').strip().replace('$', '').replace(',', '')
+        amount_str = row.get('Amount', '').strip().replace('$', '').replace(',', '')
+
+        # Parse date (handle "MM/DD/YYYY as of MM/DD/YYYY" format)
+        if ' as of ' in date_str:
+            date_str = date_str.split(' as of ')[0]
+
+        # Convert MM/DD/YYYY to YYYY-MM-DD
+        if '/' in date_str:
+            parts = date_str.split('/')
+            if len(parts) == 3:
+                date_str = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+
+        timestamp = f"{date_str} 10:00:00"
+
+        # Parse numeric values
+        quantity = float(quantity_str) if quantity_str else 0
+        price = float(price_str) if price_str else 0
+        fees = float(fees_str) if fees_str else 0
+        amount = float(amount_str) if amount_str else 0
+
+        event = None
+
+        # Handle different action types
+        if action == 'Buy':
+            # Stock purchase
+            event = {
+                'event_type': 'TRADE',
+                'timestamp': timestamp,
+                'data': {
+                    'action': 'BUY',
+                    'ticker': symbol,
+                    'shares': quantity,
+                    'price': price,
+                    'total': abs(amount),
+                    'fees': fees,
+                    'gain_loss': 0
+                },
+                'affects_cash': True,
+                'cash_delta': amount,  # Negative for buys
+                'notes': description
+            }
+
+        elif action == 'Sell':
+            # Stock sale
+            event = {
+                'event_type': 'TRADE',
+                'timestamp': timestamp,
+                'data': {
+                    'action': 'SELL',
+                    'ticker': symbol,
+                    'shares': quantity,
+                    'price': price,
+                    'total': abs(amount),
+                    'fees': fees,
+                    'gain_loss': 0  # We don't have cost basis info
+                },
+                'affects_cash': True,
+                'cash_delta': amount,  # Positive for sells
+                'notes': description
+            }
+
+        elif action == 'MoneyLink Transfer':
+            # Deposit
+            event = {
+                'event_type': 'DEPOSIT',
+                'timestamp': timestamp,
+                'data': {
+                    'amount': amount,
+                    'source': description
+                },
+                'affects_cash': True,
+                'cash_delta': amount,
+                'notes': description
+            }
+
+        elif action in ('Qualified Dividend', 'Non-Qualified Div', 'Reinvest Dividend'):
+            # Dividend
+            event = {
+                'event_type': 'DIVIDEND',
+                'timestamp': timestamp,
+                'data': {
+                    'ticker': symbol,
+                    'amount': amount,
+                    'dividend_type': action
+                },
+                'affects_cash': True,
+                'cash_delta': amount,
+                'notes': f"{action}: {description}"
+            }
+
+        elif action == 'Bank Interest':
+            # Bank interest (treat as dividend-like income)
+            event = {
+                'event_type': 'DIVIDEND',
+                'timestamp': timestamp,
+                'data': {
+                    'ticker': 'CASH',
+                    'amount': amount,
+                    'dividend_type': 'Bank Interest'
+                },
+                'affects_cash': True,
+                'cash_delta': amount,
+                'notes': description
+            }
+
+        elif action == 'Sell to Open':
+            # Option opened (sold)
+            # Parse option symbol: "BMNR 01/30/2026 31.00 P"
+            opt_uuid = str(uuid.uuid4())[:8]
+
+            # Extract option details from symbol
+            opt_match = re.match(r'(\w+)\s+(\d{2}/\d{2}/\d{4})\s+([\d.]+)\s+([PC])', symbol)
+            if opt_match:
+                opt_ticker = opt_match.group(1)
+                opt_exp = opt_match.group(2)
+                opt_strike = float(opt_match.group(3))
+                opt_type = 'Put' if opt_match.group(4) == 'P' else 'Call'
+
+                # Convert expiration date
+                exp_parts = opt_exp.split('/')
+                opt_exp = f"{exp_parts[2]}-{exp_parts[0].zfill(2)}-{exp_parts[1].zfill(2)}"
+
+                strategy = 'Secured Put' if opt_type == 'Put' else 'Covered Call'
+
+                event = {
+                    'event_type': 'OPTION_OPEN',
+                    'timestamp': timestamp,
+                    'data': {
+                        'ticker': opt_ticker,
+                        'strategy': strategy,
+                        'strike': opt_strike,
+                        'expiration': opt_exp,
+                        'contracts': int(quantity),
+                        'total_premium': amount,
+                        'premium_per_contract': amount / quantity if quantity else 0,
+                        'uuid': opt_uuid,
+                        'status': 'OPEN'
+                    },
+                    'affects_cash': True,
+                    'cash_delta': amount,
+                    'notes': description
+                }
+
+                # Track position
+                option_positions[symbol] = opt_uuid
+
+        elif action == 'Buy to Close':
+            # Option closed (bought back)
+            opt_uuid = option_positions.get(symbol, str(uuid.uuid4())[:8])
+
+            event = {
+                'event_type': 'OPTION_CLOSE',
+                'timestamp': timestamp,
+                'data': {
+                    'uuid': opt_uuid,
+                    'close_cost': abs(amount),
+                    'gain': 0,  # Would need original premium to calculate
+                    'contracts': int(quantity)
+                },
+                'affects_cash': True,
+                'cash_delta': amount,  # Negative (buying back)
+                'notes': description
+            }
+
+        elif action == 'Sell to Close':
+            # Option sold to close (bought option being sold)
+            event = {
+                'event_type': 'OPTION_CLOSE',
+                'timestamp': timestamp,
+                'data': {
+                    'uuid': str(uuid.uuid4())[:8],
+                    'close_proceeds': amount,
+                    'contracts': int(quantity)
+                },
+                'affects_cash': True,
+                'cash_delta': amount,
+                'notes': description
+            }
+
+        elif action == 'Buy to Open':
+            # Option bought (long position opened)
+            # Parse option symbol: "BMNR 01/30/2026 31.00 P"
+            opt_match = re.match(r'(\w+)\s+(\d{2}/\d{2}/\d{4})\s+([\d.]+)\s+([PC])', symbol)
+            if opt_match:
+                opt_ticker = opt_match.group(1)
+                opt_exp = opt_match.group(2)
+                opt_strike = float(opt_match.group(3))
+                opt_type = 'Put' if opt_match.group(4) == 'P' else 'Call'
+
+                # Convert expiration date
+                exp_parts = opt_exp.split('/')
+                opt_exp = f"{exp_parts[2]}-{exp_parts[0].zfill(2)}-{exp_parts[1].zfill(2)}"
+
+                strategy = f'Long {opt_type}'
+
+                event = {
+                    'event_type': 'OPTION_OPEN',
+                    'timestamp': timestamp,
+                    'data': {
+                        'ticker': opt_ticker,
+                        'strategy': strategy,
+                        'strike': opt_strike,
+                        'expiration': opt_exp,
+                        'contracts': int(quantity),
+                        'total_premium': abs(amount),
+                        'uuid': str(uuid.uuid4())[:8],
+                        'status': 'OPEN'
+                    },
+                    'affects_cash': True,
+                    'cash_delta': amount,  # Negative
+                    'notes': description
+                }
+
+        elif action == 'Expired':
+            # Option expired
+            opt_uuid = option_positions.get(symbol, str(uuid.uuid4())[:8])
+
+            event = {
+                'event_type': 'OPTION_EXPIRE',
+                'timestamp': timestamp,
+                'data': {
+                    'uuid': opt_uuid,
+                    'contracts': int(quantity) if quantity else 0
+                },
+                'affects_cash': False,
+                'cash_delta': 0,
+                'notes': f"Expired: {symbol} - {description}"
+            }
+
+        elif action == 'Stock Plan Activity':
+            # RSU vesting - creates shares (like a buy at $0 from employer)
+            if quantity > 0:
+                event = {
+                    'event_type': 'TRADE',
+                    'timestamp': timestamp,
+                    'data': {
+                        'action': 'BUY',
+                        'ticker': symbol,
+                        'shares': quantity,
+                        'price': 0,
+                        'total': 0,
+                        'gain_loss': 0,
+                        'source': 'RSU_VEST'
+                    },
+                    'affects_cash': False,
+                    'cash_delta': 0,
+                    'notes': f"RSU Vest: {description}"
+                }
+
+        elif action == 'Journal':
+            # Journal entries (tax withholding, transfers, etc.)
+            if amount != 0:
+                event = {
+                    'event_type': 'ADJUSTMENT',
+                    'timestamp': timestamp,
+                    'data': {
+                        'amount': amount,
+                        'type': 'journal'
+                    },
+                    'affects_cash': True,
+                    'cash_delta': amount,
+                    'notes': description
+                }
+
+        elif action == 'Wire Funds Received':
+            # Wire transfer (deposit)
+            event = {
+                'event_type': 'DEPOSIT',
+                'timestamp': timestamp,
+                'data': {
+                    'amount': amount,
+                    'source': f"Wire: {description}"
+                },
+                'affects_cash': True,
+                'cash_delta': amount,
+                'notes': description
+            }
+
+        # Add event if created
+        if event:
+            events.append(event)
+
+    return events
+
+
 def schwab_csv_adapter(csv_path, ticker_override=None):
     """Import from Schwab lot details export format.
 
@@ -820,12 +1142,120 @@ def quick_import(file_paths, output_csv=None):
         print(f"  {ticker}: {data['count']} lots, {data['shares']:.0f} shares, ${data['total']:,.2f}")
 
 
+def rebuild_from_schwab_history(csv_path, output_csv=None):
+    """Rebuild event log from Schwab complete transaction history.
+
+    Args:
+        csv_path: Path to Schwab transaction history CSV
+        output_csv: Output path for events (default: data/event_log_enhanced.csv)
+    """
+    from pathlib import Path
+
+    csv_path = Path(csv_path).expanduser()
+    if not csv_path.exists():
+        print(f"File not found: {csv_path}")
+        return
+
+    print(f"\n=== Importing Schwab Transaction History ===")
+    print(f"Source: {csv_path}")
+
+    # Parse all transactions
+    events = schwab_transaction_history_adapter(str(csv_path))
+
+    if not events:
+        print("\nNo events imported.")
+        return
+
+    # Sort by timestamp
+    events.sort(key=lambda x: x['timestamp'])
+
+    # Convert to CSV format
+    csv_events = []
+    for i, event in enumerate(events, 1):
+        csv_events.append(create_event(
+            event_id=i,
+            timestamp=event['timestamp'],
+            event_type=event['event_type'],
+            data=event['data'],
+            reason={'primary': 'IMPORTED_FROM_BROKERAGE'},
+            notes=event.get('notes', ''),
+            tags=[event['event_type'].lower()],
+            affects_cash=event.get('affects_cash', False),
+            cash_delta=event.get('cash_delta', 0)
+        ))
+
+    # Write to CSV
+    output_path = Path(output_csv) if output_csv else EVENT_LOG_PATH
+    output_path.parent.mkdir(exist_ok=True)
+
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer.writeheader()
+        writer.writerows(csv_events)
+
+    print(f"\nOutput: {output_path}")
+    print(f"Total events: {len(csv_events)}")
+
+    # Summary by event type
+    by_type = {}
+    for e in events:
+        t = e['event_type']
+        if t not in by_type:
+            by_type[t] = {'count': 0, 'cash': 0}
+        by_type[t]['count'] += 1
+        by_type[t]['cash'] += e.get('cash_delta', 0)
+
+    print(f"\n{'Event Type':<20} {'Count':>8} {'Cash Impact':>15}")
+    print("-" * 45)
+    for t, data in sorted(by_type.items()):
+        print(f"{t:<20} {data['count']:>8} ${data['cash']:>14,.2f}")
+
+    total_cash = sum(e.get('cash_delta', 0) for e in events)
+    print("-" * 45)
+    print(f"{'TOTAL':<20} {len(events):>8} ${total_cash:>14,.2f}")
+
+    # Calculate final holdings
+    print("\n=== Calculated Holdings ===")
+    holdings = {}
+    for e in events:
+        if e['event_type'] == 'TRADE':
+            ticker = e['data'].get('ticker')
+            action = e['data'].get('action')
+            shares = e['data'].get('shares', 0)
+
+            if ticker not in holdings:
+                holdings[ticker] = 0
+
+            if action == 'BUY':
+                holdings[ticker] += shares
+            elif action == 'SELL':
+                holdings[ticker] -= shares
+
+    # Show non-zero holdings
+    print(f"\n{'Ticker':<10} {'Shares':>12}")
+    print("-" * 24)
+    for ticker, shares in sorted(holdings.items()):
+        if abs(shares) > 0.01:
+            print(f"{ticker:<10} {shares:>12,.2f}")
+
+    print(f"\nFinal cash balance: ${total_cash:,.2f}")
+
+    return csv_events
+
+
 if __name__ == '__main__':
     import sys
 
     if len(sys.argv) > 1:
-        # Quick import mode: python setup_portfolio.py file1.csv file2.csv ...
-        files = sys.argv[1:]
-        quick_import(files)
+        # Check if it's a Schwab transaction history file
+        first_arg = sys.argv[1]
+        if 'Transaction' in first_arg or '--schwab-history' in sys.argv:
+            # Rebuild from Schwab history
+            csv_file = first_arg if 'Transaction' in first_arg else sys.argv[2]
+            rebuild_from_schwab_history(csv_file)
+        else:
+            # Quick import mode: python setup_portfolio.py file1.csv file2.csv ...
+            files = sys.argv[1:]
+            quick_import(files)
     else:
         main()

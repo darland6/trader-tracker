@@ -162,12 +162,17 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
             state['cash'] += event['cash_delta']
         
         elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
-            # Remove from active options (try position_id first, then event_id)
+            # Remove from active options (try position_id, uuid, then event_id)
             position_id = data.get('position_id')
             option_id = data.get('option_id')
+            uuid = data.get('uuid')
+
             if position_id:
                 state['active_options'] = [opt for opt in state['active_options']
                                           if opt.get('position_id') != position_id]
+            elif uuid:
+                state['active_options'] = [opt for opt in state['active_options']
+                                          if opt.get('uuid') != uuid]
             elif option_id:
                 state['active_options'] = [opt for opt in state['active_options']
                                           if opt['event_id'] != option_id]
@@ -222,7 +227,15 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
                 'name': data['strategy_name'],
                 'details': {k: v for k, v in data.items() if k != 'strategy_name'}
             })
-        
+
+        elif event_type == 'ADJUSTMENT':
+            # Cash adjustments (journal entries, reconciliation, etc.)
+            state['cash'] += event['cash_delta']
+
+        elif event_type == 'INSIGHT_LOG':
+            # AI insight usage logging - no state change
+            pass
+
         state['events_processed'] += 1
     
     # Calculate current portfolio value
