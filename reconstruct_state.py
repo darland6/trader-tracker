@@ -29,8 +29,8 @@ def load_event_log(filepath='event_log.csv'):
     # Convert timestamp to datetime
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     
-    # Sort by timestamp (should already be sorted, but ensure)
-    df = df.sort_values('timestamp')
+    # Sort by timestamp, then by event_id for stable ordering of same-timestamp events
+    df = df.sort_values(['timestamp', 'event_id'])
     
     return df
 
