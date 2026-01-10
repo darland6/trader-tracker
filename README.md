@@ -214,22 +214,40 @@ trader-tracker/
 │   ├── starting_state.json     # Initial portfolio state
 │   └── *.json             # Config and context files
 ├── docs/                   # Documentation
-│   ├── PROJECT_SPECIFICATION.md
-│   ├── README_Event_Sourcing.md
-│   └── *.md               # Additional docs
+│   └── *.md               # Architecture and system docs
 ├── scripts/                # Utility scripts
 │   ├── prepare_for_agent.py
 │   └── update_prices_*.py
 ├── assets/                 # Images, PDFs, Excel files
+├── integrations/           # External tool integrations
+│   └── dexter.py          # Dexter financial research agent
 ├── llm/                    # LLM integration
 │   ├── client.py          # LLM client
 │   ├── config.py          # Configuration
 │   └── prompts.py         # System prompts
+├── skills/                 # Claude Code skills
+├── tests/                  # Test suite
+│   └── test_e2e_workflow.py
 ├── web/                    # Web management UI
 │   └── templates/         # Jinja2 templates
+├── examples/               # Example files
+│   └── event_log_template.csv
 ├── portfolio.py           # CLI entry point
 ├── reconstruct_state.py   # State reconstruction module
 └── requirements.txt       # Python dependencies
+```
+
+### Running Tests
+
+```bash
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run with coverage (requires pytest-cov)
+python -m pytest tests/ --cov=. --cov-report=html
 ```
 
 ## Backup & Restore

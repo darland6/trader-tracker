@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed - Cash Calculation Bug (2026-01-10)
+
+- Fixed `reconstruct_state.py` not applying `cash_delta` for OPTION_CLOSE, OPTION_EXPIRE, and OPTION_ASSIGN events
+- All 27 tests now pass
+
+### Changed - Repository Cleanup (2026-01-10)
+
+- Removed duplicate file `assets/filename.xlsx` (was identical to `Darland_income.xlsx`)
+- Renamed `claude.md` to `CLAUDE.md` (standard convention)
+- Moved `dashboard-analytics-subagent.skill` to `skills/` directory
+- Updated README with tests section and complete project structure
+
 ### Added - Local LLM Support for Dexter (2026-01-10)
 
 - Dexter research agent now automatically uses local LLM when configured

@@ -163,13 +163,16 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
         elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
             # Remove from active options
             option_id = data.get('option_id')
-            state['active_options'] = [opt for opt in state['active_options'] 
+            state['active_options'] = [opt for opt in state['active_options']
                                       if opt['event_id'] != option_id]
-            
+
             # Track profit
             profit = data.get('profit', 0)
             state['ytd_option_income'] += profit
             state['ytd_income'] += profit
+
+            # Update cash (e.g., buying back an option costs money)
+            state['cash'] += event['cash_delta']
         
         elif event_type == 'DIVIDEND':
             amount = data['amount']
