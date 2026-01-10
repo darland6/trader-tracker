@@ -1187,11 +1187,12 @@ window.navigateTo = navigateTo;
 
 // Playback state
 let playbackMode = false;
-let playbackData = null;  // Timeline events
+let playbackData = null;  // Prepared playback with daily frames
 let playbackIndex = 0;
 let playbackPlaying = false;
 let playbackSpeed = 1;
 let playbackInterval = null;
+let playbackLoading = false;
 
 async function togglePlaybackMode() {
     playbackMode = !playbackMode;
@@ -1205,7 +1206,7 @@ async function togglePlaybackMode() {
         toggleBtn.querySelector('span').textContent = 'Exit History';
 
         // Load timeline data if not already loaded
-        if (!playbackData) {
+        if (!playbackData && !playbackLoading) {
             await loadPlaybackTimeline();
         }
     } else {
@@ -1222,38 +1223,292 @@ async function togglePlaybackMode() {
         // Restore current portfolio view
         if (portfolioData) {
             updateHUD(portfolioData);
+            // Rebuild planets from current data
+            rebuildPlanetsFromPortfolioData();
         }
     }
 }
 window.togglePlaybackMode = togglePlaybackMode;
 
+function rebuildPlanetsFromPortfolioData() {
+    if (!portfolioData) return;
+
+    const totalValue = portfolioData.total_value || portfolioData.portfolio_value;
+
+    // Animate each planet back to current state
+    portfolioData.holdings.forEach((holding, index) => {
+        const planetData = planets.get(holding.ticker);
+        if (planetData) {
+            const sizeRatio = holding.market_value / totalValue;
+            const targetRadius = 0.8 + sizeRatio * 8;
+            const maxOrbit = 35;
+            const minOrbit = 10;
+            const targetOrbit = Math.max(minOrbit, Math.min(maxOrbit, maxOrbit - (sizeRatio * (maxOrbit - minOrbit) / 0.4)));
+
+            const group = planetData.group;
+            const planet = group.userData.planet;
+
+            if (planet) {
+                const targetScale = targetRadius / (planet.geometry.parameters?.radius || 1);
+                gsap.to(planet.scale, {
+                    x: targetScale, y: targetScale, z: targetScale,
+                    duration: PLANET_ANIMATION_DURATION,
+                    ease: "power2.inOut"
+                });
+            }
+
+            gsap.to(group.userData, {
+                orbitRadius: targetOrbit,
+                duration: PLANET_ANIMATION_DURATION,
+                ease: "power2.inOut",
+                onUpdate: () => {
+                    group.position.x = Math.cos(group.userData.orbitAngle) * group.userData.orbitRadius;
+                    group.position.z = Math.sin(group.userData.orbitAngle) * group.userData.orbitRadius;
+                }
+            });
+        }
+    });
+}
+
 async function loadPlaybackTimeline() {
+    playbackLoading = true;
+
+    // Show loading indicator
+    document.getElementById('playback-event-summary').textContent = 'Loading historical prices...';
+    document.getElementById('playback-event-type').textContent = 'LOADING';
+
     try {
-        const response = await fetch('/api/history/timeline');
+        // Use the prepared-playback endpoint with real historical prices
+        const response = await fetch('/api/history/prepared-playback');
         if (!response.ok) throw new Error('Failed to load timeline');
 
         const data = await response.json();
         playbackData = data;
 
-        // Update slider
+        // Update slider to use frames (daily snapshots with real prices)
         const slider = document.getElementById('playback-slider');
-        slider.max = data.events.length - 1;
+        slider.max = data.frames.length - 1;
         slider.value = 0;
 
-        document.getElementById('playback-progress').textContent = `1 / ${data.total_events} events`;
+        document.getElementById('playback-progress').textContent = `1 / ${data.total_frames} days`;
 
-        if (data.events.length > 0) {
+        if (data.frames.length > 0) {
             playbackIndex = 0;
-            await updatePlaybackDisplay(0);
+            updatePlaybackDisplayFromFrame(0);
         }
     } catch (error) {
         console.error('Error loading timeline:', error);
         document.getElementById('playback-event-summary').textContent = 'Error loading timeline: ' + error.message;
+    } finally {
+        playbackLoading = false;
     }
 }
 
+// New function to update display from pre-computed frames with real historical prices
+function updatePlaybackDisplayFromFrame(index) {
+    if (!playbackData || !playbackData.frames[index]) return;
+
+    const frame = playbackData.frames[index];
+
+    // Update event display - show if this is an event day
+    if (frame.is_event_day) {
+        document.getElementById('playback-event-type').textContent = frame.event_type;
+        document.getElementById('playback-event-summary').textContent = frame.event_summary || frame.event_type;
+    } else {
+        document.getElementById('playback-event-type').textContent = 'MARKET DAY';
+        document.getElementById('playback-event-summary').textContent = 'Price movement only';
+    }
+
+    document.getElementById('playback-event-timestamp').textContent = frame.timestamp;
+    document.getElementById('playback-date').textContent = frame.date;
+    document.getElementById('playback-progress').textContent = `${index + 1} / ${playbackData.total_frames} days`;
+
+    // Update slider position
+    document.getElementById('playback-slider').value = index;
+
+    // Update snapshot values directly from frame (no network request needed!)
+    document.getElementById('playback-cash').textContent = '$' + frame.cash.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    document.getElementById('playback-holdings').textContent = '$' + frame.total_holdings.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    document.getElementById('playback-total').textContent = '$' + frame.total_value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+    // Update the 3D visualization with historical prices
+    updateVisualizationFromFrame(frame);
+}
+
+// Update visualization using frame data with real historical prices
+function updateVisualizationFromFrame(frame) {
+    // Update the HUD with frame values
+    document.getElementById('total-value').textContent = '$' + frame.total_value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    document.getElementById('cash-value').textContent = '$' + frame.cash.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    document.getElementById('holdings-value').textContent = '$' + frame.total_holdings.toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+    // Update YTD income
+    document.getElementById('income-value').textContent = '$' + frame.ytd_income.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const progress = (frame.ytd_income / 30000) * 100;
+    document.getElementById('income-pct').textContent = progress.toFixed(0) + '%';
+    document.getElementById('income-progress').style.width = Math.min(progress, 100) + '%';
+
+    // Update holdings grid with historical holdings
+    const grid = document.getElementById('holdings-grid');
+    grid.innerHTML = '';
+
+    // Add date indicator at top
+    const dateCard = document.createElement('div');
+    dateCard.className = 'holding-card';
+    dateCard.style.borderLeft = '3px solid #888';
+    dateCard.style.background = 'linear-gradient(135deg, rgba(100, 100, 100, 0.2) 0%, rgba(20, 20, 40, 0.95) 100%)';
+    dateCard.innerHTML = `
+        <div class="ticker" style="color: #888;">DATE</div>
+        <div class="value" style="font-size: 14px;">${frame.date}</div>
+        <div style="font-size: 10px; opacity: 0.6;">${frame.is_event_day ? frame.event_type : 'Market day'}</div>
+    `;
+    grid.appendChild(dateCard);
+
+    for (const [ticker, data] of Object.entries(frame.holdings_value)) {
+        if (data.value > 0) {
+            const card = document.createElement('div');
+            card.className = 'holding-card';
+            card.style.borderLeft = '3px solid #888';
+            card.innerHTML = `
+                <div class="ticker">${ticker}</div>
+                <div class="value">$${data.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+                <div style="font-size: 11px; opacity: 0.6;">${data.shares.toLocaleString()} @ $${data.price.toFixed(2)}</div>
+            `;
+            card.onclick = () => focusOnPlanet(ticker);
+            grid.appendChild(card);
+        }
+    }
+
+    // Animate 3D planets to match historical state
+    animatePlanetsToFrame(frame);
+}
+
+// Animate planets using frame data with real historical prices
+function animatePlanetsToFrame(frame) {
+    const totalValue = frame.total_value || 1;
+    const holdingsValue = frame.holdings_value || {};
+    const holdingsTickers = new Set(Object.keys(holdingsValue).filter(t => holdingsValue[t].value > 0));
+
+    // Track which planets should exist
+    const existingTickers = new Set(planets.keys());
+    existingTickers.delete('CASH'); // Handle cash separately
+
+    // Calculate new state for each holding
+    const holdingsList = Object.entries(holdingsValue).filter(([t, d]) => d.value > 0);
+    const totalHoldings = holdingsList.length;
+
+    holdingsList.forEach(([ticker, data], index) => {
+        const { value, shares, price } = data;
+        const sizeRatio = value / totalValue;
+        const targetRadius = 0.8 + sizeRatio * 8;
+
+        // Calculate target orbit (closer = larger allocation)
+        const maxOrbit = 35;
+        const minOrbit = 10;
+        const targetOrbit = Math.max(minOrbit, Math.min(maxOrbit, maxOrbit - (sizeRatio * (maxOrbit - minOrbit) / 0.4)));
+
+        // Calculate target position angle
+        const targetAngle = (index / totalHoldings) * Math.PI * 2;
+
+        if (planets.has(ticker)) {
+            // Animate existing planet
+            const planetData = planets.get(ticker);
+            const group = planetData.group;
+            const planet = group.userData.planet;
+
+            if (planet) {
+                // Animate scale (size)
+                const targetScale = targetRadius / (planet.geometry.parameters?.radius || 1);
+
+                gsap.to(planet.scale, {
+                    x: targetScale,
+                    y: targetScale,
+                    z: targetScale,
+                    duration: PLANET_ANIMATION_DURATION,
+                    ease: "power2.inOut"
+                });
+
+                // Animate atmosphere/glow children
+                group.children.forEach(child => {
+                    if (child !== planet && child.type === 'Group') {
+                        gsap.to(child.scale, {
+                            x: targetScale,
+                            y: targetScale,
+                            z: targetScale,
+                            duration: PLANET_ANIMATION_DURATION,
+                            ease: "power2.inOut"
+                        });
+                    }
+                });
+            }
+
+            // Animate orbit radius and position
+            gsap.to(group.userData, {
+                orbitRadius: targetOrbit,
+                duration: PLANET_ANIMATION_DURATION,
+                ease: "power2.inOut",
+                onUpdate: () => {
+                    group.position.x = Math.cos(group.userData.orbitAngle) * group.userData.orbitRadius;
+                    group.position.z = Math.sin(group.userData.orbitAngle) * group.userData.orbitRadius;
+                }
+            });
+
+            // Update orbit line
+            if (planetData.orbit) {
+                animateOrbitLine(planetData.orbit, targetOrbit);
+            }
+        }
+    });
+
+    // Fade out planets that no longer exist in this frame
+    existingTickers.forEach(ticker => {
+        if (!holdingsTickers.has(ticker)) {
+            fadeOutPlanet(ticker);
+        }
+    });
+
+    // Animate cash planet based on frame cash value
+    if (frame.cash > 0) {
+        animateCashPlanetToValue(frame.cash, totalValue);
+    }
+}
+
+function animateCashPlanetToValue(cashValue, totalValue) {
+    if (!planets.has('CASH')) return;
+
+    const planetData = planets.get('CASH');
+    const group = planetData.group;
+
+    // Calculate new size based on cash value
+    const sizeRatio = cashValue / totalValue;
+    const targetRadius = 0.8 + sizeRatio * 8;
+
+    const planet = group.userData.planet;
+    if (planet) {
+        const targetScale = targetRadius / (planet.geometry.parameters?.radius || 1);
+
+        gsap.to(planet.scale, {
+            x: targetScale,
+            y: targetScale,
+            z: targetScale,
+            duration: PLANET_ANIMATION_DURATION,
+            ease: "power2.inOut"
+        });
+    }
+}
+
+// Legacy function - kept for backwards compatibility
 async function updatePlaybackDisplay(index) {
-    if (!playbackData || !playbackData.events[index]) return;
+    if (!playbackData) return;
+
+    // If we have frames (new system), use frame-based display
+    if (playbackData.frames && playbackData.frames[index]) {
+        updatePlaybackDisplayFromFrame(index);
+        return;
+    }
+
+    // Fallback to old event-based system
+    if (!playbackData.events || !playbackData.events[index]) return;
 
     const event = playbackData.events[index];
 
@@ -1318,6 +1573,281 @@ function updateVisualizationFromSnapshot(snapshot) {
         card.onclick = () => focusOnPlanet(ticker);
         grid.appendChild(card);
     }
+
+    // Animate 3D planets to match historical state
+    animatePlanetsToSnapshot(snapshot);
+}
+
+// Animation duration in seconds
+const PLANET_ANIMATION_DURATION = 0.8;
+
+function animatePlanetsToSnapshot(snapshot) {
+    const totalValue = snapshot.total_value || 1;
+    const snapshotTickers = new Set(Object.keys(snapshot.holdings_value));
+
+    // Track which planets should exist
+    const existingTickers = new Set(planets.keys());
+    existingTickers.delete('CASH'); // Handle cash separately
+
+    // Calculate new state for each holding
+    const holdingsList = Object.entries(snapshot.holdings_value);
+    const totalHoldings = holdingsList.length;
+
+    holdingsList.forEach(([ticker, data], index) => {
+        const { value, shares, price, cost_basis } = data;
+        const sizeRatio = value / totalValue;
+        const targetRadius = 0.8 + sizeRatio * 8;
+
+        // Calculate gain/loss for coloring
+        const totalCost = cost_basis || (shares * price);
+        const gainPct = totalCost > 0 ? ((value - totalCost) / totalCost) * 100 : 0;
+        const isGain = gainPct >= 0;
+
+        // Calculate target orbit (closer = larger allocation)
+        const maxOrbit = 35;
+        const minOrbit = 10;
+        const targetOrbit = Math.max(minOrbit, Math.min(maxOrbit, maxOrbit - (sizeRatio * (maxOrbit - minOrbit) / 0.4)));
+
+        // Calculate target position angle
+        const targetAngle = (index / totalHoldings) * Math.PI * 2;
+
+        if (planets.has(ticker)) {
+            // Animate existing planet
+            const planetData = planets.get(ticker);
+            const group = planetData.group;
+            const planet = group.userData.planet;
+
+            if (planet) {
+                // Animate scale (size)
+                const currentScale = planet.scale.x;
+                const targetScale = targetRadius / (planet.geometry.parameters?.radius || 1);
+
+                gsap.to(planet.scale, {
+                    x: targetScale,
+                    y: targetScale,
+                    z: targetScale,
+                    duration: PLANET_ANIMATION_DURATION,
+                    ease: "power2.inOut"
+                });
+
+                // Animate atmosphere/glow children
+                group.children.forEach(child => {
+                    if (child !== planet && child.type === 'Group') {
+                        gsap.to(child.scale, {
+                            x: targetScale,
+                            y: targetScale,
+                            z: targetScale,
+                            duration: PLANET_ANIMATION_DURATION,
+                            ease: "power2.inOut"
+                        });
+                    }
+                });
+            }
+
+            // Animate orbit radius and position
+            const currentOrbit = group.userData.orbitRadius;
+            const startAngle = group.userData.orbitAngle || 0;
+
+            gsap.to(group.userData, {
+                orbitRadius: targetOrbit,
+                duration: PLANET_ANIMATION_DURATION,
+                ease: "power2.inOut",
+                onUpdate: () => {
+                    // Update position based on current orbit radius and angle
+                    group.position.x = Math.cos(group.userData.orbitAngle) * group.userData.orbitRadius;
+                    group.position.z = Math.sin(group.userData.orbitAngle) * group.userData.orbitRadius;
+                }
+            });
+
+            // Update orbit line
+            if (planetData.orbit) {
+                animateOrbitLine(planetData.orbit, targetOrbit);
+            }
+
+            // Update glow color based on gain/loss
+            updatePlanetGlow(group, isGain, Math.abs(gainPct) / 100);
+
+        } else {
+            // Create new planet with fade-in animation
+            createAnimatedPlanet(ticker, data, index, totalHoldings, totalValue);
+        }
+    });
+
+    // Fade out and remove planets that no longer exist
+    existingTickers.forEach(ticker => {
+        if (!snapshotTickers.has(ticker)) {
+            fadeOutPlanet(ticker);
+        }
+    });
+
+    // Animate cash planet
+    if (snapshot.cash_breakdown) {
+        animateCashPlanet(snapshot.cash_breakdown, totalValue);
+    }
+}
+
+function animateOrbitLine(orbitLine, targetRadius) {
+    const positions = orbitLine.geometry.attributes.position;
+    const segments = positions.count - 1;
+    const startRadius = Math.sqrt(positions.array[0] ** 2 + positions.array[2] ** 2);
+
+    gsap.to({ radius: startRadius }, {
+        radius: targetRadius,
+        duration: PLANET_ANIMATION_DURATION,
+        ease: "power2.inOut",
+        onUpdate: function() {
+            const currentRadius = this.targets()[0].radius;
+            for (let i = 0; i <= segments; i++) {
+                const theta = (i / segments) * Math.PI * 2;
+                positions.array[i * 3] = Math.cos(theta) * currentRadius;
+                positions.array[i * 3 + 2] = Math.sin(theta) * currentRadius;
+            }
+            positions.needsUpdate = true;
+        }
+    });
+}
+
+function updatePlanetGlow(group, isGain, intensity) {
+    const glowColor = isGain ? 0x00ff88 : 0xff4444;
+
+    group.children.forEach(child => {
+        if (child.type === 'Group') {
+            // This is the atmosphere group
+            child.children.forEach(glowMesh => {
+                if (glowMesh.material && glowMesh.material.color) {
+                    gsap.to(glowMesh.material.color, {
+                        r: ((glowColor >> 16) & 255) / 255,
+                        g: ((glowColor >> 8) & 255) / 255,
+                        b: (glowColor & 255) / 255,
+                        duration: PLANET_ANIMATION_DURATION
+                    });
+                    gsap.to(glowMesh.material, {
+                        opacity: 0.2 + intensity * 0.3,
+                        duration: PLANET_ANIMATION_DURATION
+                    });
+                }
+            });
+        }
+    });
+}
+
+function createAnimatedPlanet(ticker, data, index, total, portfolioTotal) {
+    const { value, shares, price, cost_basis } = data;
+
+    // Create a minimal holding object for createPlanet
+    const holding = {
+        ticker: ticker,
+        shares: shares,
+        market_value: value,
+        current_price: price,
+        unrealized_gain_pct: cost_basis ? ((value - cost_basis) / cost_basis) * 100 : 0
+    };
+
+    // Create planet (it will be added to scene)
+    const planetGroup = createPlanet(holding, index, total, portfolioTotal);
+
+    // Start with scale 0 and fade in
+    planetGroup.scale.set(0.01, 0.01, 0.01);
+    planetGroup.traverse(child => {
+        if (child.material) {
+            child.material.transparent = true;
+            child.material.opacity = 0;
+        }
+    });
+
+    // Animate scale and opacity
+    gsap.to(planetGroup.scale, {
+        x: 1, y: 1, z: 1,
+        duration: PLANET_ANIMATION_DURATION,
+        ease: "back.out(1.7)"
+    });
+
+    planetGroup.traverse(child => {
+        if (child.material) {
+            gsap.to(child.material, {
+                opacity: child.material.userData?.originalOpacity || 1,
+                duration: PLANET_ANIMATION_DURATION
+            });
+        }
+    });
+}
+
+function fadeOutPlanet(ticker) {
+    const planetData = planets.get(ticker);
+    if (!planetData) return;
+
+    const group = planetData.group;
+    const orbit = planetData.orbit;
+
+    // Animate scale to 0 and fade out
+    gsap.to(group.scale, {
+        x: 0.01, y: 0.01, z: 0.01,
+        duration: PLANET_ANIMATION_DURATION,
+        ease: "back.in(1.7)",
+        onComplete: () => {
+            // Remove from scene
+            scene.remove(group);
+            if (orbit) scene.remove(orbit);
+            planets.delete(ticker);
+
+            // Dispose geometries and materials
+            group.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+    });
+
+    // Fade out orbit line
+    if (orbit && orbit.material) {
+        gsap.to(orbit.material, {
+            opacity: 0,
+            duration: PLANET_ANIMATION_DURATION
+        });
+    }
+}
+
+function animateCashPlanet(cashBreakdown, totalValue) {
+    if (!planets.has('CASH')) return;
+
+    const planetData = planets.get('CASH');
+    const group = planetData.group;
+
+    // Calculate new size based on cash value
+    const totalCash = cashBreakdown.total || 0;
+    const sizeRatio = totalCash / totalValue;
+    const targetRadius = 0.8 + sizeRatio * 8;
+
+    const planet = group.userData.planet;
+    if (planet) {
+        const targetScale = targetRadius / (planet.geometry.parameters?.radius || 1);
+
+        gsap.to(planet.scale, {
+            x: targetScale,
+            y: targetScale,
+            z: targetScale,
+            duration: PLANET_ANIMATION_DURATION,
+            ease: "power2.inOut"
+        });
+    }
+
+    // Update orbit position (cash stays at fixed orbit distance 8)
+    const targetOrbit = 8;
+    gsap.to(group.userData, {
+        orbitRadius: targetOrbit,
+        duration: PLANET_ANIMATION_DURATION,
+        ease: "power2.inOut",
+        onUpdate: () => {
+            group.position.x = Math.cos(group.userData.orbitAngle) * group.userData.orbitRadius;
+            group.position.z = Math.sin(group.userData.orbitAngle) * group.userData.orbitRadius;
+        }
+    });
 }
 
 function togglePlayback() {
@@ -1335,12 +1865,20 @@ function togglePlayback() {
 window.togglePlayback = togglePlayback;
 
 function startPlaybackAnimation() {
-    const intervalMs = 2000 / playbackSpeed;  // Base: 2 seconds per event
+    const intervalMs = 1500 / playbackSpeed;  // Base: 1.5 seconds per day (faster for daily frames)
 
-    playbackInterval = setInterval(async () => {
-        if (playbackIndex < playbackData.events.length - 1) {
+    // Determine max index based on data type
+    const maxIndex = playbackData.frames ? playbackData.frames.length - 1 : playbackData.events.length - 1;
+
+    playbackInterval = setInterval(() => {
+        if (playbackIndex < maxIndex) {
             playbackIndex++;
-            await updatePlaybackDisplay(playbackIndex);
+            // Use frame-based or event-based display depending on data
+            if (playbackData.frames) {
+                updatePlaybackDisplayFromFrame(playbackIndex);
+            } else {
+                updatePlaybackDisplay(playbackIndex);
+            }
         } else {
             // Reached end
             togglePlayback();
@@ -1374,18 +1912,27 @@ function setPlaybackSpeed(speed) {
 }
 window.setPlaybackSpeed = setPlaybackSpeed;
 
-async function playbackStep(direction) {
+function playbackStep(direction) {
+    const maxIndex = playbackData.frames ? playbackData.frames.length - 1 : playbackData.events.length - 1;
     const newIndex = playbackIndex + direction;
-    if (newIndex >= 0 && newIndex < playbackData.events.length) {
+    if (newIndex >= 0 && newIndex <= maxIndex) {
         playbackIndex = newIndex;
-        await updatePlaybackDisplay(playbackIndex);
+        if (playbackData.frames) {
+            updatePlaybackDisplayFromFrame(playbackIndex);
+        } else {
+            updatePlaybackDisplay(playbackIndex);
+        }
     }
 }
 window.playbackStep = playbackStep;
 
-async function onSliderChange(value) {
+function onSliderChange(value) {
     playbackIndex = parseInt(value);
-    await updatePlaybackDisplay(playbackIndex);
+    if (playbackData.frames) {
+        updatePlaybackDisplayFromFrame(playbackIndex);
+    } else {
+        updatePlaybackDisplay(playbackIndex);
+    }
 }
 window.onSliderChange = onSliderChange;
 
@@ -1405,6 +1952,115 @@ function toggleLegend() {
     }
 }
 window.toggleLegend = toggleLegend;
+
+// ==================== AI INSIGHTS FUNCTIONALITY ====================
+
+let insightsMinimized = false;
+
+function toggleInsights() {
+    const panel = document.getElementById('insights-panel');
+    const icon = document.getElementById('insights-toggle-icon');
+    insightsMinimized = !insightsMinimized;
+
+    if (insightsMinimized) {
+        panel.classList.add('minimized');
+        icon.textContent = '+';
+    } else {
+        panel.classList.remove('minimized');
+        icon.textContent = '−';
+    }
+}
+window.toggleInsights = toggleInsights;
+
+async function fetchInsights() {
+    const loadingEl = document.getElementById('insights-loading');
+    const listEl = document.getElementById('insights-list');
+    const timestampEl = document.getElementById('insights-timestamp');
+    const panel = document.getElementById('insights-panel');
+
+    // Show loading state
+    loadingEl.style.display = 'flex';
+    listEl.style.display = 'none';
+    panel.classList.add('loading');
+
+    try {
+        const response = await fetch('/api/research/insights');
+        if (!response.ok) throw new Error('Failed to fetch insights');
+
+        const data = await response.json();
+
+        // Build HTML for insights
+        let html = '';
+
+        // Dexter analysis if available
+        if (data.dexter_analysis) {
+            html += `
+                <div class="dexter-analysis">
+                    <div class="dexter-header">
+                        <span class="dexter-badge">Dexter</span>
+                        <span class="dexter-ticker">${data.dexter_analysis.ticker} Analysis</span>
+                    </div>
+                    <div class="dexter-text">${escapeHtml(data.dexter_analysis.analysis)}</div>
+                </div>
+            `;
+        }
+
+        // Regular insights
+        if (data.insights && data.insights.length > 0) {
+            for (const insight of data.insights) {
+                const type = insight.type || 'info';
+                const icon = type === 'risk' ? '⚠' : type === 'opportunity' ? '✦' : 'ℹ';
+
+                html += `
+                    <div class="insight-card ${type}">
+                        <div class="insight-header">
+                            <div class="insight-icon">${icon}</div>
+                            <div class="insight-title">${escapeHtml(insight.title)}</div>
+                        </div>
+                        <div class="insight-text">${escapeHtml(insight.insight)}</div>
+                    </div>
+                `;
+            }
+        } else {
+            html = '<div class="insight-card info"><div class="insight-text">No insights available. Add some holdings to get started!</div></div>';
+        }
+
+        listEl.innerHTML = html;
+
+        // Update timestamp
+        const now = new Date();
+        timestampEl.textContent = `Updated ${now.toLocaleTimeString()}`;
+
+    } catch (error) {
+        console.error('Error fetching insights:', error);
+        listEl.innerHTML = `
+            <div class="insight-card risk">
+                <div class="insight-header">
+                    <div class="insight-icon">⚠</div>
+                    <div class="insight-title">Error Loading Insights</div>
+                </div>
+                <div class="insight-text">Could not fetch AI insights. Check LLM configuration.</div>
+            </div>
+        `;
+        timestampEl.textContent = 'Failed to load';
+    } finally {
+        // Hide loading, show content
+        loadingEl.style.display = 'none';
+        listEl.style.display = 'block';
+        panel.classList.remove('loading');
+    }
+}
+
+function refreshInsights() {
+    fetchInsights();
+}
+window.refreshInsights = refreshInsights;
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 // ==================== CHAT FUNCTIONALITY ====================
 
@@ -1533,15 +2189,18 @@ window.toggleSettings = toggleSettings;
 
 function onProviderChange() {
     const provider = document.getElementById('llm-provider').value;
+    const apiKeyGroup = document.getElementById('api-key-group');
     const claudeGroup = document.getElementById('claude-model-group');
     const localUrlGroup = document.getElementById('local-url-group');
     const localModelGroup = document.getElementById('local-model-group');
 
     if (provider === 'claude') {
+        apiKeyGroup.style.display = 'block';
         claudeGroup.style.display = 'block';
         localUrlGroup.style.display = 'none';
         localModelGroup.style.display = 'none';
     } else {
+        apiKeyGroup.style.display = 'none';
         claudeGroup.style.display = 'none';
         localUrlGroup.style.display = 'block';
         localModelGroup.style.display = 'block';
@@ -1558,6 +2217,9 @@ async function loadLLMSettings() {
         document.getElementById('claude-model').value = data.claude_model;
         document.getElementById('local-url').value = data.local_url;
         document.getElementById('local-model').value = data.local_model;
+
+        // Show API key status
+        updateApiKeyStatus(data.has_api_key);
 
         onProviderChange();
 
@@ -1636,20 +2298,32 @@ async function saveLLMSettings() {
     const claudeModel = document.getElementById('claude-model').value;
     const localUrl = document.getElementById('local-url').value;
     const localModel = document.getElementById('local-model').value;
+    const apiKey = document.getElementById('api-key').value;
+
+    const payload = {
+        provider: provider,
+        claude_model: claudeModel,
+        local_url: localUrl,
+        local_model: localModel
+    };
+
+    // Only include API key if it was entered (not empty)
+    if (apiKey && apiKey.trim()) {
+        payload.api_key = apiKey.trim();
+    }
 
     try {
         const response = await fetch('/api/config/llm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                provider: provider,
-                claude_model: claudeModel,
-                local_url: localUrl,
-                local_model: localModel
-            })
+            body: JSON.stringify(payload)
         });
 
         if (response.ok) {
+            const data = await response.json();
+            // Clear the API key field after saving
+            document.getElementById('api-key').value = '';
+            updateApiKeyStatus(data.has_api_key);
             showSettingsStatus('Settings saved successfully!', 'success');
             // Refresh status indicator after saving
             setTimeout(() => refreshLLMStatus(), 500);
@@ -1662,6 +2336,15 @@ async function saveLLMSettings() {
     }
 }
 window.saveLLMSettings = saveLLMSettings;
+
+function updateApiKeyStatus(hasKey) {
+    const statusEl = document.getElementById('api-key-status');
+    if (hasKey) {
+        statusEl.innerHTML = '<span style="color: #00ff88;">✓ API key configured</span>';
+    } else {
+        statusEl.innerHTML = '<span style="color: #ff4444;">✗ No API key set</span>';
+    }
+}
 
 async function testLLM() {
     showSettingsStatus('Testing connection...', '');
@@ -1925,6 +2608,9 @@ async function main() {
         portfolioData.holdings.forEach((holding, index) => {
             createPlanet(holding, index, portfolioData.holdings.length, totalValue);
         });
+
+        // Fetch AI insights in background (non-blocking)
+        fetchInsights();
     } else {
         document.getElementById('loading').innerHTML = `
             <p style="color: #ff4444;">Failed to load portfolio data.</p>

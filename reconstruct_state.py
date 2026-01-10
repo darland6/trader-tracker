@@ -147,24 +147,30 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
         elif event_type == 'OPTION_OPEN':
             state['active_options'].append({
                 'event_id': event['event_id'],
+                'position_id': data.get('position_id', ''),
                 'ticker': data['ticker'],
                 'strategy': data['strategy'],
                 'strike': data['strike'],
                 'expiration': data['expiration'],
-                'contracts': data['contracts'],
-                'premium': data['total_premium']
+                'contracts': data.get('contracts', 1),
+                'total_premium': data.get('total_premium', data.get('premium', 0))
             })
             
-            premium = data['total_premium']
+            premium = data.get('total_premium', data.get('premium', 0))
             state['ytd_option_income'] += premium
             state['ytd_income'] += premium
             state['cash'] += event['cash_delta']
         
         elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
-            # Remove from active options
+            # Remove from active options (try position_id first, then event_id)
+            position_id = data.get('position_id')
             option_id = data.get('option_id')
-            state['active_options'] = [opt for opt in state['active_options']
-                                      if opt['event_id'] != option_id]
+            if position_id:
+                state['active_options'] = [opt for opt in state['active_options']
+                                          if opt.get('position_id') != position_id]
+            elif option_id:
+                state['active_options'] = [opt for opt in state['active_options']
+                                          if opt['event_id'] != option_id]
 
             # Track profit
             profit = data.get('profit', 0)

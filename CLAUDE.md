@@ -4,6 +4,29 @@
 
 ---
 
+## Session Start Instructions
+
+**At the start of each new Claude Code session, read `CHANGELOG.md` to understand recent changes and current state of the project.**
+
+Key files to review:
+- `CHANGELOG.md` - Recent changes, new features, and bug fixes
+- `data/event_log_enhanced.csv` - Current portfolio events (source of truth)
+- `portfolio.db` - SQLite database (synced from CSV)
+
+Quick status commands:
+```bash
+# Check server status
+curl -s http://localhost:8000/api/state | python3 -m json.tool | head -20
+
+# View recent events
+curl -s http://localhost:8000/api/events?limit=5
+
+# Run tests
+python -m pytest tests/ -v
+```
+
+---
+
 ## Project Statistics
 
 | Metric | Value |
@@ -201,6 +224,7 @@ event_id,timestamp,event_type,data_json,reason_json,notes,tags_json,affects_cash
 | `NOTE` | Journal entry | content |
 | `GOAL_UPDATE` | Income goal change | annual_goal |
 | `STRATEGY_UPDATE` | Strategy change | strategy_name, details |
+| `INSIGHT_LOG` | Daily AI usage log | date, run_count, first_run, last_run, last_model, event_types |
 
 ### AI Insights (in reason_json)
 ```json

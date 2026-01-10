@@ -172,27 +172,63 @@ async def cash_page(request: Request):
 
 
 @router.get("/events", response_class=HTMLResponse)
-async def events_page(request: Request, event_type: str = None):
-    """Event history page."""
+async def events_page(request: Request, event_type: str = None, t: str = None):
+    """Event history page.
+
+    Args:
+        t: Cache-busting timestamp parameter (ignored but allows cache bypass)
+    """
     sync_csv_to_db()
     events = get_all_events(limit=100, event_type=event_type if event_type else None)
     formatted_events = [format_event(e) for e in events]
+
+    # Track which options have been closed
+    closed_option_ids = set()
+    closed_position_ids = set()
+
+    for e in formatted_events:
+        if e['event_type'] in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
+            if e['data'].get('option_id'):
+                closed_option_ids.add(e['data']['option_id'])
+            if e['data'].get('position_id'):
+                closed_position_ids.add(e['data']['position_id'])
+
+    # Mark closed options in OPTION_OPEN events (only if status not already set)
+    for e in formatted_events:
+        if e['event_type'] == 'OPTION_OPEN':
+            # Don't overwrite if status was manually set in CSV
+            if 'status' not in e['data']:
+                is_closed = (
+                    e['event_id'] in closed_option_ids or
+                    e['data'].get('position_id') in closed_position_ids
+                )
+                if is_closed:
+                    e['data']['status'] = 'CLOSED'
+                else:
+                    e['data']['status'] = 'OPEN'
 
     # Check if this is an HTMX request - return only the table partial
     is_htmx = request.headers.get("HX-Request") == "true"
 
     if is_htmx:
-        return templates.TemplateResponse("partials/events_table.html", {
+        response = templates.TemplateResponse("partials/events_table.html", {
             "request": request,
             "events": formatted_events
         })
+    else:
+        response = templates.TemplateResponse("events.html", {
+            "request": request,
+            "events": formatted_events,
+            "selected_type": event_type,
+            "active": "events"
+        })
 
-    return templates.TemplateResponse("events.html", {
-        "request": request,
-        "events": formatted_events,
-        "selected_type": event_type,
-        "active": "events"
-    })
+    # Prevent caching to ensure fresh data after edits
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    return response
 
 
 @router.get("/settings", response_class=HTMLResponse)

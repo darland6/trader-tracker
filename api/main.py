@@ -15,7 +15,10 @@ from pathlib import Path
 import json
 
 from api.database import init_database, sync_csv_to_db
-from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup
+from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications
+
+# Static files directory
+STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
 
 # Initialize app
 app = FastAPI(
@@ -51,7 +54,18 @@ app.include_router(research.router)  # Dexter financial research
 app.include_router(config.router)  # LLM configuration
 app.include_router(history.router)  # History playback
 app.include_router(setup.router)  # Setup and initialization
+app.include_router(notifications.router)  # Agent notifications
 app.include_router(web.router)  # Web UI routes
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve favicon."""
+    favicon_path = STATIC_DIR / "favicon.svg"
+    if favicon_path.exists():
+        return FileResponse(favicon_path, media_type="image/svg+xml")
+    return FileResponse(status_code=204)  # No content
+
 
 # WebSocket connection manager for real-time updates
 class ConnectionManager:
@@ -92,10 +106,33 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
+async def do_price_update():
+    """Perform price update for scheduler."""
+    from api.routes.prices import update_prices
+    try:
+        result = await update_prices(save_to_log=True)
+        return result.data if result else None
+    except Exception as e:
+        print(f"[Scheduler] Price update failed: {e}")
+        return None
+
+
+async def do_alert_check():
+    """Perform alert check for scheduler."""
+    from api.services.alerts import run_all_alert_checks
+    try:
+        return run_all_alert_checks()
+    except Exception as e:
+        print(f"[Scheduler] Alert check failed: {e}")
+        return None
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and sync on startup if data exists."""
     from pathlib import Path
+    from api.services.scheduler import scheduler
+
     SCRIPT_DIR = Path(__file__).parent.parent.resolve()
     CSV_PATH = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
 
@@ -106,6 +143,21 @@ async def startup_event():
     else:
         # Just create empty database schema
         init_database()
+
+    # Configure and start scheduler
+    scheduler.set_callbacks(
+        price_update=do_price_update,
+        alert_check=do_alert_check,
+        broadcast=manager.broadcast
+    )
+    scheduler.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    from api.services.scheduler import scheduler
+    scheduler.stop()
 
 
 @app.get("/")

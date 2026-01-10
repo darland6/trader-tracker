@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from llm.config import get_llm_config, update_config, LLMConfig
+from llm.config import get_llm_config, update_config, save_api_key, LLMConfig
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -18,6 +18,7 @@ class LLMConfigUpdate(BaseModel):
     claude_model: str | None = None
     local_url: str | None = None
     local_model: str | None = None
+    api_key: str | None = None  # Anthropic API key
 
 
 class LLMConfigResponse(BaseModel):
@@ -66,7 +67,14 @@ async def set_config(update: LLMConfigUpdate):
     if update.local_model is not None:
         updates["local_model"] = update.local_model
 
+    # Save API key separately to .env file
+    if update.api_key is not None and update.api_key.strip():
+        save_api_key(update.api_key.strip())
+
     config = update_config(**updates)
+
+    # Reload config to get updated API key status
+    config = get_llm_config()
 
     return LLMConfigResponse(
         provider=config.provider,

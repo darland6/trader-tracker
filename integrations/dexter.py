@@ -29,15 +29,25 @@ DEXTER_PATH = os.getenv('DEXTER_PATH', str(Path(__file__).parent.parent.parent /
 
 
 def get_dexter_env() -> dict:
-    """Build environment variables for Dexter, including local LLM config if enabled."""
+    """Build environment variables for Dexter, matching the portfolio LLM config."""
     env = {**os.environ}
 
     try:
-        # Import LLM config to check if using local LLM
+        # Import LLM config to sync Dexter with portfolio settings
         from llm.config import get_llm_config
         config = get_llm_config()
 
-        if config.provider == "local" and config.local_url:
+        if config.provider == "claude":
+            # Configure Dexter to use Claude/Anthropic API
+            if config.anthropic_api_key:
+                env['ANTHROPIC_API_KEY'] = config.anthropic_api_key
+            env['ANTHROPIC_MODEL'] = config.claude_model
+            # Clear any local LLM settings that might override
+            env.pop('OPENAI_API_BASE', None)
+            env.pop('OPENAI_BASE_URL', None)
+            env.pop('LLM_BASE_URL', None)
+
+        elif config.provider == "local" and config.local_url:
             # Configure Dexter to use the local LLM via OpenAI-compatible API
             env['OPENAI_API_BASE'] = config.local_url
             env['OPENAI_BASE_URL'] = config.local_url
@@ -47,6 +57,9 @@ def get_dexter_env() -> dict:
             # Some frameworks use these alternative names
             env['LLM_BASE_URL'] = config.local_url
             env['LLM_MODEL'] = config.local_model
+
+            # Clear Anthropic settings when using local
+            env.pop('ANTHROPIC_API_KEY', None)
 
     except ImportError:
         pass  # LLM module not available, use default env
@@ -88,8 +101,9 @@ def get_dexter_status() -> dict:
         "has_node_modules": False,
         "has_env": False,
         "ready": False,
-        "using_local_llm": False,
-        "local_llm_url": None
+        "llm_provider": None,
+        "llm_model": None,
+        "llm_url": None
     }
 
     if dexter_dir.exists():
@@ -103,13 +117,17 @@ def get_dexter_status() -> dict:
             status["has_env"]
         ])
 
-    # Check if local LLM is configured
+    # Show which LLM provider Dexter will use (synced with portfolio config)
     try:
         from llm.config import get_llm_config
         config = get_llm_config()
-        if config.provider == "local" and config.local_url:
-            status["using_local_llm"] = True
-            status["local_llm_url"] = config.local_url
+        status["llm_provider"] = config.provider
+        if config.provider == "claude":
+            status["llm_model"] = config.claude_model
+            status["llm_url"] = "api.anthropic.com"
+        elif config.provider == "local":
+            status["llm_model"] = config.local_model
+            status["llm_url"] = config.local_url
     except ImportError:
         pass
 

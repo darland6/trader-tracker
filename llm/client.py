@@ -2,15 +2,93 @@
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import Optional
+import pandas as pd
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from .config import get_llm_config, LLMConfig
 from .prompts import INSIGHT_SYSTEM_PROMPT, build_event_context
+
+# Path to event log
+SCRIPT_DIR = Path(__file__).parent.parent.resolve()
+EVENT_LOG = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
+
+
+def _log_daily_insight_usage(event_type: str, model: str):
+    """Log insight generation - one event per day with run count.
+
+    Creates an INSIGHT_LOG event for today if none exists,
+    otherwise updates the existing one with incremented count.
+    """
+    try:
+        if not EVENT_LOG.exists():
+            return
+
+        df = pd.read_csv(EVENT_LOG)
+        today = date.today().isoformat()
+
+        # Check if we already have an INSIGHT_LOG for today
+        df['data'] = df['data_json'].apply(lambda x: json.loads(x) if pd.notna(x) else {})
+        today_logs = df[
+            (df['event_type'] == 'INSIGHT_LOG') &
+            (df['data'].apply(lambda x: x.get('date') == today))
+        ]
+
+        if len(today_logs) > 0:
+            # Update existing log - increment count
+            idx = today_logs.index[0]
+            existing_data = today_logs.iloc[0]['data']
+            existing_data['run_count'] = existing_data.get('run_count', 1) + 1
+            existing_data['last_run'] = datetime.now().strftime('%H:%M:%S')
+            existing_data['last_model'] = model
+            existing_data['last_event_type'] = event_type
+
+            # Track event types processed
+            event_types = existing_data.get('event_types', [])
+            if event_type not in event_types:
+                event_types.append(event_type)
+            existing_data['event_types'] = event_types
+
+            df.at[idx, 'data_json'] = json.dumps(existing_data)
+            df.at[idx, 'notes'] = f"AI insights generated {existing_data['run_count']} times today"
+            df = df.drop('data', axis=1)
+            df.to_csv(EVENT_LOG, index=False)
+        else:
+            # Create new daily log
+            df = df.drop('data', axis=1)
+            event_id = int(df['event_id'].max()) + 1
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            new_row = {
+                'event_id': event_id,
+                'timestamp': timestamp,
+                'event_type': 'INSIGHT_LOG',
+                'data_json': json.dumps({
+                    'date': today,
+                    'run_count': 1,
+                    'first_run': datetime.now().strftime('%H:%M:%S'),
+                    'last_run': datetime.now().strftime('%H:%M:%S'),
+                    'last_model': model,
+                    'last_event_type': event_type,
+                    'event_types': [event_type]
+                }),
+                'reason_json': json.dumps({'primary': 'SYSTEM', 'explanation': 'Daily AI insight usage log'}),
+                'notes': 'AI insights generated 1 time today',
+                'tags_json': json.dumps(['system', 'ai', 'insights']),
+                'affects_cash': False,
+                'cash_delta': 0
+            }
+
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            df.to_csv(EVENT_LOG, index=False)
+
+    except Exception as e:
+        # Don't let logging failures break insight generation
+        print(f"[LLM] Failed to log insight usage: {e}")
 
 
 class LLMClient:
@@ -69,9 +147,16 @@ class LLMClient:
 
         try:
             if self.config.provider == "claude":
-                return self._call_claude(context)
+                result = self._call_claude(context)
             else:
-                return self._call_local(context)
+                result = self._call_local(context)
+
+            # Log successful insight generation (once per day)
+            if result and not result.get('parse_error'):
+                model = result.get('model', self.config.provider)
+                _log_daily_insight_usage(event_type, model)
+
+            return result
         except Exception as e:
             print(f"[LLM Warning] Failed to generate insights: {e}")
             return {}

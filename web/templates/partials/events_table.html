@@ -41,19 +41,40 @@
                         {{ event.data.get('shares', '') }} {{ event.data.get('ticker', '') }}
                         @ ${{ event.data.get('price', 0) }}
                     {% elif event.event_type == 'OPTION_OPEN' %}
-                        {{ event.data.get('ticker', '') }} ${{ event.data.get('strike', '') }}
-                        {{ event.data.get('strategy', '') }}
+                        <div>
+                            <span class="font-bold">{{ event.data.get('ticker', '') }}</span>
+                            ${{ event.data.get('strike', '') }} {{ event.data.get('strategy', '') }}
+                        </div>
+                        <div class="text-xs text-base-content/60">
+                            Exp: {{ event.data.get('expiration', 'N/A') }} |
+                            Premium: <span class="gain-positive">${{ "{:,.0f}".format(event.data.get('total_premium', event.data.get('premium', 0))) }}</span>
+                            {% if event.data.get('status') == 'CLOSED' %}
+                                | <span class="text-error">CLOSED</span>
+                            {% endif %}
+                        </div>
                     {% elif event.event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN'] %}
-                        Option #{{ event.data.get('option_id', '') }}
-                        {% if event.data.get('profit') %}
-                            <span class="{% if event.data.profit > 0 %}gain-positive{% else %}gain-negative{% endif %}">
-                                ${{ "{:,.0f}".format(event.data.profit) }}
-                            </span>
-                        {% endif %}
+                        <div>
+                            <span class="font-bold">{{ event.data.get('ticker', '') }}</span>
+                            ${{ event.data.get('strike', '') }}
+                            {% if event.event_type == 'OPTION_EXPIRE' %}(Expired){% elif event.event_type == 'OPTION_ASSIGN' %}(Assigned){% else %}(Closed){% endif %}
+                        </div>
+                        <div class="text-xs">
+                            Original #{{ event.data.get('option_id', '') }}
+                            {% if event.data.get('profit') %}
+                                | Profit: <span class="{% if event.data.profit > 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                    ${{ "{:,.0f}".format(event.data.profit) }}
+                                </span>
+                            {% endif %}
+                        </div>
                     {% elif event.event_type in ['DEPOSIT', 'WITHDRAWAL'] %}
                         ${{ "{:,.2f}".format(event.data.get('amount', 0)) }}
                     {% elif event.event_type == 'PRICE_UPDATE' %}
-                        {{ event.data.get('prices', {})|length }} tickers updated
+                        <div>{{ event.data.get('prices', {})|length }} tickers updated</div>
+                        {% if event.data.get('portfolio_change') is not none %}
+                        <div class="text-xs {% if event.data.portfolio_change >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                            Portfolio: {{ "{:+,.0f}".format(event.data.portfolio_change) }} ({{ "{:+.1f}".format(event.data.portfolio_change_pct) }}%)
+                        </div>
+                        {% endif %}
                     {% else %}
                         {{ event.data|string|truncate(50) }}
                     {% endif %}
@@ -87,6 +108,8 @@
         data: {{ event.data | tojson }},
         reason: {{ event.reason | tojson }},
         notes: "{{ event.notes | replace('"', '\\"') | replace('\n', '\\n') }}",
+        tags: {{ event.tags | tojson }},
+        affects_cash: {{ 'true' if event.affects_cash else 'false' }},
         cash_delta: {{ event.cash_delta }}
     };
     {% endfor %}

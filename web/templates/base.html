@@ -36,7 +36,127 @@
                 <li><a href="/trade" class="{% if active == 'trade' %}active{% endif %}">Trade</a></li>
                 <li><a href="/options" class="{% if active == 'options' %}active{% endif %}">Options</a></li>
                 <li><a href="/cash" class="{% if active == 'cash' %}active{% endif %}">Cash</a></li>
+                <li>
+                    <a href="/dashboard" class="text-primary font-semibold gap-1" title="3D Portfolio View">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                        </svg>
+                        3D View
+                    </a>
+                </li>
             </ul>
+            <!-- Notification Bell -->
+            <div class="dropdown dropdown-end" x-data="notificationBell()">
+                <button @click="toggleDropdown()" class="btn btn-ghost btn-circle ml-2">
+                    <div class="indicator">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                        <span x-show="counts.total > 0" x-text="counts.total"
+                              class="badge badge-xs badge-error indicator-item"></span>
+                    </div>
+                </button>
+                <div x-show="isOpen" @click.outside="isOpen = false"
+                     x-transition
+                     class="dropdown-content z-[100] menu p-0 shadow-xl bg-base-100 rounded-box w-96 mt-2">
+                    <!-- Header -->
+                    <div class="flex items-center justify-between px-4 py-3 border-b border-base-300">
+                        <span class="font-bold">Notifications</span>
+                        <div class="flex gap-2">
+                            <button @click="refreshNotifications()" class="btn btn-ghost btn-xs">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                            <button @click="runAlertCheck()" class="btn btn-ghost btn-xs" title="Check for new alerts">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Notification List -->
+                    <div class="max-h-96 overflow-y-auto">
+                        <template x-if="notifications.length === 0">
+                            <div class="px-4 py-8 text-center text-base-content/60">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p>No notifications</p>
+                            </div>
+                        </template>
+
+                        <template x-for="notification in notifications" :key="notification.id">
+                            <div class="border-b border-base-300 last:border-b-0">
+                                <div class="px-4 py-3 hover:bg-base-200 cursor-pointer"
+                                     :class="{'bg-base-200/50': !notification.read_at}">
+                                    <div class="flex items-start gap-3">
+                                        <!-- Severity Icon -->
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <template x-if="notification.severity === 'urgent'">
+                                                <div class="badge badge-error badge-sm">!</div>
+                                            </template>
+                                            <template x-if="notification.severity === 'warning'">
+                                                <div class="badge badge-warning badge-sm">!</div>
+                                            </template>
+                                            <template x-if="notification.severity === 'info'">
+                                                <div class="badge badge-info badge-sm">i</div>
+                                            </template>
+                                        </div>
+
+                                        <!-- Content -->
+                                        <div class="flex-grow min-w-0">
+                                            <p class="font-medium text-sm" x-text="notification.title"></p>
+                                            <p class="text-xs text-base-content/60 mt-1" x-text="notification.message"></p>
+                                            <p class="text-xs text-base-content/40 mt-1" x-text="formatTime(notification.created_at)"></p>
+                                        </div>
+
+                                        <!-- Actions -->
+                                        <div class="flex-shrink-0 flex gap-1">
+                                            <button @click.stop="snoozeNotification(notification.id)"
+                                                    class="btn btn-ghost btn-xs" title="Snooze 24h">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </button>
+                                            <button @click.stop="dismissNotification(notification.id)"
+                                                    class="btn btn-ghost btn-xs" title="Dismiss">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Action Buttons -->
+                                    <template x-if="notification.action_type">
+                                        <div class="mt-2 flex gap-2">
+                                            <template x-if="notification.action_type === 'option_action'">
+                                                <a :href="'/options#event-' + notification.data.option_event_id"
+                                                   class="btn btn-primary btn-xs">Review Option</a>
+                                            </template>
+                                            <template x-if="notification.action_type === 'view_position'">
+                                                <a :href="'/events?ticker=' + notification.data.ticker"
+                                                   class="btn btn-primary btn-xs">View Position</a>
+                                            </template>
+                                            <template x-if="notification.action_type === 'rebalance'">
+                                                <a href="/trade" class="btn btn-primary btn-xs">Trade</a>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="px-4 py-2 border-t border-base-300 bg-base-200/50">
+                        <a href="/agent" class="btn btn-ghost btn-sm btn-block">View Agent Center</a>
+                    </div>
+                </div>
+            </div>
+
             <button class="btn btn-primary btn-sm ml-2"
                     hx-post="/api/prices/update"
                     hx-swap="none"
@@ -86,6 +206,159 @@
                 style: 'currency',
                 currency: 'USD'
             }).format(num);
+        }
+
+        // Notification Bell Alpine Component
+        function notificationBell() {
+            return {
+                isOpen: false,
+                notifications: [],
+                counts: { total: 0, urgent: 0, warning: 0, info: 0 },
+                ws: null,
+                wsConnected: false,
+
+                init() {
+                    this.refreshNotifications();
+                    this.connectWebSocket();
+                    // Auto-refresh every 60 seconds as fallback
+                    setInterval(() => this.refreshCounts(), 60000);
+                },
+
+                connectWebSocket() {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+                    try {
+                        this.ws = new WebSocket(wsUrl);
+
+                        this.ws.onopen = () => {
+                            this.wsConnected = true;
+                            console.log('[Notifications] WebSocket connected');
+                        };
+
+                        this.ws.onmessage = (event) => {
+                            try {
+                                const message = JSON.parse(event.data);
+                                this.handleWebSocketMessage(message);
+                            } catch (e) {
+                                console.error('[Notifications] Failed to parse message:', e);
+                            }
+                        };
+
+                        this.ws.onclose = () => {
+                            this.wsConnected = false;
+                            console.log('[Notifications] WebSocket disconnected, reconnecting in 5s...');
+                            setTimeout(() => this.connectWebSocket(), 5000);
+                        };
+
+                        this.ws.onerror = (error) => {
+                            console.error('[Notifications] WebSocket error:', error);
+                        };
+                    } catch (e) {
+                        console.error('[Notifications] Failed to connect WebSocket:', e);
+                    }
+                },
+
+                handleWebSocketMessage(message) {
+                    if (message.type === 'new_notifications') {
+                        // New notifications created - refresh
+                        this.refreshNotifications();
+                        showToast(`${message.count} new alert(s)`, 'info');
+                    } else if (message.type === 'price_update') {
+                        // Price update received
+                        const change = message.data?.portfolio_change || 0;
+                        const changePct = message.data?.portfolio_change_pct || 0;
+                        if (Math.abs(change) > 0) {
+                            const sign = change >= 0 ? '+' : '';
+                            showToast(`Portfolio ${sign}$${Math.abs(change).toFixed(0)} (${sign}${changePct.toFixed(1)}%)`,
+                                      change >= 0 ? 'success' : 'info');
+                        }
+                    }
+                },
+
+                toggleDropdown() {
+                    this.isOpen = !this.isOpen;
+                    if (this.isOpen) {
+                        this.refreshNotifications();
+                    }
+                },
+
+                async refreshNotifications() {
+                    try {
+                        const response = await fetch('/api/notifications');
+                        const data = await response.json();
+                        this.notifications = data.notifications || [];
+                        this.counts = data.counts || { total: 0 };
+                    } catch (error) {
+                        console.error('Failed to fetch notifications:', error);
+                    }
+                },
+
+                async refreshCounts() {
+                    try {
+                        const response = await fetch('/api/notifications/count');
+                        this.counts = await response.json();
+                    } catch (error) {
+                        console.error('Failed to fetch notification counts:', error);
+                    }
+                },
+
+                async runAlertCheck() {
+                    try {
+                        const response = await fetch('/api/notifications/check', { method: 'POST' });
+                        const data = await response.json();
+                        if (data.results.total_created > 0) {
+                            showToast(`Created ${data.results.total_created} new alerts`, 'success');
+                        } else {
+                            showToast('No new alerts', 'info');
+                        }
+                        this.refreshNotifications();
+                    } catch (error) {
+                        showToast('Failed to check alerts', 'error');
+                    }
+                },
+
+                async dismissNotification(id) {
+                    try {
+                        await fetch(`/api/notifications/${id}/dismiss`, { method: 'POST' });
+                        this.notifications = this.notifications.filter(n => n.id !== id);
+                        this.counts.total = Math.max(0, this.counts.total - 1);
+                    } catch (error) {
+                        showToast('Failed to dismiss notification', 'error');
+                    }
+                },
+
+                async snoozeNotification(id) {
+                    try {
+                        await fetch(`/api/notifications/${id}/snooze`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ hours: 24 })
+                        });
+                        this.notifications = this.notifications.filter(n => n.id !== id);
+                        this.counts.total = Math.max(0, this.counts.total - 1);
+                        showToast('Snoozed for 24 hours', 'info');
+                    } catch (error) {
+                        showToast('Failed to snooze notification', 'error');
+                    }
+                },
+
+                formatTime(timestamp) {
+                    if (!timestamp) return '';
+                    const date = new Date(timestamp);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+
+                    if (diffMins < 1) return 'Just now';
+                    if (diffMins < 60) return `${diffMins}m ago`;
+                    if (diffHours < 24) return `${diffHours}h ago`;
+                    if (diffDays < 7) return `${diffDays}d ago`;
+                    return date.toLocaleDateString();
+                }
+            };
         }
     </script>
 </body>

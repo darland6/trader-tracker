@@ -84,9 +84,43 @@ def save_config(config: LLMConfig) -> None:
         'timeout': config.timeout,
         'max_history_events': config.max_history_events
     }
-    # Don't save API keys to file - use environment variables
+    # Don't save API keys to JSON - use .env file
     with open(CONFIG_FILE, 'w') as f:
         json.dump(data, f, indent=2)
+
+
+def save_api_key(api_key: str) -> None:
+    """Save Anthropic API key to .env file."""
+    env_file = CONFIG_DIR / ".env"
+
+    # Read existing .env content
+    env_lines = []
+    if env_file.exists():
+        with open(env_file) as f:
+            env_lines = f.readlines()
+
+    # Update or add ANTHROPIC_API_KEY
+    key_found = False
+    new_lines = []
+    for line in env_lines:
+        if line.strip().startswith('ANTHROPIC_API_KEY='):
+            new_lines.append(f'ANTHROPIC_API_KEY={api_key}\n')
+            key_found = True
+        else:
+            new_lines.append(line)
+
+    if not key_found:
+        # Add header comment if file is new
+        if not new_lines:
+            new_lines.append('# LLM Configuration\n')
+        new_lines.append(f'ANTHROPIC_API_KEY={api_key}\n')
+
+    # Write back
+    with open(env_file, 'w') as f:
+        f.writelines(new_lines)
+
+    # Update environment variable for current process
+    os.environ['ANTHROPIC_API_KEY'] = api_key
 
 
 def get_llm_config() -> LLMConfig:

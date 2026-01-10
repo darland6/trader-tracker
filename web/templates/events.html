@@ -39,9 +39,111 @@
             <!-- Content will be populated by JavaScript -->
         </div>
         <div class="modal-action">
+            <button class="btn btn-primary" onclick="openEditModal(currentEventId)">Edit</button>
             <form method="dialog">
                 <button class="btn">Close</button>
             </form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<!-- Event Edit Modal -->
+<dialog id="edit-modal" class="modal">
+    <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg mb-4">Edit Event #<span id="edit-event-id"></span></h3>
+        <form id="edit-form" class="space-y-4">
+            <!-- Event Type (read-only) -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Event Type</span>
+                </label>
+                <input type="text" id="edit-event-type" class="input input-bordered" readonly>
+            </div>
+
+            <!-- Data JSON -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Data (JSON)</span>
+                    <span class="label-text-alt text-warning">Affects portfolio calculations</span>
+                </label>
+                <textarea id="edit-data" class="textarea textarea-bordered font-mono text-sm" rows="6"></textarea>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Notes</span>
+                </label>
+                <input type="text" id="edit-notes" class="input input-bordered">
+            </div>
+
+            <!-- Cash Impact (Auto-calculated) -->
+            <div class="bg-base-200 p-3 rounded-lg">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="font-bold">Cash Impact</span>
+                    <span class="badge badge-sm badge-info">Auto-calculated from Data</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" id="edit-affects-cash" class="checkbox" disabled>
+                            <span class="label-text">Affects Cash</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Cash Delta</span>
+                        </label>
+                        <input type="number" id="edit-cash-delta" class="input input-bordered input-sm bg-base-300" step="0.01" readonly>
+                    </div>
+                </div>
+                <p class="text-xs text-base-content/60 mt-2">
+                    Cash delta is automatically recalculated when you save changes to the Data field.
+                </p>
+            </div>
+
+            <!-- Reason JSON -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Reason (JSON)</span>
+                </label>
+                <textarea id="edit-reason" class="textarea textarea-bordered font-mono text-sm" rows="4"></textarea>
+            </div>
+
+            <!-- Tags -->
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Tags (comma-separated)</span>
+                </label>
+                <input type="text" id="edit-tags" class="input input-bordered" placeholder="options, income, tsla">
+            </div>
+
+            <div id="edit-error" class="alert alert-error hidden"></div>
+            <div id="edit-success" class="alert alert-success hidden"></div>
+
+            <div class="modal-action">
+                <button type="button" class="btn btn-error btn-outline" onclick="confirmDelete()">Delete</button>
+                <button type="button" class="btn" onclick="document.getElementById('edit-modal').close()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<!-- Delete Confirmation Modal -->
+<dialog id="delete-modal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg text-error">Delete Event?</h3>
+        <p class="py-4">This will permanently remove event #<span id="delete-event-id"></span> from your event log. This action cannot be undone and may affect portfolio calculations.</p>
+        <div class="modal-action">
+            <button class="btn" onclick="document.getElementById('delete-modal').close()">Cancel</button>
+            <button class="btn btn-error" onclick="deleteEvent()">Delete Permanently</button>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop">
@@ -60,12 +162,17 @@
             data: {{ event.data | tojson }},
             reason: {{ event.reason | tojson }},
             notes: "{{ event.notes | replace('"', '\\"') | replace('\n', '\\n') }}",
+            tags: {{ event.tags | tojson }},
+            affects_cash: {{ 'true' if event.affects_cash else 'false' }},
             cash_delta: {{ event.cash_delta }}
         },
         {% endfor %}
     };
 
+    let currentEventId = null;
+
     function showEventDetails(eventId) {
+        currentEventId = eventId;
         const event = eventsData[eventId];
         if (!event) return;
 
@@ -109,7 +216,7 @@
         `;
 
         // Add AI Insights section if available
-        if (event.reason.ai_insights) {
+        if (event.reason && event.reason.ai_insights) {
             const ai = event.reason.ai_insights;
             html += `
                 <div class="divider">AI Insights</div>
@@ -140,6 +247,152 @@
 
         document.getElementById('event-modal-content').innerHTML = html;
         document.getElementById('event-modal').showModal();
+    }
+
+    function openEditModal(eventId) {
+        console.log('=== Opening Edit Modal ===');
+        console.log('Event ID:', eventId);
+        console.log('eventsData keys:', Object.keys(eventsData));
+
+        const event = eventsData[eventId];
+        console.log('Event from cache:', event ? JSON.stringify(event.data, null, 2) : 'NOT FOUND');
+
+        if (!event) {
+            console.error('Event not found in eventsData!');
+            return;
+        }
+
+        // Close details modal
+        document.getElementById('event-modal').close();
+
+        // Populate edit form
+        document.getElementById('edit-event-id').textContent = eventId;
+        document.getElementById('edit-event-type').value = event.event_type;
+        document.getElementById('edit-data').value = JSON.stringify(event.data, null, 2);
+        document.getElementById('edit-notes').value = event.notes || '';
+        document.getElementById('edit-affects-cash').checked = event.cash_delta !== 0;
+        document.getElementById('edit-cash-delta').value = event.cash_delta || 0;
+        document.getElementById('edit-reason').value = JSON.stringify(event.reason || {}, null, 2);
+        document.getElementById('edit-tags').value = (event.tags || []).join(', ');
+
+        // Clear messages
+        document.getElementById('edit-error').classList.add('hidden');
+        document.getElementById('edit-success').classList.add('hidden');
+
+        document.getElementById('edit-modal').showModal();
+    }
+
+    // Handle form submission
+    document.getElementById('edit-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const eventId = currentEventId;
+        const errorDiv = document.getElementById('edit-error');
+        const successDiv = document.getElementById('edit-success');
+
+        errorDiv.classList.add('hidden');
+        successDiv.classList.add('hidden');
+
+        // Parse JSON fields
+        let data, reason;
+        try {
+            data = JSON.parse(document.getElementById('edit-data').value);
+        } catch (err) {
+            errorDiv.textContent = 'Invalid JSON in Data field: ' + err.message;
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            reason = JSON.parse(document.getElementById('edit-reason').value);
+        } catch (err) {
+            errorDiv.textContent = 'Invalid JSON in Reason field: ' + err.message;
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        // Parse tags
+        const tagsInput = document.getElementById('edit-tags').value;
+        const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+        // Build update payload
+        const payload = {
+            data: data,
+            reason: reason,
+            notes: document.getElementById('edit-notes').value,
+            affects_cash: document.getElementById('edit-affects-cash').checked,
+            cash_delta: parseFloat(document.getElementById('edit-cash-delta').value) || 0,
+            tags: tags
+        };
+
+        // Debug logging
+        console.log('=== Event Update Debug ===');
+        console.log('Event ID:', eventId);
+        console.log('Payload being sent:', JSON.stringify(payload, null, 2));
+        console.log('Data field value:', document.getElementById('edit-data').value);
+
+        try {
+            const response = await fetch(`/api/events/${eventId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Log the result for debugging
+                console.log('=== Update Response ===');
+                console.log('Result:', JSON.stringify(result, null, 2));
+
+                successDiv.textContent = 'Event updated successfully! Refreshing...';
+                successDiv.classList.remove('hidden');
+
+                // Update local data immediately for display
+                eventsData[eventId] = result.event;
+
+                // Force cache-busting reload after short delay
+                setTimeout(() => {
+                    // Use cache-busting query param to ensure fresh data
+                    const newUrl = window.location.pathname + '?t=' + Date.now();
+                    console.log('Reloading to:', newUrl);
+                    window.location.href = newUrl;
+                }, 800);
+            } else {
+                errorDiv.textContent = result.detail || 'Failed to update event';
+                errorDiv.classList.remove('hidden');
+            }
+        } catch (err) {
+            console.error('=== Update Error ===', err);
+            errorDiv.textContent = 'Network error: ' + err.message;
+            errorDiv.classList.remove('hidden');
+        }
+    });
+
+    function confirmDelete() {
+        document.getElementById('delete-event-id').textContent = currentEventId;
+        document.getElementById('delete-modal').showModal();
+    }
+
+    async function deleteEvent() {
+        const eventId = currentEventId;
+
+        try {
+            const response = await fetch(`/api/events/${eventId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                document.getElementById('delete-modal').close();
+                document.getElementById('edit-modal').close();
+                window.location.reload();
+            } else {
+                const result = await response.json();
+                alert('Failed to delete: ' + (result.detail || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Network error: ' + err.message);
+        }
     }
 </script>
 {% endblock %}

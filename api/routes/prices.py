@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import yfinance as yf
 from api.models import ApiResponse
 from cli.events import create_price_update_event
-from api.database import sync_csv_to_db, update_price_cache, get_cached_prices
+from api.database import sync_csv_to_db, update_price_cache, get_cached_prices, compact_price_events
 from reconstruct_state import load_event_log, reconstruct_state
 
 router = APIRouter(prefix="/api", tags=["prices"])
@@ -121,12 +121,16 @@ async def get_prices():
 
 @router.post("/prices/update", response_model=ApiResponse)
 async def update_prices(save_to_log: bool = True):
-    """Fetch live prices and optionally save to event log."""
+    """Fetch live prices and optionally save to event log with gain/loss tracking."""
     try:
-        # Get current holdings
+        # Get current state BEFORE price update to calculate changes
         events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
         state = reconstruct_state(events_df)
-        tickers = list(state.get('holdings', {}).keys())
+
+        # Get old prices from state (reconstructed from events)
+        old_prices = state.get('latest_prices', {})
+        holdings_dict = state.get('holdings', {})  # ticker -> shares
+        tickers = [t for t, s in holdings_dict.items() if s > 0]
 
         # Fetch live prices with extended hours support
         price_data = fetch_live_prices(tickers, include_extended=True)
@@ -137,27 +141,88 @@ async def update_prices(save_to_log: bool = True):
         # Extract just prices for cache and event log
         prices = {ticker: data['price'] for ticker, data in price_data.items()}
 
+        # Calculate portfolio gain/loss from this price update
+        portfolio_before = state.get('portfolio_value', 0)
+        portfolio_after = 0
+        price_changes = {}
+
+        for ticker, new_price in prices.items():
+            old_price = old_prices.get(ticker, new_price)
+            shares = holdings_dict.get(ticker, 0)
+            if shares > 0:
+                portfolio_after += shares * new_price
+                change_pct = ((new_price - old_price) / old_price * 100) if old_price > 0 else 0
+                change_value = shares * (new_price - old_price)
+                price_changes[ticker] = {
+                    'old_price': old_price,
+                    'new_price': new_price,
+                    'change_pct': round(change_pct, 2),
+                    'change_value': round(change_value, 2),
+                    'shares': shares
+                }
+
+        portfolio_change = portfolio_after - portfolio_before
+        portfolio_change_pct = (portfolio_change / portfolio_before * 100) if portfolio_before > 0 else 0
+
         # Update cache with session info
         update_price_cache(price_data)
 
         # Save to event log if requested
         event_id = None
         if save_to_log:
-            event_id = create_price_update_event(prices)
+            event_id = create_price_update_event_with_changes(
+                prices,
+                price_changes,
+                portfolio_before,
+                portfolio_after,
+                portfolio_change,
+                portfolio_change_pct
+            )
             sync_csv_to_db()
+
+            # Compact price events - keep only first and last of each day
+            compacted = compact_price_events()
 
         # Get current market session
         is_open, current_session = is_market_hours()
 
         return ApiResponse(
             success=True,
-            message=f"Updated prices for {len(prices)} tickers",
+            message=f"Updated prices for {len(prices)} tickers (portfolio {'+' if portfolio_change >= 0 else ''}{portfolio_change:,.0f})",
             event_id=event_id,
             data={
                 "prices": price_data,
                 "market_session": current_session,
-                "market_open": is_open
+                "market_open": is_open,
+                "portfolio_change": round(portfolio_change, 2),
+                "portfolio_change_pct": round(portfolio_change_pct, 2),
+                "price_changes": price_changes
             }
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def create_price_update_event_with_changes(prices, price_changes, portfolio_before, portfolio_after, portfolio_change, portfolio_change_pct):
+    """Create a PRICE_UPDATE event with gain/loss information."""
+    from cli.events import append_event
+
+    data = {
+        "prices": prices,
+        "source": "yfinance",
+        "price_changes": price_changes,
+        "portfolio_before": round(portfolio_before, 2),
+        "portfolio_after": round(portfolio_after, 2),
+        "portfolio_change": round(portfolio_change, 2),
+        "portfolio_change_pct": round(portfolio_change_pct, 2)
+    }
+
+    reason = {
+        "primary": "PRICE_UPDATE",
+        "analysis": f"Portfolio {'gained' if portfolio_change >= 0 else 'lost'} ${abs(portfolio_change):,.0f} ({portfolio_change_pct:+.1f}%)"
+    }
+
+    change_str = f"{'+' if portfolio_change >= 0 else ''}{portfolio_change:,.0f}"
+    notes = f"Price update: Portfolio {change_str} ({portfolio_change_pct:+.1f}%)"
+
+    return append_event("PRICE_UPDATE", data, reason, notes, ["prices", "market_data"], False, 0, skip_ai=True)

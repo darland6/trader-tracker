@@ -234,3 +234,72 @@ async def get_all_snapshots(step: int = 1):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/prepared-playback")
+async def get_prepared_playback():
+    """
+    Get fully prepared playback data with historical market prices.
+
+    This endpoint fetches real historical prices from yfinance and generates
+    daily frames showing actual portfolio values at each point in time.
+
+    NOTE: This may take 10-30 seconds to load as it fetches historical data.
+
+    Returns:
+        frames: Daily portfolio snapshots with real market prices
+        events: Original events for reference
+        date_range: Start and end dates
+        tickers: All tickers involved
+        total_frames: Number of daily frames
+        total_events: Number of portfolio events
+    """
+    from api.services.historical_prices import prepare_full_playback
+
+    try:
+        # Get all events
+        events = get_all_events(limit=500)
+
+        # Format events for the playback service
+        formatted_events = []
+        for event in reversed(events):  # Oldest first
+            event_type = event.get('event_type', '')
+            if event_type == 'PRICE_UPDATE':
+                continue  # Skip price updates
+
+            data_json = event.get('data_json', '{}')
+            if isinstance(data_json, str):
+                data = json.loads(data_json)
+            else:
+                data = data_json
+
+            reason_json = event.get('reason_json', '{}')
+            if isinstance(reason_json, str):
+                reason = json.loads(reason_json)
+            else:
+                reason = reason_json
+
+            formatted_events.append({
+                'event_id': event['event_id'],
+                'timestamp': event['timestamp'],
+                'event_type': event_type,
+                'data': data,
+                'reason': reason,
+                'summary': summarize_event(event),
+                'cash_delta': event.get('cash_delta', 0),
+                'has_ai_insights': bool(reason.get('ai_insights'))
+            })
+
+        # Prepare full playback with historical prices
+        result = prepare_full_playback(formatted_events)
+
+        # Don't include raw prices_by_date in response (too large)
+        if 'prices_by_date' in result:
+            del result['prices_by_date']
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
