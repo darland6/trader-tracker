@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Backup Section -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Database Backup</h2>
+            <p class="text-base-content/60 mb-4">Create and manage backups of your portfolio event log.</p>
+
+            <div class="flex gap-4 flex-wrap">
+                <button hx-post="/api/backup/create"
+                        hx-target="#backup-result"
+                        hx-swap="innerHTML"
+                        class="btn btn-primary">
+                    Create Backup
+                </button>
+
+                <a href="/api/backup/download-current" class="btn btn-outline">
+                    Download Current DB
+                </a>
+            </div>
+
+            <div id="backup-result" class="mt-4"></div>
+        </div>
+    </div>
+
+    <!-- Existing Backups -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center">
+                <h2 class="card-title">Saved Backups</h2>
+                <button onclick="loadBackups()" class="btn btn-sm btn-ghost">Refresh</button>
+            </div>
+
+            <div id="backups-list" class="mt-4">
+                <div class="text-center py-4 text-base-content/60">Loading backups...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Restore -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Upload & Restore</h2>
+            <p class="text-base-content/60 mb-4">Upload a backup file to restore your portfolio.</p>
+
+            <div class="alert alert-warning mb-4">
+                <span>Warning: Restoring will replace your current data. A backup will be created automatically before restore.</span>
+            </div>
+
+            <form id="upload-form" class="space-y-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Select backup file (.csv)</span>
+                    </label>
+                    <input type="file" name="file" accept=".csv"
+                           class="file-input file-input-bordered w-full"
+                           id="backup-file">
+                </div>
+
+                <button type="submit" class="btn btn-warning">
+                    Upload & Restore
+                </button>
+            </form>
+
+            <div id="upload-result" class="mt-4"></div>
+        </div>
+    </div>
+
+    <!-- LLM Settings -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">AI Insights Settings</h2>
+            <p class="text-base-content/60 mb-4">Configure the LLM for generating event insights.</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Provider</span>
+                    </label>
+                    <select id="llm-provider" class="select select-bordered">
+                        <option value="local" {% if llm_config.provider == 'local' %}selected{% endif %}>Local LLM</option>
+                        <option value="claude" {% if llm_config.provider == 'claude' %}selected{% endif %}>Claude API</option>
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Model</span>
+                    </label>
+                    <input type="text" id="llm-model"
+                           class="input input-bordered"
+                           value="{{ llm_config.local_model if llm_config.provider == 'local' else llm_config.claude_model }}">
+                </div>
+
+                <div class="form-control" id="local-url-field">
+                    <label class="label">
+                        <span class="label-text">Local LLM URL</span>
+                    </label>
+                    <input type="text" id="llm-url"
+                           class="input input-bordered"
+                           value="{{ llm_config.local_url }}">
+                </div>
+
+                <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-4">
+                        <input type="checkbox" id="llm-enabled" class="toggle toggle-primary"
+                               {% if llm_config.enabled %}checked{% endif %}>
+                        <span class="label-text">Enable AI Insights</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button onclick="saveLLMSettings()" class="btn btn-primary">Save Settings</button>
+                <button onclick="testLLMConnection()" class="btn btn-outline ml-2">Test Connection</button>
+            </div>
+
+            <div id="llm-result" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Load backups on page load
+    document.addEventListener('DOMContentLoaded', loadBackups);
+
+    async function loadBackups() {
+        try {
+            const response = await fetch('/api/backup/list');
+            const data = await response.json();
+
+            const container = document.getElementById('backups-list');
+
+            if (data.backups.length === 0) {
+                container.innerHTML = '<p class="text-base-content/60">No backups found.</p>';
+                return;
+            }
+
+            let html = '<div class="overflow-x-auto"><table class="table"><thead><tr><th>Filename</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+
+            data.backups.forEach(backup => {
+                const date = new Date(backup.created).toLocaleString();
+                html += `
+                    <tr>
+                        <td class="font-mono text-sm">${backup.filename}</td>
+                        <td>${backup.size_kb} KB</td>
+                        <td>${date}</td>
+                        <td class="flex gap-2">
+                            <a href="/api/backup/download/${backup.filename}" class="btn btn-xs btn-ghost">Download</a>
+                            <button onclick="restoreBackup('${backup.filename}')" class="btn btn-xs btn-warning">Restore</button>
+                            <button onclick="deleteBackup('${backup.filename}')" class="btn btn-xs btn-error">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        } catch (error) {
+            document.getElementById('backups-list').innerHTML =
+                '<p class="text-error">Failed to load backups: ' + error.message + '</p>';
+        }
+    }
+
+    async function restoreBackup(filename) {
+        if (!confirm(`Are you sure you want to restore from ${filename}? A backup of the current state will be created first.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/backup/restore/${filename}`, { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Restored successfully! Reloading page...');
+                location.reload();
+            } else {
+                alert('Restore failed: ' + (data.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Restore failed: ' + error.message);
+        }
+    }
+
+    async function deleteBackup(filename) {
+        if (!confirm(`Are you sure you want to delete ${filename}?`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/backup/${filename}`, { method: 'DELETE' });
+            const data = await response.json();
+
+            if (data.success) {
+                loadBackups();
+            } else {
+                alert('Delete failed: ' + (data.detail || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Delete failed: ' + error.message);
+        }
+    }
+
+    // Handle file upload
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const fileInput = document.getElementById('backup-file');
+        if (!fileInput.files.length) {
+            alert('Please select a file');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to restore from this file? A backup of the current state will be created first.')) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const response = await fetch('/api/backup/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('upload-result').innerHTML =
+                    '<div class="alert alert-success">Restored successfully!</div>';
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                document.getElementById('upload-result').innerHTML =
+                    '<div class="alert alert-error">' + (data.detail || 'Upload failed') + '</div>';
+            }
+        } catch (error) {
+            document.getElementById('upload-result').innerHTML =
+                '<div class="alert alert-error">Upload failed: ' + error.message + '</div>';
+        }
+    });
+
+    // LLM Settings
+    function saveLLMSettings() {
+        // This would save via API - for now, show instructions
+        const provider = document.getElementById('llm-provider').value;
+        const model = document.getElementById('llm-model').value;
+        const url = document.getElementById('llm-url').value;
+        const enabled = document.getElementById('llm-enabled').checked;
+
+        document.getElementById('llm-result').innerHTML = `
+            <div class="alert alert-info">
+                <div>
+                    <p>To save these settings, run these CLI commands:</p>
+                    <pre class="mt-2 text-sm">
+python portfolio.py config provider ${provider}
+python portfolio.py config model ${model}
+python portfolio.py config url ${url}
+python portfolio.py config ${enabled ? 'enable' : 'disable'}</pre>
+                </div>
+            </div>
+        `;
+    }
+
+    function testLLMConnection() {
+        document.getElementById('llm-result').innerHTML = `
+            <div class="alert">Testing connection... Run: <code>python portfolio.py config test</code></div>
+        `;
+    }
+
+    // Show/hide URL field based on provider
+    document.getElementById('llm-provider').addEventListener('change', function() {
+        document.getElementById('local-url-field').style.display =
+            this.value === 'local' ? 'block' : 'none';
+    });
+</script>
+{% endblock %}

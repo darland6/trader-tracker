@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-01-09T01:01:45.150617",
+  "reason_taxonomy": {
+    "TRADE": {
+      "BUY": [
+        "VALUE_OPPORTUNITY",
+        "DIP_BUYING",
+        "POSITION_BUILDING",
+        "CONVICTION_INCREASE",
+        "DIVERSIFICATION",
+        "CATALYST_EXPECTED",
+        "TECHNICAL_SIGNAL",
+        "REBALANCING",
+        "OTHER"
+      ],
+      "SELL": [
+        "PROFIT_TAKING",
+        "RISK_REDUCTION",
+        "REBALANCING",
+        "CONVICTION_DECREASE",
+        "CASH_NEEDED",
+        "TAX_LOSS_HARVESTING",
+        "STOP_LOSS",
+        "OPTION_ASSIGNMENT",
+        "BETTER_OPPORTUNITY",
+        "OTHER"
+      ]
+    },
+    "OPTION": {
+      "OPEN": [
+        "INCOME_GENERATION",
+        "DOWNSIDE_PROTECTION",
+        "WILLING_TO_BUY",
+        "WILLING_TO_SELL",
+        "VOLATILITY_PLAY",
+        "PORTFOLIO_HEDGE",
+        "OTHER"
+      ],
+      "CLOSE": [
+        "PROFIT_TARGET_HIT",
+        "RISK_INCREASE",
+        "ROLL_OPPORTUNITY",
+        "AVOID_ASSIGNMENT",
+        "VOLATILITY_CHANGE",
+        "OTHER"
+      ]
+    },
+    "STRATEGIC": [
+      "GOAL_ALIGNMENT",
+      "STRATEGY_EXECUTION",
+      "MARKET_CONDITIONS",
+      "LEARNING",
+      "THESIS_VALIDATION",
+      "RISK_MANAGEMENT",
+      "OPPORTUNITY_COST",
+      "EMOTIONAL_DECISION",
+      "MISTAKE_CORRECTION",
+      "OTHER"
+    ]
+  },
+  "confidence_levels": [
+    "HIGH",
+    "MEDIUM",
+    "LOW"
+  ],
+  "timeframes": [
+    "IMMEDIATE",
+    "SHORT_TERM",
+    "LONG_TERM"
+  ],
+  "strategic_alignments": [
+    "GOAL_ALIGNMENT",
+    "STRATEGY_EXECUTION",
+    "MARKET_CONDITIONS",
+    "LEARNING",
+    "THESIS_VALIDATION",
+    "RISK_MANAGEMENT",
+    "OPPORTUNITY_COST",
+    "EMOTIONAL_DECISION",
+    "MISTAKE_CORRECTION",
+    "OTHER"
+  ]
+}

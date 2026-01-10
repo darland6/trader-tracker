@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Options - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Active Options -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center">
+                <h2 class="card-title">Active Options</h2>
+                <button hx-post="/api/options/auto-expire"
+                        hx-swap="none"
+                        hx-on::after-request="window.location.reload()"
+                        class="btn btn-sm btn-outline">
+                    Check Expirations
+                </button>
+            </div>
+            {% if active_options %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Position ID</th>
+                            <th>Ticker</th>
+                            <th>Strategy</th>
+                            <th>Strike</th>
+                            <th>Expiration</th>
+                            <th>Premium</th>
+                            <th>Days Left</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for opt in active_options %}
+                        <tr>
+                            <td class="font-mono text-xs">{{ opt.position_id or opt.event_id }}</td>
+                            <td class="font-bold">{{ opt.ticker }}</td>
+                            <td>{{ opt.strategy }}</td>
+                            <td>${{ opt.strike }}</td>
+                            <td>{{ opt.expiration }}</td>
+                            <td class="text-success">${{ "{:,.0f}".format(opt.premium) }}</td>
+                            <td class="{% if opt.days_to_expiry <= 7 %}text-warning{% elif opt.days_to_expiry < 0 %}text-error{% endif %}">
+                                {{ opt.days_to_expiry }}{% if opt.days_to_expiry < 0 %} (EXPIRED){% endif %}
+                            </td>
+                            <td>
+                                <div class="dropdown dropdown-end">
+                                    <label tabindex="0" class="btn btn-sm btn-ghost">Close</label>
+                                    <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
+                                        <li>
+                                            <a onclick="openCloseModal('{{ opt.position_id }}', {{ opt.event_id }}, '{{ opt.ticker }}', {{ opt.strike }}, {{ opt.premium }})">
+                                                Buy to Close (enter cost)
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <button hx-post="/api/options/close"
+                                                    hx-vals='{"position_id": "{{ opt.position_id }}", "event_id": {{ opt.event_id }}, "close_type": "EXPIRE", "close_cost": 0}'
+                                                    hx-swap="none"
+                                                    hx-on::after-request="window.location.reload()">
+                                                Expire Worthless (Full Profit)
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button hx-post="/api/options/close"
+                                                    hx-vals='{"position_id": "{{ opt.position_id }}", "event_id": {{ opt.event_id }}, "close_type": "ASSIGN", "close_cost": 0}'
+                                                    hx-swap="none"
+                                                    hx-on::after-request="window.location.reload()">
+                                                Assigned (Shares Transferred)
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-base-content/60">No active options</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Close Option Modal -->
+    <dialog id="close-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Close Option Position</h3>
+            <p class="py-2">
+                <span id="close-modal-ticker" class="font-bold"></span> @ $<span id="close-modal-strike"></span>
+            </p>
+            <p class="text-sm text-base-content/60">
+                Original premium received: $<span id="close-modal-premium"></span>
+            </p>
+            <form hx-post="/api/options/close"
+                  hx-swap="none"
+                  hx-on::after-request="document.getElementById('close-modal').close(); window.location.reload();"
+                  class="py-4">
+                <input type="hidden" name="position_id" id="close-modal-position-id">
+                <input type="hidden" name="event_id" id="close-modal-event-id">
+                <input type="hidden" name="close_type" value="CLOSE">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Cost to Buy Back</span>
+                    </label>
+                    <input type="number" name="close_cost" id="close-modal-cost"
+                           class="input input-bordered"
+                           placeholder="0.00"
+                           min="0"
+                           step="0.01"
+                           required
+                           oninput="updateProfit()">
+                </div>
+                <div class="mt-2 text-lg">
+                    Profit: <span id="close-modal-profit" class="font-bold text-success">$0</span>
+                </div>
+                <div class="form-control mt-4">
+                    <label class="label">
+                        <span class="label-text">Reason</span>
+                    </label>
+                    <input type="text" name="reason"
+                           class="input input-bordered"
+                           placeholder="Why closing early?">
+                </div>
+                <div class="modal-action">
+                    <button type="button" class="btn" onclick="document.getElementById('close-modal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Close Position</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <script>
+        let currentPremium = 0;
+
+        function openCloseModal(positionId, eventId, ticker, strike, premium) {
+            currentPremium = premium;
+            document.getElementById('close-modal-position-id').value = positionId;
+            document.getElementById('close-modal-event-id').value = eventId;
+            document.getElementById('close-modal-ticker').textContent = ticker;
+            document.getElementById('close-modal-strike').textContent = strike;
+            document.getElementById('close-modal-premium').textContent = premium.toLocaleString();
+            document.getElementById('close-modal-cost').value = '';
+            document.getElementById('close-modal-profit').textContent = '$' + premium.toLocaleString();
+            document.getElementById('close-modal').showModal();
+        }
+
+        function updateProfit() {
+            const cost = parseFloat(document.getElementById('close-modal-cost').value) || 0;
+            const profit = currentPremium - cost;
+            const profitEl = document.getElementById('close-modal-profit');
+            profitEl.textContent = '$' + profit.toLocaleString();
+            profitEl.className = 'font-bold ' + (profit >= 0 ? 'text-success' : 'text-error');
+        }
+    </script>
+
+    <!-- Open New Option -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Open New Option</h2>
+
+            <form hx-post="/api/options/open"
+                  hx-target="#option-result"
+                  hx-swap="innerHTML"
+                  class="space-y-4">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Ticker -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Underlying Ticker</span>
+                        </label>
+                        <input type="text" name="ticker"
+                               class="input input-bordered"
+                               placeholder="BMNR"
+                               required
+                               oninput="this.value = this.value.toUpperCase()">
+                    </div>
+
+                    <!-- Strategy -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Strategy</span>
+                        </label>
+                        <select name="strategy" class="select select-bordered" required>
+                            <option value="Secured Put">Secured Put</option>
+                            <option value="Covered Call">Covered Call</option>
+                            <option value="Put">Put</option>
+                            <option value="Call">Call</option>
+                        </select>
+                    </div>
+
+                    <!-- Strike -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Strike Price</span>
+                        </label>
+                        <input type="number" name="strike"
+                               class="input input-bordered"
+                               placeholder="31.00"
+                               required
+                               min="0.01"
+                               step="0.01">
+                    </div>
+
+                    <!-- Expiration -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Expiration Date</span>
+                        </label>
+                        <input type="date" name="expiration"
+                               class="input input-bordered"
+                               required>
+                    </div>
+
+                    <!-- Contracts -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Contracts</span>
+                        </label>
+                        <input type="number" name="contracts"
+                               class="input input-bordered"
+                               value="1"
+                               required
+                               min="1">
+                    </div>
+
+                    <!-- Premium -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Total Premium Received</span>
+                        </label>
+                        <input type="number" name="premium"
+                               class="input input-bordered"
+                               placeholder="4000"
+                               required
+                               min="0.01"
+                               step="0.01">
+                    </div>
+                </div>
+
+                <!-- Reason -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold text-warning">Reason</span>
+                    </label>
+                    <select name="reason" class="select select-bordered">
+                        <option value="INCOME_GENERATION">Income Generation</option>
+                        <option value="WILLING_TO_BUY">Willing to Buy at Strike</option>
+                        <option value="WILLING_TO_SELL">Willing to Sell at Strike</option>
+                        <option value="DOWNSIDE_PROTECTION">Downside Protection</option>
+                        <option value="VOLATILITY_PLAY">Volatility Play</option>
+                    </select>
+                </div>
+
+                <div class="form-control mt-4">
+                    <button type="submit" class="btn btn-secondary btn-lg">
+                        Open Option Position
+                    </button>
+                </div>
+            </form>
+
+            <div id="option-result" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{
+  "cash": 64502,
+  "starting_date": "2025-01-01 00:00:00",
+  "initial_holdings": {
+    "BMNR": {
+      "shares": 8150,
+      "cost_basis_per_share": 39
+    },
+    "NBIS": {
+      "shares": 1393,
+      "cost_basis_per_share": 90
+    },
+    "TSLA": {
+      "shares": 367,
+      "cost_basis_per_share": 400
+    },
+    "META": {
+      "shares": 162,
+      "cost_basis_per_share": 600
+    },
+    "RKLB": {
+      "shares": 1314,
+      "cost_basis_per_share": 49
+    },
+    "PLTR": {
+      "shares": 321,
+      "cost_basis_per_share": 40
+    },
+    "SPOT": {
+      "shares": 327,
+      "cost_basis_per_share": 400
+    }
+  }
+}

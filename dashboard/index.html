@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portfolio Dashboard - 3D View</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a1a;
+            color: #fff;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* HUD Overlay */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .hud-panel {
+            position: absolute;
+            background: rgba(26, 26, 46, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+        }
+
+        #summary-panel {
+            top: 20px;
+            left: 20px;
+            min-width: 280px;
+        }
+
+        #actions-panel {
+            top: 20px;
+            right: 20px;
+        }
+
+        #holdings-panel {
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 12px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #ffd700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 4px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .gain-positive { color: #00ff88; }
+        .gain-negative { color: #ff4444; }
+
+        .holdings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .holding-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .holding-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .ticker {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+        }
+
+        /* Loading state */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #ffd700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #ffd700);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+        }
+
+        /* Chat Panel */
+        #chat-panel {
+            position: absolute;
+            bottom: 240px;
+            right: 20px;
+            width: 380px;
+            max-height: 500px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        #chat-panel.minimized {
+            max-height: 48px;
+            overflow: hidden;
+        }
+
+        #chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+        }
+
+        #chat-header h3 {
+            margin: 0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #chat-header .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+        }
+
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 350px;
+        }
+
+        .chat-message {
+            padding: 10px 14px;
+            border-radius: 12px;
+            max-width: 90%;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .chat-message.user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            align-self: flex-end;
+        }
+
+        .chat-message.assistant {
+            background: rgba(255, 255, 255, 0.1);
+            align-self: flex-start;
+        }
+
+        .chat-message.loading {
+            color: #888;
+            font-style: italic;
+        }
+
+        #chat-input-container {
+            padding: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            gap: 8px;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: white;
+            font-size: 13px;
+            outline: none;
+        }
+
+        #chat-input:focus {
+            border-color: #667eea;
+        }
+
+        #chat-input::placeholder {
+            color: #666;
+        }
+
+        #chat-send {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            transition: transform 0.2s;
+        }
+
+        #chat-send:hover {
+            transform: scale(1.05);
+        }
+
+        #chat-send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-toggle-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        /* Settings Panel */
+        #settings-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 300px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            display: none;
+        }
+
+        #settings-panel.visible {
+            display: block;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .settings-header h3 {
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .settings-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .settings-body {
+            padding: 16px;
+        }
+
+        .setting-group {
+            margin-bottom: 16px;
+        }
+
+        .setting-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .setting-select, .setting-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: white;
+            font-size: 13px;
+        }
+
+        .setting-select:focus, .setting-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .setting-select option {
+            background: #1a1a2e;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .settings-btn {
+            flex: 1;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            border: none;
+        }
+
+        .settings-btn.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .settings-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .settings-status {
+            margin-top: 12px;
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .settings-status.success {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+
+        .settings-status.error {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+
+        /* Space-themed LLM Connection Indicator */
+        .llm-status-panel {
+            background: linear-gradient(135deg, rgba(10, 10, 30, 0.95) 0%, rgba(20, 20, 50, 0.95) 100%);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .llm-status-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #667eea, #764ba2, transparent);
+            animation: scan-line 2s linear infinite;
+        }
+
+        @keyframes scan-line {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .llm-status-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .llm-status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .llm-status-indicator.connected {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0, 255, 136, 0.5);
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+
+        .llm-status-indicator.disconnected {
+            background: #ff4444;
+            box-shadow: 0 0 10px #ff4444;
+            animation: pulse-red 1s ease-in-out infinite;
+        }
+
+        .llm-status-indicator.checking {
+            background: #ffd700;
+            box-shadow: 0 0 10px #ffd700;
+            animation: pulse-yellow 0.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes pulse-yellow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .llm-status-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #888;
+        }
+
+        .llm-status-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .llm-status-item {
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .llm-status-label {
+            color: #666;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .llm-status-value {
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .llm-status-value.highlight {
+            color: #00ff88;
+        }
+
+        .llm-status-value.error {
+            color: #ff4444;
+            font-size: 10px;
+        }
+
+        .llm-status-latency {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .latency-bar {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .latency-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #ffd700);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        .llm-status-footer {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .llm-status-message {
+            font-size: 10px;
+            color: #888;
+            font-style: italic;
+        }
+
+        .llm-status-message.connected {
+            color: #00ff88;
+        }
+
+        .llm-refresh-btn {
+            background: none;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            color: #667eea;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .llm-refresh-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #667eea;
+        }
+
+        .settings-toggle {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #888;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
+        .settings-toggle:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        /* Legend Panel */
+        #legend-panel {
+            position: absolute;
+            bottom: 240px;
+            left: 20px;
+            width: 260px;
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        #legend-panel.minimized {
+            max-height: 48px;
+            overflow: hidden;
+        }
+
+        #legend-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+        }
+
+        #legend-header h3 {
+            margin: 0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-toggle-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        #legend-content {
+            padding: 12px 16px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-icon {
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .legend-icon-circle {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+        }
+
+        .legend-icon-ring {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 3px solid;
+            background: transparent;
+        }
+
+        .legend-icon-orbit {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px dashed #666;
+            position: relative;
+        }
+
+        .legend-icon-orbit::after {
+            content: '';
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #ffd700;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .legend-text {
+            flex: 1;
+        }
+
+        .legend-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 2px;
+        }
+
+        .legend-desc {
+            font-size: 11px;
+            color: #888;
+            line-height: 1.4;
+        }
+
+        /* Playback Controls */
+        #playback-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px 30px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            display: none;
+            min-width: 500px;
+        }
+
+        #playback-panel.visible {
+            display: block;
+        }
+
+        .playback-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .playback-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .playback-close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .playback-close:hover {
+            color: #fff;
+        }
+
+        .playback-timeline {
+            margin: 20px 0;
+        }
+
+        .playback-slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            appearance: none;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .playback-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
+        }
+
+        .playback-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border: none;
+        }
+
+        .playback-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .playback-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .playback-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .playback-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .playback-btn.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+        }
+
+        .playback-btn.primary:hover {
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .playback-speed {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .speed-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #888;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .speed-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .speed-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: transparent;
+            color: white;
+        }
+
+        .playback-event {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+        }
+
+        .playback-event-type {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .playback-event-summary {
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .playback-event-date {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .playback-toggle-btn {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .playback-toggle-btn:hover {
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .playback-toggle-btn.active {
+            background: linear-gradient(135deg, #00ff88 0%, #00aa55 100%);
+        }
+
+        .playback-snapshot-values {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .playback-stat {
+            text-align: center;
+        }
+
+        .playback-stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .playback-stat-label {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        /* Setup Screen */
+        #setup-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        #setup-screen.hidden {
+            display: none;
+        }
+
+        .setup-container {
+            background: rgba(26, 26, 46, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .setup-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .setup-header h1 {
+            font-size: 28px;
+            margin: 0 0 8px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .setup-header p {
+            color: #888;
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .setup-options {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .setup-option {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .setup-option:hover {
+            border-color: rgba(102, 126, 234, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .setup-option.featured {
+            border-color: rgba(102, 126, 234, 0.3);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        }
+
+        .setup-option h3 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .setup-option p {
+            margin: 0;
+            font-size: 13px;
+            color: #888;
+            line-height: 1.5;
+        }
+
+        .setup-option .badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .setup-divider {
+            display: flex;
+            align-items: center;
+            margin: 24px 0;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .setup-divider::before,
+        .setup-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .setup-divider::before {
+            margin-right: 12px;
+        }
+
+        .setup-divider::after {
+            margin-left: 12px;
+        }
+
+        .setup-input-group {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .setup-input-group label {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .setup-input-group input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .setup-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .setup-btn {
+            width: 100%;
+            padding: 14px;
+            margin-top: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .setup-btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .setup-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .setup-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .setup-loading {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .setup-loading .spinner {
+            margin: 0 auto 16px;
+        }
+
+        /* Demo Banner */
+        #demo-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(90deg, #ff6b35 0%, #f7c531 100%);
+            color: #000;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 9998;
+            display: none;
+        }
+
+        #demo-banner.visible {
+            display: block;
+        }
+
+        #demo-banner button {
+            background: rgba(0, 0, 0, 0.2);
+            border: none;
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 4px;
+            margin-left: 16px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #demo-banner button:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        /* Adjust HUD when demo banner is visible */
+        body.demo-mode #hud {
+            top: 40px;
+        }
+
+        body.demo-mode #playback-toggle {
+            top: 60px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Demo Mode Banner -->
+    <div id="demo-banner">
+        DEMO MODE - This is sample data for demonstration purposes
+        <button onclick="exitDemoMode()">Exit Demo</button>
+        <button onclick="startFresh()">Start Fresh</button>
+    </div>
+
+    <!-- Setup Screen (shown when no database exists) -->
+    <div id="setup-screen" class="hidden">
+        <div class="setup-container">
+            <div class="setup-header">
+                <h1>Portfolio Dashboard</h1>
+                <p>Welcome! Let's get your portfolio set up.</p>
+            </div>
+
+            <div class="setup-options">
+                <div class="setup-option featured" onclick="initDemo()">
+                    <h3>
+                        Try Demo Mode
+                        <span class="badge">Recommended</span>
+                    </h3>
+                    <p>Explore the dashboard with 6 months of sample trading data. Perfect for getting familiar with the features.</p>
+                </div>
+
+                <div class="setup-option" onclick="showFreshSetup()">
+                    <h3>Start Fresh</h3>
+                    <p>Create a new portfolio from scratch. You'll start with an empty portfolio and add your own trades.</p>
+                </div>
+
+                <div class="setup-option" onclick="showUploadSetup()">
+                    <h3>Import Existing Data</h3>
+                    <p>Upload an existing event log CSV file to restore a previous portfolio.</p>
+                </div>
+            </div>
+
+            <!-- Fresh setup form (hidden by default) -->
+            <div id="fresh-setup-form" style="display: none;">
+                <div class="setup-divider">New Portfolio Setup</div>
+                <div class="setup-input-group">
+                    <label>Starting Cash Balance</label>
+                    <input type="number" id="starting-cash" value="50000" placeholder="50000">
+                </div>
+                <button class="setup-btn" onclick="initFresh()">Create Portfolio</button>
+                <button class="setup-btn secondary" onclick="hideSetupForms()">Back</button>
+            </div>
+
+            <!-- Upload form (hidden by default) -->
+            <div id="upload-setup-form" style="display: none;">
+                <div class="setup-divider">Import Event Log</div>
+                <div class="setup-input-group">
+                    <label>Select CSV File</label>
+                    <input type="file" id="csv-upload" accept=".csv">
+                </div>
+                <button class="setup-btn" onclick="uploadCSV()">Import Data</button>
+                <button class="setup-btn secondary" onclick="hideSetupForms()">Back</button>
+            </div>
+
+            <!-- Loading state -->
+            <div id="setup-loading" class="setup-loading" style="display: none;">
+                <div class="spinner"></div>
+                <p id="setup-loading-text">Setting up your portfolio...</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="app">
+        <div id="canvas-container"></div>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 16px;">Loading Portfolio...</p>
+        </div>
+
+        <!-- HUD Overlay -->
+        <div id="hud" style="display: none;">
+            <!-- Summary Panel -->
+            <div id="summary-panel" class="hud-panel">
+                <div class="panel-title">Portfolio Summary</div>
+                <div class="stat-value" id="total-value">$0</div>
+                <div class="stat-label">Total Value</div>
+
+                <div class="stat-row">
+                    <span>Cash</span>
+                    <span id="cash-value">$0</span>
+                </div>
+                <div class="stat-row">
+                    <span>Holdings</span>
+                    <span id="holdings-value">$0</span>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <div class="stat-label">YTD Income Progress</div>
+                    <div class="stat-row">
+                        <span id="income-value" class="gain-positive">$0</span>
+                        <span id="income-pct">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="income-progress" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Panel -->
+            <div id="actions-panel" class="hud-panel">
+                <div class="panel-title">
+                    Quick Actions
+                    <button class="settings-toggle" onclick="toggleSettings()">LLM Settings</button>
+                </div>
+                <button class="btn" onclick="navigateTo('/trade')">Trade</button>
+                <button class="btn" onclick="navigateTo('/options')">Options</button>
+                <button class="btn" onclick="navigateTo('/')">Web UI</button>
+                <button class="btn" onclick="refreshPrices()">Update Prices</button>
+            </div>
+
+            <!-- Settings Panel -->
+            <div id="settings-panel">
+                <div class="settings-header">
+                    <h3>LLM Configuration</h3>
+                    <button class="settings-close" onclick="toggleSettings()">x</button>
+                </div>
+                <div class="settings-body">
+                    <!-- Space-themed Connection Status -->
+                    <div class="llm-status-panel" id="llm-status-panel">
+                        <div class="llm-status-header">
+                            <div class="llm-status-indicator checking" id="llm-indicator"></div>
+                            <span class="llm-status-title">Neural Link Status</span>
+                        </div>
+                        <div class="llm-status-details">
+                            <div class="llm-status-item">
+                                <span class="llm-status-label">Provider</span>
+                                <span class="llm-status-value" id="llm-status-provider">--</span>
+                            </div>
+                            <div class="llm-status-item">
+                                <span class="llm-status-label">Model</span>
+                                <span class="llm-status-value" id="llm-status-model">--</span>
+                            </div>
+                            <div class="llm-status-item">
+                                <span class="llm-status-label">Latency</span>
+                                <div class="llm-status-latency">
+                                    <span class="llm-status-value" id="llm-status-latency">--</span>
+                                    <div class="latency-bar">
+                                        <div class="latency-fill" id="llm-latency-bar" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="llm-status-item">
+                                <span class="llm-status-label">Status</span>
+                                <span class="llm-status-value" id="llm-status-text">Checking...</span>
+                            </div>
+                        </div>
+                        <div class="llm-status-footer">
+                            <span class="llm-status-message" id="llm-status-message">Initializing connection...</span>
+                            <button class="llm-refresh-btn" onclick="refreshLLMStatus()">Refresh</button>
+                        </div>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Provider</label>
+                        <select id="llm-provider" class="setting-select" onchange="onProviderChange()">
+                            <option value="claude">Claude (Anthropic)</option>
+                            <option value="local">Local LLM</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-group" id="claude-model-group">
+                        <label class="setting-label">Claude Model</label>
+                        <input type="text" id="claude-model" class="setting-input" placeholder="claude-sonnet-4-20250514">
+                    </div>
+
+                    <div class="setting-group" id="local-url-group" style="display: none;">
+                        <label class="setting-label">Local LLM URL</label>
+                        <input type="text" id="local-url" class="setting-input" placeholder="http://192.168.50.10:1234/v1">
+                    </div>
+
+                    <div class="setting-group" id="local-model-group" style="display: none;">
+                        <label class="setting-label">Local Model Name</label>
+                        <input type="text" id="local-model" class="setting-input" placeholder="mistral-7b">
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="settings-btn secondary" onclick="testLLM()">Test</button>
+                        <button class="settings-btn primary" onclick="saveLLMSettings()">Save</button>
+                    </div>
+
+                    <div id="settings-status"></div>
+                </div>
+            </div>
+
+            <!-- Holdings Panel -->
+            <div id="holdings-panel" class="hud-panel">
+                <div class="panel-title">Holdings</div>
+                <div class="holdings-grid" id="holdings-grid"></div>
+            </div>
+
+            <!-- Legend Panel -->
+            <div id="legend-panel" class="minimized">
+                <div id="legend-header" onclick="toggleLegend()">
+                    <h3>3D Legend</h3>
+                    <button class="legend-toggle-btn" id="legend-toggle-icon">+</button>
+                </div>
+                <div id="legend-content">
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-orbit"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Orbit Distance</div>
+                            <div class="legend-desc">Closer to sun = larger portfolio allocation. Core holdings orbit near the center.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-circle" style="background: linear-gradient(135deg, #888 0%, #555 100%); width: 20px; height: 20px;"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Planet Size</div>
+                            <div class="legend-desc">Larger planet = higher market value of that position.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-circle" style="background: #00ff88; box-shadow: 0 0 8px #00ff88;"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Green Glow</div>
+                            <div class="legend-desc">Position is in profit. Brighter glow = larger gain %.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-circle" style="background: #ff4444; box-shadow: 0 0 8px #ff4444;"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Red Glow</div>
+                            <div class="legend-desc">Position is at a loss. Brighter glow = larger loss %.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-ring" style="border-color: #00ff88;"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Planetary Ring</div>
+                            <div class="legend-desc">High momentum position (+/- 20% or more). Ring color matches gain/loss.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div style="font-size: 16px;">*</div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">Particle Cloud</div>
+                            <div class="legend-desc">Orbiting particles show momentum intensity. More particles = stronger movement.</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon">
+                            <div class="legend-icon-circle" style="background: radial-gradient(circle, #ffee88 0%, #ff8800 50%, #ff4400 100%); width: 20px; height: 20px;"></div>
+                        </div>
+                        <div class="legend-text">
+                            <div class="legend-title">The Sun</div>
+                            <div class="legend-desc">Represents total portfolio value. Click to return to system view.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tooltip -->
+        <div id="tooltip"></div>
+
+        <!-- Playback Toggle Button (in HUD) -->
+        <button id="playback-toggle" class="playback-toggle-btn" onclick="togglePlaybackMode()">
+            <span>History Mode</span>
+        </button>
+
+        <!-- Playback Control Panel -->
+        <div id="playback-panel">
+            <div class="playback-header">
+                <h3>Portfolio History Playback</h3>
+                <button class="playback-close" onclick="togglePlaybackMode()">x</button>
+            </div>
+
+            <div class="playback-speed">
+                <button class="speed-btn" onclick="setPlaybackSpeed(0.5)">0.5x</button>
+                <button class="speed-btn active" onclick="setPlaybackSpeed(1)">1x</button>
+                <button class="speed-btn" onclick="setPlaybackSpeed(2)">2x</button>
+                <button class="speed-btn" onclick="setPlaybackSpeed(5)">5x</button>
+            </div>
+
+            <div class="playback-controls">
+                <button class="playback-btn" onclick="playbackStep(-1)" title="Previous Event">|&lt;</button>
+                <button class="playback-btn primary" id="playback-play-btn" onclick="togglePlayback()" title="Play/Pause">|&gt;</button>
+                <button class="playback-btn" onclick="playbackStep(1)" title="Next Event">&gt;|</button>
+            </div>
+
+            <div class="playback-timeline">
+                <input type="range" class="playback-slider" id="playback-slider" min="0" max="100" value="0" oninput="onSliderChange(this.value)">
+                <div class="playback-info">
+                    <span id="playback-date">Loading...</span>
+                    <span id="playback-progress">0 / 0 events</span>
+                </div>
+            </div>
+
+            <div class="playback-event" id="playback-event">
+                <div class="playback-event-type" id="playback-event-type">-</div>
+                <div class="playback-event-summary" id="playback-event-summary">Select an event to see details</div>
+                <div class="playback-event-date" id="playback-event-timestamp"></div>
+            </div>
+
+            <div class="playback-snapshot-values">
+                <div class="playback-stat">
+                    <div class="playback-stat-value" id="playback-cash">$0</div>
+                    <div class="playback-stat-label">Cash</div>
+                </div>
+                <div class="playback-stat">
+                    <div class="playback-stat-value" id="playback-holdings">$0</div>
+                    <div class="playback-stat-label">Holdings</div>
+                </div>
+                <div class="playback-stat">
+                    <div class="playback-stat-value" id="playback-total">$0</div>
+                    <div class="playback-stat-label">Total</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Panel -->
+        <div id="chat-panel" class="minimized">
+            <div id="chat-header" onclick="toggleChat()">
+                <h3>
+                    <span class="status-dot"></span>
+                    Portfolio AI Assistant
+                </h3>
+                <button class="chat-toggle-btn" id="chat-toggle-icon">+</button>
+            </div>
+            <div id="chat-messages">
+                <div class="chat-message assistant">
+                    Hello! I'm your portfolio assistant. I have access to your trading history and current holdings. Ask me anything about your portfolio, strategy, or trades.
+                </div>
+            </div>
+            <div id="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKeypress(event)">
+                <button id="chat-send" onclick="sendChatMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

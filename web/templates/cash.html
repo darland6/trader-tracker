@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Cash - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl mb-4">Cash Transaction</h2>
+
+            <div class="stats shadow mb-6">
+                <div class="stat">
+                    <div class="stat-title">Current Cash Balance</div>
+                    <div class="stat-value text-success">${{ "{:,.2f}".format(cash) }}</div>
+                </div>
+            </div>
+
+            <form hx-post="/api/cash/transaction"
+                  hx-target="#cash-result"
+                  hx-swap="innerHTML"
+                  class="space-y-4">
+
+                <!-- Action -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Transaction Type</span>
+                    </label>
+                    <div class="flex gap-4">
+                        <label class="label cursor-pointer gap-2">
+                            <input type="radio" name="action" value="DEPOSIT" class="radio radio-success" checked />
+                            <span class="label-text">Deposit</span>
+                        </label>
+                        <label class="label cursor-pointer gap-2">
+                            <input type="radio" name="action" value="WITHDRAWAL" class="radio radio-error" />
+                            <span class="label-text">Withdrawal</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Amount -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Amount</span>
+                    </label>
+                    <input type="number" name="amount"
+                           class="input input-bordered input-lg"
+                           placeholder="5000.00"
+                           required
+                           min="0.01"
+                           step="0.01">
+                </div>
+
+                <!-- Description -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Source / Purpose</span>
+                    </label>
+                    <input type="text" name="description"
+                           class="input input-bordered"
+                           placeholder="e.g., Salary deposit, Bill payment">
+                </div>
+
+                <!-- Reason -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold text-warning">Reason</span>
+                    </label>
+                    <textarea name="reason"
+                              class="textarea textarea-bordered"
+                              placeholder="Why are you making this transaction?"></textarea>
+                </div>
+
+                <div class="form-control mt-6">
+                    <button type="submit" class="btn btn-accent btn-lg">
+                        Submit Transaction
+                    </button>
+                </div>
+            </form>
+
+            <div id="cash-result" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

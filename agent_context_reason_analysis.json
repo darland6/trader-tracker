@@ -1,0 +1,34 @@
+{
+  "reason_distribution": {
+    "CASH_NEEDED": 1,
+    "INCOME_GENERATION": 1,
+    "PROFIT_TAKING": 1,
+    "MARKET_CONDITIONS": 1
+  },
+  "confidence_distribution": {
+    "HIGH": 2,
+    "MEDIUM": 2
+  },
+  "timeframe_distribution": {
+    "IMMEDIATE": 1,
+    "SHORT_TERM": 3
+  },
+  "strategic_alignment": {
+    "GOAL_ALIGNMENT": 1,
+    "STRATEGY_EXECUTION": 2,
+    "RISK_MANAGEMENT": 1
+  },
+  "patterns": [
+    {
+      "pattern": "INCOME_GENERATION",
+      "count": 1,
+      "total_generated": 4000,
+      "average_per_event": 4000.0
+    },
+    {
+      "pattern": "HIGH_CONFIDENCE_DECISIONS",
+      "count": 2,
+      "net_cash_impact": 9500
+    }
+  ]
+}

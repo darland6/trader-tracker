@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Trade - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl mb-4">Execute Trade</h2>
+
+            <form hx-post="/api/trade"
+                  hx-target="#result"
+                  hx-swap="innerHTML"
+                  class="space-y-4">
+
+                <!-- Action -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Action</span>
+                    </label>
+                    <div class="flex gap-4">
+                        <label class="label cursor-pointer gap-2">
+                            <input type="radio" name="action" value="BUY" class="radio radio-primary" checked />
+                            <span class="label-text">Buy</span>
+                        </label>
+                        <label class="label cursor-pointer gap-2">
+                            <input type="radio" name="action" value="SELL" class="radio radio-error" />
+                            <span class="label-text">Sell</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Ticker -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Ticker Symbol</span>
+                    </label>
+                    <input type="text" name="ticker"
+                           class="input input-bordered"
+                           placeholder="TSLA"
+                           required
+                           pattern="[A-Za-z]{1,5}"
+                           oninput="this.value = this.value.toUpperCase()">
+                </div>
+
+                <!-- Shares and Price -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Shares</span>
+                        </label>
+                        <input type="number" name="shares"
+                               class="input input-bordered"
+                               placeholder="100"
+                               required
+                               min="1">
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Price per Share</span>
+                        </label>
+                        <input type="number" name="price"
+                               class="input input-bordered"
+                               placeholder="445.50"
+                               required
+                               min="0.01"
+                               step="0.01">
+                    </div>
+                </div>
+
+                <!-- Gain/Loss (for sells) -->
+                <div class="form-control" x-data="{showGain: false}" x-show="showGain">
+                    <label class="label">
+                        <span class="label-text font-bold">Gain/Loss (for sells)</span>
+                    </label>
+                    <input type="number" name="gain_loss"
+                           class="input input-bordered"
+                           placeholder="0"
+                           step="0.01"
+                           value="0">
+                </div>
+
+                <!-- Reason -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold text-warning">Reason (required for learning)</span>
+                    </label>
+                    <select name="reason" class="select select-bordered" required>
+                        <option value="">Select reason...</option>
+                        <optgroup label="Buy Reasons">
+                            <option value="VALUE_OPPORTUNITY">Value Opportunity</option>
+                            <option value="DIP_BUYING">Dip Buying</option>
+                            <option value="POSITION_BUILDING">Position Building</option>
+                            <option value="CONVICTION_INCREASE">Conviction Increase</option>
+                            <option value="DIVERSIFICATION">Diversification</option>
+                            <option value="CATALYST_EXPECTED">Catalyst Expected</option>
+                            <option value="REBALANCING">Rebalancing</option>
+                        </optgroup>
+                        <optgroup label="Sell Reasons">
+                            <option value="PROFIT_TAKING">Profit Taking</option>
+                            <option value="RISK_REDUCTION">Risk Reduction</option>
+                            <option value="CONVICTION_DECREASE">Conviction Decrease</option>
+                            <option value="CASH_NEEDED">Cash Needed</option>
+                            <option value="STOP_LOSS">Stop Loss</option>
+                            <option value="TAX_LOSS_HARVESTING">Tax Loss Harvesting</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- Notes -->
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Notes</span>
+                    </label>
+                    <textarea name="notes"
+                              class="textarea textarea-bordered"
+                              placeholder="Additional notes about this trade..."></textarea>
+                </div>
+
+                <!-- Submit -->
+                <div class="form-control mt-6">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <span class="htmx-indicator loading loading-spinner"></span>
+                        Execute Trade
+                    </button>
+                </div>
+            </form>
+
+            <!-- Result -->
+            <div id="result" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+<div class="overflow-x-auto" id="events-table">
+    <table class="table table-zebra">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Timestamp</th>
+                <th>Type</th>
+                <th>Details</th>
+                <th>Cash Impact</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr class="hover cursor-pointer" onclick="showEventDetails({{ event.event_id }})">
+                <td class="font-mono">{{ event.event_id }}</td>
+                <td class="text-sm">{{ event.timestamp[:16] }}</td>
+                <td>
+                    {% if event.event_type == 'TRADE' %}
+                        {% set action = event.data.get('action', 'TRADE') %}
+                        <span class="badge {% if action == 'BUY' %}badge-primary{% else %}badge-error{% endif %}">
+                            {{ action }}
+                        </span>
+                    {% elif 'OPTION' in event.event_type %}
+                        <span class="badge badge-secondary">{{ event.event_type }}</span>
+                    {% elif event.event_type == 'DEPOSIT' %}
+                        <span class="badge badge-success">DEPOSIT</span>
+                    {% elif event.event_type == 'WITHDRAWAL' %}
+                        <span class="badge badge-warning">WITHDRAWAL</span>
+                    {% elif event.event_type == 'PRICE_UPDATE' %}
+                        <span class="badge badge-ghost">PRICE</span>
+                    {% else %}
+                        <span class="badge">{{ event.event_type }}</span>
+                    {% endif %}
+                    {% if event.reason.get('ai_insights') %}
+                        <span class="badge badge-accent badge-xs ml-1" title="AI Insights Available">AI</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if event.event_type == 'TRADE' %}
+                        {{ event.data.get('shares', '') }} {{ event.data.get('ticker', '') }}
+                        @ ${{ event.data.get('price', 0) }}
+                    {% elif event.event_type == 'OPTION_OPEN' %}
+                        {{ event.data.get('ticker', '') }} ${{ event.data.get('strike', '') }}
+                        {{ event.data.get('strategy', '') }}
+                    {% elif event.event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN'] %}
+                        Option #{{ event.data.get('option_id', '') }}
+                        {% if event.data.get('profit') %}
+                            <span class="{% if event.data.profit > 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                ${{ "{:,.0f}".format(event.data.profit) }}
+                            </span>
+                        {% endif %}
+                    {% elif event.event_type in ['DEPOSIT', 'WITHDRAWAL'] %}
+                        ${{ "{:,.2f}".format(event.data.get('amount', 0)) }}
+                    {% elif event.event_type == 'PRICE_UPDATE' %}
+                        {{ event.data.get('prices', {})|length }} tickers updated
+                    {% else %}
+                        {{ event.data|string|truncate(50) }}
+                    {% endif %}
+                </td>
+                <td class="font-mono {% if event.cash_delta > 0 %}gain-positive{% elif event.cash_delta < 0 %}gain-negative{% endif %}">
+                    {% if event.cash_delta != 0 %}
+                        {{ "{:+,.0f}".format(event.cash_delta) }}
+                    {% endif %}
+                </td>
+                <td class="text-sm max-w-xs truncate">{{ event.notes or '' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if not events %}
+    <div class="text-center py-8 text-base-content/60">
+        No events found
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    // Update events data for modal display after HTMX swap
+    window.eventsData = window.eventsData || {};
+    {% for event in events %}
+    window.eventsData[{{ event.event_id }}] = {
+        event_id: {{ event.event_id }},
+        timestamp: "{{ event.timestamp }}",
+        event_type: "{{ event.event_type }}",
+        data: {{ event.data | tojson }},
+        reason: {{ event.reason | tojson }},
+        notes: "{{ event.notes | replace('"', '\\"') | replace('\n', '\\n') }}",
+        cash_delta: {{ event.cash_delta }}
+    };
+    {% endfor %}
+</script>

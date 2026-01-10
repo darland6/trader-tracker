@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Market Status Banner -->
+    <div class="alert {% if market_open %}alert-success{% else %}alert-warning{% endif %} shadow-lg">
+        <div>
+            <span class="font-semibold">Market Status:</span>
+            {% if market_session == 'regular' %}
+                <span class="badge badge-success">Regular Hours</span>
+            {% elif market_session == 'pre' %}
+                <span class="badge badge-warning">Pre-Market</span>
+            {% elif market_session == 'post' %}
+                <span class="badge badge-warning">After-Hours</span>
+            {% else %}
+                <span class="badge badge-ghost">Closed</span>
+            {% endif %}
+            <span class="text-sm opacity-70 ml-2">
+                {% if market_session == 'pre' %}(4:00 AM - 9:30 AM ET)
+                {% elif market_session == 'regular' %}(9:30 AM - 4:00 PM ET)
+                {% elif market_session == 'post' %}(4:00 PM - 8:00 PM ET)
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- Total Value -->
+        <div class="stat bg-base-100 rounded-lg shadow">
+            <div class="stat-title">Total Value</div>
+            <div class="stat-value text-primary">${{ "{:,.0f}".format(state.total_value) }}</div>
+            <div class="stat-desc">Portfolio + Cash</div>
+        </div>
+
+        <!-- Cash -->
+        <div class="stat bg-base-100 rounded-lg shadow">
+            <div class="stat-title">Cash</div>
+            <div class="stat-value text-secondary">${{ "{:,.0f}".format(state.cash) }}</div>
+            <div class="stat-desc">Available for trading</div>
+        </div>
+
+        <!-- Portfolio Value -->
+        <div class="stat bg-base-100 rounded-lg shadow">
+            <div class="stat-title">Holdings Value</div>
+            <div class="stat-value">${{ "{:,.0f}".format(state.portfolio_value) }}</div>
+            <div class="stat-desc">{{ state.holdings|length }} positions</div>
+        </div>
+
+        <!-- YTD Income -->
+        <div class="stat bg-base-100 rounded-lg shadow">
+            <div class="stat-title">YTD Income</div>
+            <div class="stat-value text-success">${{ "{:,.0f}".format(state.income.total) }}</div>
+            <div class="stat-desc">{{ "{:.0f}".format(state.income.progress_pct) }}% of $30K goal</div>
+            <progress class="progress progress-success w-full" value="{{ state.income.progress_pct }}" max="100"></progress>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Holdings Table -->
+        <div class="lg:col-span-2">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Holdings</h2>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th class="text-right">Shares</th>
+                                    <th class="text-right">Price</th>
+                                    <th class="text-right">Value</th>
+                                    <th class="text-right">Gain/Loss</th>
+                                    <th class="text-right">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for h in state.holdings %}
+                                <tr>
+                                    <td class="font-bold">{{ h.ticker }}</td>
+                                    <td class="text-right">{{ "{:,}".format(h.shares) }}</td>
+                                    <td class="text-right">
+                                        ${{ "{:.2f}".format(h.current_price) }}
+                                        {% if h.price_session == 'pre' %}
+                                            <span class="badge badge-xs badge-warning ml-1" title="Pre-Market">PRE</span>
+                                        {% elif h.price_session == 'post' %}
+                                            <span class="badge badge-xs badge-warning ml-1" title="After-Hours">AH</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-right">${{ "{:,.0f}".format(h.market_value) }}</td>
+                                    <td class="text-right {% if h.unrealized_gain >= 0 %}gain-positive{% else %}gain-negative{% endif %}">
+                                        ${{ "{:,.0f}".format(h.unrealized_gain) }}
+                                        <span class="text-xs">({{ "{:+.1f}".format(h.unrealized_gain_pct) }}%)</span>
+                                    </td>
+                                    <td class="text-right">{{ "{:.1f}".format(h.allocation_pct) }}%</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Options + Income Breakdown -->
+        <div class="space-y-6">
+            <!-- Active Options -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Active Options</h2>
+                    {% if state.active_options %}
+                    <div class="space-y-2">
+                        {% for opt in state.active_options %}
+                        <div class="flex justify-between items-center p-3 bg-base-200 rounded-lg">
+                            <div>
+                                <div class="font-bold">{{ opt.ticker }} ${{ opt.strike }}</div>
+                                <div class="text-sm opacity-70">{{ opt.strategy }} exp {{ opt.expiration }}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-success">${{ "{:,.0f}".format(opt.premium) }}</div>
+                                <div class="text-xs {% if opt.days_to_expiry <= 7 %}text-warning{% endif %}">
+                                    {{ opt.days_to_expiry }} days
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-base-content/60">No active options</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Income Breakdown -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Income Breakdown</h2>
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span>Trading Gains</span>
+                            <span class="font-mono">${{ "{:,.0f}".format(state.income.trading_gains) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Option Income</span>
+                            <span class="font-mono">${{ "{:,.0f}".format(state.income.option_income) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Dividends</span>
+                            <span class="font-mono">${{ "{:,.0f}".format(state.income.dividends) }}</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                        <div class="flex justify-between font-bold">
+                            <span>Total YTD</span>
+                            <span class="font-mono text-success">${{ "{:,.0f}".format(state.income.total) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Quick Actions</h2>
+            <div class="flex flex-wrap gap-2">
+                <a href="/trade" class="btn btn-primary">New Trade</a>
+                <a href="/options" class="btn btn-secondary">Manage Options</a>
+                <a href="/cash" class="btn btn-accent">Cash Transaction</a>
+                <a href="/events" class="btn btn-ghost">View History</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
