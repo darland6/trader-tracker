@@ -48,12 +48,21 @@ GET    /api/alt-history/projections/{id}   - Get saved projection
 DELETE /api/alt-history/projections/{id}   - Delete projection
 ```
 
+#### Cluster Visualization (2026-01-10)
+- **Cluster View Button** in modal header opens immersive 3D comparison
+- **Multiple Mini Solar Systems** arranged in circular cluster
+  - Reality shown with gold sun, alternates with purple
+  - Each system has orbiting planets matching holdings
+- **Timeline Scrubber** to animate all systems through 3-year projection
+  - Play/pause button for auto-playback
+  - Date display shows current projection point
+- **Leaderboard Overlay** ranks timelines by growth percentage
+  - Gold/silver/bronze medals for top performers
+  - Updates in real-time as timeline progresses
+- **Visual Feedback** - Systems and planets scale based on portfolio value growth
+
 #### Future Ideas (Not Yet Implemented)
-- **Cluster Visualization** - Multiple mini solar systems showing all alternates
-  - Animate through time together
-  - Size indicates performance
-  - Visual links showing divergence between realities
-- **Leaderboard** - Rank all timelines by projected performance
+- **Visual Links** - Lines connecting same tickers across realities to show divergence
 - **Gaussian Splat Generator** - Given a simple idea (e.g., "more aggressive on tech"),
   generate multiple variations at different intensities and compare
 
