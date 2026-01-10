@@ -41,7 +41,7 @@ async def get_state():
     total_holdings_value = 0
 
     for ticker, shares in state.get('holdings', {}).items():
-        if shares > 0:
+        if shares > 0.01:  # Filter out dust/fractional positions
             price = state.get('latest_prices', {}).get(ticker, 0)
             cost_info = state.get('cost_basis', {}).get(ticker, {})
             market_value = shares * price
