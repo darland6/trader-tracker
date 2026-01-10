@@ -129,10 +129,65 @@ def get_llm_config() -> LLMConfig:
 
 
 def update_config(**kwargs) -> LLMConfig:
-    """Update and save configuration."""
+    """Update and save configuration to both JSON and .env files."""
     config = load_config()
     for key, value in kwargs.items():
         if hasattr(config, key):
             setattr(config, key, value)
     save_config(config)
+
+    # Also update .env file for settings that are read from there
+    env_file = CONFIG_DIR / ".env"
+    env_updates = {}
+
+    if 'provider' in kwargs:
+        env_updates['LLM_PROVIDER'] = kwargs['provider']
+    if 'enabled' in kwargs:
+        env_updates['LLM_ENABLED'] = 'true' if kwargs['enabled'] else 'false'
+    if 'local_url' in kwargs:
+        env_updates['LOCAL_LLM_URL'] = kwargs['local_url']
+    if 'local_model' in kwargs:
+        env_updates['LOCAL_LLM_MODEL'] = kwargs['local_model']
+
+    if env_updates:
+        _update_env_file(env_file, env_updates)
+
     return config
+
+
+def _update_env_file(env_file: Path, updates: dict) -> None:
+    """Update specific keys in .env file."""
+    # Read existing content
+    env_lines = []
+    if env_file.exists():
+        with open(env_file) as f:
+            env_lines = f.readlines()
+
+    # Track which keys we've updated
+    updated_keys = set()
+    new_lines = []
+
+    for line in env_lines:
+        stripped = line.strip()
+        # Check if this line is one we need to update
+        updated = False
+        for key, value in updates.items():
+            if stripped.startswith(f'{key}='):
+                new_lines.append(f'{key}={value}\n')
+                updated_keys.add(key)
+                updated = True
+                # Update environment for current process
+                os.environ[key] = str(value)
+                break
+        if not updated:
+            new_lines.append(line)
+
+    # Add any keys that weren't found
+    for key, value in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f'{key}={value}\n')
+            os.environ[key] = str(value)
+
+    # Write back
+    with open(env_file, 'w') as f:
+        f.writelines(new_lines)

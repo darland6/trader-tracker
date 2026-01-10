@@ -244,31 +244,108 @@
     });
 
     // LLM Settings
-    function saveLLMSettings() {
-        // This would save via API - for now, show instructions
+    async function saveLLMSettings() {
         const provider = document.getElementById('llm-provider').value;
         const model = document.getElementById('llm-model').value;
         const url = document.getElementById('llm-url').value;
         const enabled = document.getElementById('llm-enabled').checked;
 
-        document.getElementById('llm-result').innerHTML = `
-            <div class="alert alert-info">
-                <div>
-                    <p>To save these settings, run these CLI commands:</p>
-                    <pre class="mt-2 text-sm">
-python portfolio.py config provider ${provider}
-python portfolio.py config model ${model}
-python portfolio.py config url ${url}
-python portfolio.py config ${enabled ? 'enable' : 'disable'}</pre>
+        const resultDiv = document.getElementById('llm-result');
+        resultDiv.innerHTML = '<div class="alert">Saving settings...</div>';
+
+        try {
+            const payload = {
+                provider: provider,
+                enabled: enabled,
+                local_url: url
+            };
+
+            // Set the appropriate model field based on provider
+            if (provider === 'local') {
+                payload.local_model = model;
+            } else {
+                payload.claude_model = model;
+            }
+
+            const response = await fetch('/api/config/llm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Settings saved! Provider: ${data.provider}, Model: ${provider === 'local' ? data.local_model : data.claude_model}</span>
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <span>Failed to save: ${data.detail || 'Unknown error'}</span>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <span>Error: ${error.message}</span>
                 </div>
-            </div>
-        `;
+            `;
+        }
     }
 
-    function testLLMConnection() {
-        document.getElementById('llm-result').innerHTML = `
-            <div class="alert">Testing connection... Run: <code>python portfolio.py config test</code></div>
+    async function testLLMConnection() {
+        const resultDiv = document.getElementById('llm-result');
+        resultDiv.innerHTML = `
+            <div class="alert">
+                <span class="loading loading-spinner loading-sm"></span>
+                <span>Testing connection...</span>
+            </div>
         `;
+
+        try {
+            const response = await fetch('/api/config/llm/test', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <p class="font-bold">Connected!</p>
+                            <p class="text-sm">Provider: ${data.provider} | Model: ${data.model}</p>
+                            <p class="text-sm opacity-70">Response: "${data.response}"</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <p class="font-bold">Connection Failed</p>
+                            <p class="text-sm">${data.error}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <span>Error: ${error.message}</span>
+                </div>
+            `;
+        }
     }
 
     // Show/hide URL field based on provider
