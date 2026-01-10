@@ -1231,6 +1231,12 @@ async function togglePlaybackMode() {
 }
 window.togglePlaybackMode = togglePlaybackMode;
 
+function togglePlaybackExpand() {
+    const panel = document.getElementById('playback-panel');
+    panel.classList.toggle('compact');
+}
+window.togglePlaybackExpand = togglePlaybackExpand;
+
 function rebuildPlanetsFromPortfolioData() {
     if (!portfolioData) return;
 

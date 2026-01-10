@@ -974,21 +974,93 @@
         /* Playback Controls */
         #playback-panel {
             position: absolute;
-            top: 50%;
+            bottom: 20px;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translateX(-50%);
             background: rgba(26, 26, 46, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 16px;
-            padding: 20px 30px;
+            padding: 12px 20px;
             backdrop-filter: blur(10px);
             pointer-events: auto;
             display: none;
-            min-width: 500px;
+            transition: all 0.3s ease;
+            max-width: 90vw;
         }
 
         #playback-panel.visible {
             display: block;
+        }
+
+        /* Compact mode - default when playing */
+        #playback-panel.compact {
+            padding: 8px 16px;
+            border-radius: 30px;
+        }
+
+        #playback-panel.compact .playback-header,
+        #playback-panel.compact .playback-speed,
+        #playback-panel.compact .playback-event,
+        #playback-panel.compact .playback-snapshot-values {
+            display: none;
+        }
+
+        #playback-panel.compact .playback-controls {
+            margin: 0;
+            gap: 8px;
+        }
+
+        #playback-panel.compact .playback-btn {
+            width: 32px;
+            height: 32px;
+            font-size: 14px;
+        }
+
+        #playback-panel.compact .playback-btn.primary {
+            width: 40px;
+            height: 40px;
+            font-size: 18px;
+        }
+
+        #playback-panel.compact .playback-timeline {
+            margin: 8px 0 0 0;
+            min-width: 200px;
+        }
+
+        #playback-panel.compact .playback-info {
+            margin-top: 4px;
+            font-size: 11px;
+        }
+
+        /* Expand button for compact mode */
+        .playback-expand-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #888;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 12px;
+        }
+
+        .playback-expand-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        #playback-panel.compact .playback-expand-btn {
+            display: inline-block;
+        }
+
+        #playback-panel:not(.compact) .playback-expand-btn {
+            display: none;
+        }
+
+        /* Full mode */
+        #playback-panel:not(.compact) {
+            min-width: 450px;
+            padding: 20px 30px;
         }
 
         .playback-header {
@@ -1750,7 +1822,7 @@
         </button>
 
         <!-- Playback Control Panel -->
-        <div id="playback-panel">
+        <div id="playback-panel" class="compact">
             <div class="playback-header">
                 <h3>Portfolio History Playback</h3>
                 <button class="playback-close" onclick="togglePlaybackMode()">x</button>
@@ -1767,6 +1839,7 @@
                 <button class="playback-btn" onclick="playbackStep(-1)" title="Previous Event">|&lt;</button>
                 <button class="playback-btn primary" id="playback-play-btn" onclick="togglePlayback()" title="Play/Pause">|&gt;</button>
                 <button class="playback-btn" onclick="playbackStep(1)" title="Next Event">&gt;|</button>
+                <button class="playback-expand-btn" onclick="togglePlaybackExpand()" title="Expand controls">Expand</button>
             </div>
 
             <div class="playback-timeline">
@@ -1796,6 +1869,7 @@
                     <div class="playback-stat-value" id="playback-total">$0</div>
                     <div class="playback-stat-label">Total</div>
                 </div>
+                <button class="playback-expand-btn" onclick="togglePlaybackExpand()" style="margin-top: 12px;">Minimize</button>
             </div>
         </div>
 
