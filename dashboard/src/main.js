@@ -305,6 +305,235 @@ function createMomentumParticles(radius, momentum) {
     return new THREE.Points(geometry, material);
 }
 
+// Create Cash "planet" with moons representing breakdown
+function createCashPlanet(cashBreakdown, portfolioTotal) {
+    const { total, secured_put_collateral, tax_reserve, available } = cashBreakdown;
+
+    // Calculate size based on total cash relative to portfolio
+    const sizeRatio = total / portfolioTotal;
+    const radius = 1.0 + sizeRatio * 6; // Similar sizing to stock planets
+
+    // Create golden cash planet
+    const geometry = new THREE.SphereGeometry(radius, 64, 64);
+
+    // Create golden texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    // Golden gradient base
+    const gradient = ctx.createLinearGradient(0, 0, 512, 256);
+    gradient.addColorStop(0, '#ffd700');
+    gradient.addColorStop(0.3, '#ffec8b');
+    gradient.addColorStop(0.5, '#ffd700');
+    gradient.addColorStop(0.7, '#daa520');
+    gradient.addColorStop(1, '#b8860b');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 512, 256);
+
+    // Add metallic sheen effects
+    for (let i = 0; i < 20; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 256;
+        const r = 30 + Math.random() * 50;
+        const spotGradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+        spotGradient.addColorStop(0, 'rgba(255, 255, 200, 0.4)');
+        spotGradient.addColorStop(0.5, 'rgba(255, 215, 0, 0.2)');
+        spotGradient.addColorStop(1, 'rgba(184, 134, 11, 0)');
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = spotGradient;
+        ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+
+    const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        metalness: 0.7,
+        roughness: 0.3,
+        emissive: 0x332200,
+        emissiveIntensity: 0.3
+    });
+
+    const planet = new THREE.Mesh(geometry, material);
+
+    // Create planet group
+    const planetGroup = new THREE.Group();
+    planetGroup.add(planet);
+
+    // Add golden glow
+    for (let i = 1; i <= 2; i++) {
+        const glowGeometry = new THREE.SphereGeometry(radius + i * 0.2, 32, 32);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffd700,
+            transparent: true,
+            opacity: 0.15 / i,
+            side: THREE.BackSide
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        planetGroup.add(glow);
+    }
+
+    // Create rings showing the cash breakdown proportions
+    if (total > 0) {
+        // Outer ring: Total cash (gold)
+        const ringInner = radius + 0.4;
+        const ringOuter = radius + 0.8;
+
+        // Available cash ring (green) - the usable portion
+        const availablePct = available / total;
+        if (availablePct > 0.01) {
+            const availableRing = createPartialRing(ringInner, ringOuter, 0, availablePct * Math.PI * 2, 0x00ff88);
+            availableRing.rotation.x = Math.PI / 2;
+            planetGroup.add(availableRing);
+        }
+
+        // Collateral ring (orange) - locked for puts
+        const collateralPct = secured_put_collateral / total;
+        if (collateralPct > 0.01) {
+            const collateralRing = createPartialRing(ringInner, ringOuter,
+                availablePct * Math.PI * 2,
+                (availablePct + collateralPct) * Math.PI * 2,
+                0xff8c00);
+            collateralRing.rotation.x = Math.PI / 2;
+            planetGroup.add(collateralRing);
+        }
+
+        // Tax reserve ring (red) - set aside for taxes
+        const taxPct = tax_reserve / total;
+        if (taxPct > 0.01) {
+            const taxRing = createPartialRing(ringInner, ringOuter,
+                (availablePct + collateralPct) * Math.PI * 2,
+                Math.PI * 2,
+                0xff4444);
+            taxRing.rotation.x = Math.PI / 2;
+            planetGroup.add(taxRing);
+        }
+    }
+
+    // Create moons for each cash component
+    const moonData = [
+        { name: 'Available', value: available, color: 0x00ff88, angle: 0 },
+        { name: 'Collateral', value: secured_put_collateral, color: 0xff8c00, angle: Math.PI * 0.7 },
+        { name: 'Tax Reserve', value: tax_reserve, color: 0xff4444, angle: Math.PI * 1.4 }
+    ];
+
+    moonData.forEach((moon, idx) => {
+        if (moon.value > 0) {
+            const moonRadius = 0.2 + (moon.value / total) * 0.6;
+            const moonGeometry = new THREE.SphereGeometry(moonRadius, 32, 32);
+            const moonMaterial = new THREE.MeshStandardMaterial({
+                color: moon.color,
+                metalness: 0.3,
+                roughness: 0.6,
+                emissive: moon.color,
+                emissiveIntensity: 0.2
+            });
+            const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+
+            // Position moon in orbit around cash planet
+            const moonOrbitRadius = radius + 1.5 + idx * 0.5;
+            moonMesh.position.x = Math.cos(moon.angle) * moonOrbitRadius;
+            moonMesh.position.z = Math.sin(moon.angle) * moonOrbitRadius;
+            moonMesh.position.y = (Math.random() - 0.5) * 0.5;
+
+            moonMesh.userData = {
+                type: 'cash-moon',
+                name: moon.name,
+                value: moon.value,
+                orbitRadius: moonOrbitRadius,
+                orbitAngle: moon.angle,
+                orbitSpeed: 0.003 + idx * 0.001
+            };
+
+            planetGroup.add(moonMesh);
+        }
+    });
+
+    // Position cash planet - place it at a distinct orbit
+    const orbitRadius = 8; // Inner orbit, close to sun (cash is central)
+    const angle = Math.PI * 0.25; // Offset from other planets
+    planetGroup.position.x = Math.cos(angle) * orbitRadius;
+    planetGroup.position.z = Math.sin(angle) * orbitRadius;
+    planetGroup.position.y = 0;
+
+    // Store data
+    planetGroup.userData = {
+        type: 'cash-planet',
+        ticker: 'CASH',
+        market_value: total,
+        breakdown: cashBreakdown,
+        orbitRadius,
+        orbitSpeed: 0.0002,
+        orbitAngle: angle,
+        rotationSpeed: 0.001,
+        planet
+    };
+
+    // Create orbit line
+    const orbitPoints = [];
+    for (let i = 0; i <= 64; i++) {
+        const a = (i / 64) * Math.PI * 2;
+        orbitPoints.push(new THREE.Vector3(
+            Math.cos(a) * orbitRadius,
+            0,
+            Math.sin(a) * orbitRadius
+        ));
+    }
+    const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+    const orbitMaterial = new THREE.LineBasicMaterial({
+        color: 0xffd700,
+        transparent: true,
+        opacity: 0.15
+    });
+    const orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+    scene.add(orbitLine);
+
+    scene.add(planetGroup);
+    planets.set('CASH', { group: planetGroup, orbit: orbitLine });
+
+    return planetGroup;
+}
+
+// Helper to create partial ring (arc)
+function createPartialRing(innerRadius, outerRadius, startAngle, endAngle, color) {
+    const segments = 64;
+    const shape = new THREE.Shape();
+
+    // Outer arc
+    for (let i = 0; i <= segments; i++) {
+        const angle = startAngle + (i / segments) * (endAngle - startAngle);
+        const x = Math.cos(angle) * outerRadius;
+        const y = Math.sin(angle) * outerRadius;
+        if (i === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+    }
+
+    // Inner arc (reverse)
+    for (let i = segments; i >= 0; i--) {
+        const angle = startAngle + (i / segments) * (endAngle - startAngle);
+        const x = Math.cos(angle) * innerRadius;
+        const y = Math.sin(angle) * innerRadius;
+        shape.lineTo(x, y);
+    }
+
+    shape.closePath();
+
+    const geometry = new THREE.ShapeGeometry(shape);
+    const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide
+    });
+
+    return new THREE.Mesh(geometry, material);
+}
+
 function createPlanet(holding, index, total, portfolioTotal) {
     const { ticker, shares, market_value, unrealized_gain_pct, current_price } = holding;
 
@@ -444,6 +673,26 @@ function updatePlanets(deltaTime) {
             userData.planet.rotation.y += userData.rotationSpeed;
         }
 
+        // Handle Cash planet moons
+        if (userData.type === 'cash-planet') {
+            group.children.forEach(child => {
+                if (child.userData && child.userData.type === 'cash-moon') {
+                    // Orbit moon around cash planet
+                    child.userData.orbitAngle += child.userData.orbitSpeed;
+                    const moonOrbit = child.userData.orbitRadius;
+                    child.position.x = Math.cos(child.userData.orbitAngle) * moonOrbit;
+                    child.position.z = Math.sin(child.userData.orbitAngle) * moonOrbit;
+                }
+            });
+
+            // Gentle golden pulse for cash planet
+            const pulseIntensity = Math.sin(clock.getElapsedTime() * 1.5) * 0.1;
+            if (userData.planet && userData.planet.material) {
+                userData.planet.material.emissiveIntensity = 0.3 + pulseIntensity;
+            }
+            return;
+        }
+
         // Animate particles
         if (userData.particles) {
             userData.particles.rotation.y += 0.005 * (1 + Math.abs(userData.momentum));
@@ -532,6 +781,35 @@ function updateHUD(data) {
     // Update holdings grid
     const grid = document.getElementById('holdings-grid');
     grid.innerHTML = '';
+
+    // Add Cash card first with breakdown
+    if (data.cash_breakdown) {
+        const cb = data.cash_breakdown;
+        const cashCard = document.createElement('div');
+        cashCard.className = 'holding-card cash-card';
+        cashCard.style.borderLeft = '3px solid #ffd700';
+        cashCard.style.background = 'linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(20, 20, 40, 0.95) 100%)';
+        cashCard.innerHTML = `
+            <div class="ticker" style="color: #ffd700;">CASH</div>
+            <div class="value">$${cb.total.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+            <div style="font-size: 10px; margin-top: 4px;">
+                <div style="display: flex; justify-content: space-between; color: #00ff88;">
+                    <span>Available:</span>
+                    <span>$${cb.available.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; color: #ff8c00;">
+                    <span>Collateral:</span>
+                    <span>$${cb.secured_put_collateral.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; color: #ff4444;">
+                    <span>Tax Reserve:</span>
+                    <span>$${cb.tax_reserve.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
+                </div>
+            </div>
+        `;
+        cashCard.onclick = () => focusOnPlanet('CASH');
+        grid.appendChild(cashCard);
+    }
 
     data.holdings.forEach(h => {
         const isGain = h.unrealized_gain_pct >= 0;
@@ -696,7 +974,102 @@ function onCanvasMouseMove(event) {
     }
 }
 
+function showCashPlanetInfo() {
+    const cb = portfolioData?.cash_breakdown;
+    if (!cb) return;
+
+    let popup = document.getElementById('planet-info');
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'planet-info';
+        popup.style.cssText = `
+            position: fixed;
+            background: rgba(20, 20, 40, 0.95);
+            border: 2px solid #ffd700;
+            border-radius: 12px;
+            padding: 16px;
+            pointer-events: auto;
+            z-index: 1000;
+            min-width: 240px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 30px rgba(255, 215, 0, 0.3);
+        `;
+        document.body.appendChild(popup);
+    }
+
+    popup.style.borderColor = '#ffd700';
+
+    popup.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 24px; font-weight: bold; color: #ffd700;">CASH</span>
+            <button onclick="zoomToSystem()" style="background: none; border: 1px solid #666; color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer;">×</button>
+        </div>
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #ffd700; padding-bottom: 8px;">
+                <span style="color: #ffd700; font-weight: bold;">Total Cash</span>
+                <span style="font-family: monospace; font-size: 18px; color: #ffd700;">$${cb.total.toLocaleString()}</span>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #00ff88;">
+                    <span style="display: inline-block; width: 10px; height: 10px; background: #00ff88; border-radius: 50%; margin-right: 6px;"></span>
+                    Available
+                </span>
+                <span style="font-family: monospace; color: #00ff88;">$${cb.available.toLocaleString()}</span>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-left: 16px; margin-top: -4px;">
+                Cash ready to deploy
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                <span style="color: #ff8c00;">
+                    <span style="display: inline-block; width: 10px; height: 10px; background: #ff8c00; border-radius: 50%; margin-right: 6px;"></span>
+                    Put Collateral
+                </span>
+                <span style="font-family: monospace; color: #ff8c00;">$${cb.secured_put_collateral.toLocaleString()}</span>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-left: 16px; margin-top: -4px;">
+                Backing active secured puts
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                <span style="color: #ff4444;">
+                    <span style="display: inline-block; width: 10px; height: 10px; background: #ff4444; border-radius: 50%; margin-right: 6px;"></span>
+                    Tax Reserve
+                </span>
+                <span style="font-family: monospace; color: #ff4444;">$${cb.tax_reserve.toLocaleString()}</span>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-left: 16px; margin-top: -4px;">
+                ${(cb.tax_rate * 100).toFixed(0)}% of $${cb.ytd_realized_gains.toLocaleString()} YTD gains
+            </div>
+
+            <div style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">Allocated</span>
+                    <span style="font-family: monospace;">${cb.allocated_pct.toFixed(1)}%</span>
+                </div>
+                <div style="height: 6px; background: #333; border-radius: 3px; margin-top: 6px; overflow: hidden;">
+                    <div style="height: 100%; display: flex;">
+                        <div style="width: ${(cb.available / cb.total * 100).toFixed(1)}%; background: #00ff88;"></div>
+                        <div style="width: ${(cb.secured_put_collateral / cb.total * 100).toFixed(1)}%; background: #ff8c00;"></div>
+                        <div style="width: ${(cb.tax_reserve / cb.total * 100).toFixed(1)}%; background: #ff4444;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    popup.style.display = 'block';
+    updatePopupPosition('CASH');
+}
+
 function showPlanetInfo(ticker, worldPosition) {
+    // Handle CASH planet separately
+    if (ticker === 'CASH') {
+        showCashPlanetInfo();
+        return;
+    }
+
     // Get holding data
     const holding = portfolioData?.holdings?.find(h => h.ticker === ticker);
     if (!holding) return;
@@ -1542,6 +1915,11 @@ async function main() {
 
         // Use total portfolio value for relative sizing (planets relative to the sun/total)
         const totalValue = portfolioData.total_value || portfolioData.portfolio_value;
+
+        // Create Cash planet first (if cash breakdown available)
+        if (portfolioData.cash_breakdown) {
+            createCashPlanet(portfolioData.cash_breakdown, totalValue);
+        }
 
         // Create planets for each holding
         portfolioData.holdings.forEach((holding, index) => {

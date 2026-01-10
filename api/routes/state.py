@@ -102,9 +102,42 @@ async def get_state():
         "progress_pct": round((ytd_income / 30000) * 100, 1) if ytd_income else 0
     }
 
+    # Calculate cash breakdown
+    total_cash = cash
+
+    # 1. Secured put collateral (strike * 100 * contracts for each put)
+    secured_put_collateral = 0
+    for opt in state.get('active_options', []):
+        strategy = opt.get('strategy', '').lower()
+        if 'put' in strategy or 'secured' in strategy:
+            strike = opt.get('strike', 0)
+            contracts = opt.get('contracts', 1)
+            secured_put_collateral += strike * 100 * contracts
+
+    # 2. Short-term capital gains tax reserve
+    # Calculate estimated taxes on YTD realized gains at 25% rate
+    SHORT_TERM_TAX_RATE = 0.25
+    ytd_realized_gains = state.get('ytd_trading_gains', 0) + state.get('ytd_option_income', 0)
+    # Only reserve for gains (not losses)
+    tax_reserve = max(0, ytd_realized_gains * SHORT_TERM_TAX_RATE)
+
+    # 3. Available cash (what's actually deployable)
+    available_cash = max(0, total_cash - secured_put_collateral - tax_reserve)
+
+    cash_breakdown = {
+        "total": total_cash,
+        "secured_put_collateral": secured_put_collateral,
+        "tax_reserve": tax_reserve,
+        "tax_rate": SHORT_TERM_TAX_RATE,
+        "ytd_realized_gains": ytd_realized_gains,
+        "available": available_cash,
+        "allocated_pct": round(((secured_put_collateral + tax_reserve) / total_cash * 100) if total_cash > 0 else 0, 1)
+    }
+
     return {
         "as_of": datetime.now().isoformat(),
         "cash": cash,
+        "cash_breakdown": cash_breakdown,
         "portfolio_value": portfolio_value,
         "total_value": total_value,
         "holdings": holdings,
