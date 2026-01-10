@@ -10,6 +10,13 @@ let portfolioData = null;
 let clock = new THREE.Clock();
 let isDemoMode = false;
 
+// Cluster view state
+let clusterViewActive = false;
+let clusterSystems = [];  // Array of {id, name, group, projection, frames}
+let clusterTimelinePosition = 0;  // 0-1 normalized timeline position
+let clusterMaxMonths = 36;  // Default 3 years
+let mainSystemGroup = null;  // Group containing the main solar system for hiding
+
 // Camera animation state
 let cameraAnimation = {
     active: false,
@@ -691,7 +698,10 @@ function showAlternateRealityModal() {
             <div class="alt-modal-content">
                 <div class="alt-modal-header">
                     <h2>Alternate Realities</h2>
-                    <button class="alt-modal-close" onclick="closeAltRealityModal()">&times;</button>
+                    <div class="alt-header-actions">
+                        <button class="alt-btn cluster-btn" onclick="enterClusterView()">🌌 Cluster View</button>
+                        <button class="alt-modal-close" onclick="closeAltRealityModal()">&times;</button>
+                    </div>
                 </div>
                 <div class="alt-modal-body">
                     <div class="alt-tabs">
@@ -882,6 +892,11 @@ function showAlternateRealityModal() {
             .saved-projection-item h4 { margin: 0; color: #627eea; font-size: 14px; }
             .saved-projection-item p { margin: 5px 0 0 0; font-size: 12px; opacity: 0.6; }
             .saved-projection-item .actions { display: flex; gap: 8px; }
+
+            /* Cluster View Button */
+            .alt-header-actions { display: flex; align-items: center; gap: 10px; }
+            .cluster-btn { background: linear-gradient(135deg, #627eea, #9c27b0); padding: 8px 16px; font-size: 13px; }
+            .cluster-btn:hover { background: linear-gradient(135deg, #7c93ed, #ba68c8); }
         `;
         document.head.appendChild(styles);
         document.body.appendChild(modal);
@@ -1472,6 +1487,646 @@ window.deleteProjection = deleteProjection;
 
 // ============ End Future Projection Functions ============
 
+// ============ Cluster View Functions ============
+
+async function enterClusterView() {
+    closeAltRealityModal();
+
+    // Show loading
+    showClusterLoading(true);
+
+    try {
+        // Load all projections data
+        await loadClusterData();
+
+        if (clusterSystems.length === 0) {
+            alert('No projections found. Generate some future projections first!');
+            showClusterLoading(false);
+            return;
+        }
+
+        clusterViewActive = true;
+
+        // Hide main solar system
+        hideMainSystem();
+
+        // Create cluster UI overlay
+        createClusterUI();
+
+        // Create mini solar systems for each projection
+        clusterSystems.forEach((sys, index) => {
+            createMiniSolarSystem(sys, index);
+        });
+
+        // Position systems in cluster formation
+        positionClusterSystems();
+
+        // Move camera to view cluster
+        const clusterCameraPos = new THREE.Vector3(0, 60, 100);
+        gsap.to(camera.position, {
+            x: clusterCameraPos.x,
+            y: clusterCameraPos.y,
+            z: clusterCameraPos.z,
+            duration: 1.5,
+            ease: "power2.inOut"
+        });
+        controls.target.set(0, 0, 0);
+        controls.maxDistance = 200;
+        controls.minDistance = 30;
+
+        // Initial timeline update
+        updateClusterTimeline(0);
+
+    } catch (error) {
+        console.error('Failed to enter cluster view:', error);
+        alert('Failed to load cluster view: ' + error.message);
+    }
+
+    showClusterLoading(false);
+}
+window.enterClusterView = enterClusterView;
+
+function exitClusterView() {
+    clusterViewActive = false;
+
+    // Remove cluster systems from scene
+    clusterSystems.forEach(sys => {
+        // Remove label
+        if (sys.group?.userData?.labelDiv) {
+            sys.group.userData.labelDiv.remove();
+        }
+        if (sys.group) {
+            scene.remove(sys.group);
+            // Dispose geometries and materials
+            sys.group.traverse(obj => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(m => m.dispose());
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            });
+        }
+    });
+    clusterSystems = [];
+
+    // Remove cluster UI
+    const clusterUI = document.getElementById('cluster-ui');
+    if (clusterUI) clusterUI.remove();
+
+    // Show main system again
+    showMainSystem();
+
+    // Reset camera
+    gsap.to(camera.position, {
+        x: DEFAULT_CAMERA_POS.x,
+        y: DEFAULT_CAMERA_POS.y,
+        z: DEFAULT_CAMERA_POS.z,
+        duration: 1.5,
+        ease: "power2.inOut"
+    });
+    controls.target.set(0, 0, 0);
+    controls.maxDistance = 80;
+    controls.minDistance = 15;
+}
+window.exitClusterView = exitClusterView;
+
+function showClusterLoading(show) {
+    let loader = document.getElementById('cluster-loading');
+    if (show) {
+        if (!loader) {
+            loader = document.createElement('div');
+            loader.id = 'cluster-loading';
+            loader.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                     background: rgba(0,0,0,0.8); display: flex; align-items: center;
+                     justify-content: center; z-index: 2000; flex-direction: column;">
+                    <div class="loading-spinner" style="width: 60px; height: 60px; border-width: 4px;"></div>
+                    <p style="color: white; margin-top: 20px; font-size: 18px;">Loading Cluster View...</p>
+                </div>
+            `;
+            document.body.appendChild(loader);
+        }
+    } else if (loader) {
+        loader.remove();
+    }
+}
+
+async function loadClusterData() {
+    clusterSystems = [];
+
+    // Load reality projection first
+    const realityProjection = await generateOrLoadProjection('reality');
+    if (realityProjection) {
+        clusterSystems.push({
+            id: 'reality',
+            name: 'Reality',
+            projection: realityProjection,
+            frames: realityProjection.frames || [],
+            group: null,
+            isReality: true
+        });
+        clusterMaxMonths = realityProjection.frames?.length || 36;
+    }
+
+    // Load alternate history projections
+    const altResponse = await fetch('/api/alt-history');
+    const altData = await altResponse.json();
+
+    for (const history of (altData.histories || [])) {
+        const projection = await generateOrLoadProjection(history.id);
+        if (projection) {
+            clusterSystems.push({
+                id: history.id,
+                name: history.name,
+                projection: projection,
+                frames: projection.frames || [],
+                group: null,
+                isReality: false
+            });
+        }
+    }
+}
+
+async function generateOrLoadProjection(historyId) {
+    try {
+        // Try to generate a new projection (or use cached if exists)
+        const response = await fetch('/api/alt-history/projections/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                history_id: historyId,
+                years: 3,
+                use_llm: false  // Use statistical for speed
+            })
+        });
+
+        if (!response.ok) return null;
+        return await response.json();
+    } catch (error) {
+        console.error(`Failed to load projection for ${historyId}:`, error);
+        return null;
+    }
+}
+
+function createClusterUI() {
+    const ui = document.createElement('div');
+    ui.id = 'cluster-ui';
+    ui.innerHTML = `
+        <style>
+            #cluster-ui {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 1000;
+                pointer-events: none;
+            }
+            .cluster-controls {
+                background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+                padding: 30px 20px 20px;
+                pointer-events: auto;
+            }
+            .cluster-timeline {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                margin-bottom: 15px;
+            }
+            .cluster-timeline label {
+                color: #627eea;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            .cluster-timeline input[type="range"] {
+                flex: 1;
+                height: 8px;
+                -webkit-appearance: none;
+                background: linear-gradient(to right, #627eea, #9c27b0);
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .cluster-timeline input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                width: 20px;
+                height: 20px;
+                background: white;
+                border-radius: 50%;
+                cursor: pointer;
+                box-shadow: 0 0 10px rgba(98, 126, 234, 0.5);
+            }
+            .cluster-date {
+                color: white;
+                font-size: 14px;
+                min-width: 100px;
+                text-align: right;
+            }
+            .cluster-exit {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(255,68,68,0.8);
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+                pointer-events: auto;
+                transition: background 0.2s;
+            }
+            .cluster-exit:hover { background: rgba(255,68,68,1); }
+
+            .cluster-leaderboard {
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                background: rgba(0,0,0,0.85);
+                border: 1px solid #627eea44;
+                border-radius: 12px;
+                padding: 15px;
+                min-width: 250px;
+                pointer-events: auto;
+            }
+            .cluster-leaderboard h3 {
+                margin: 0 0 10px 0;
+                color: #627eea;
+                font-size: 14px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            .leaderboard-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 0;
+                border-bottom: 1px solid #ffffff11;
+            }
+            .leaderboard-item:last-child { border-bottom: none; }
+            .leaderboard-rank {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
+                font-size: 12px;
+                margin-right: 10px;
+            }
+            .leaderboard-rank.gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #333; }
+            .leaderboard-rank.silver { background: linear-gradient(135deg, #c0c0c0, #888); color: #333; }
+            .leaderboard-rank.bronze { background: linear-gradient(135deg, #cd7f32, #8b4513); color: white; }
+            .leaderboard-rank.other { background: #ffffff22; color: white; }
+            .leaderboard-name { flex: 1; color: white; font-size: 13px; }
+            .leaderboard-name.reality { color: #627eea; font-weight: bold; }
+            .leaderboard-value { color: #00ff88; font-weight: bold; font-size: 13px; }
+            .leaderboard-value.negative { color: #ff4444; }
+
+            .cluster-play-controls {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
+            .cluster-play-btn {
+                background: #627eea;
+                color: white;
+                border: none;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                cursor: pointer;
+                font-size: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .cluster-play-btn:hover { background: #7c93ed; }
+            .cluster-speed {
+                color: white;
+                font-size: 12px;
+                opacity: 0.7;
+            }
+        </style>
+
+        <button class="cluster-exit" onclick="exitClusterView()">✕ Exit Cluster View</button>
+
+        <div class="cluster-leaderboard">
+            <h3>🏆 Timeline Leaderboard</h3>
+            <div id="leaderboard-items">Loading...</div>
+        </div>
+
+        <div class="cluster-controls">
+            <div class="cluster-timeline">
+                <label>Timeline</label>
+                <div class="cluster-play-controls">
+                    <button class="cluster-play-btn" id="cluster-play-btn" onclick="toggleClusterPlayback()">▶</button>
+                    <span class="cluster-speed" id="cluster-speed">1x</span>
+                </div>
+                <input type="range" id="cluster-timeline-slider" min="0" max="100" value="0"
+                       oninput="onClusterTimelineChange(this.value)">
+                <span class="cluster-date" id="cluster-date">Now</span>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(ui);
+
+    // Initialize leaderboard
+    updateClusterLeaderboard();
+}
+
+let clusterPlaybackActive = false;
+let clusterPlaybackSpeed = 1;
+
+function toggleClusterPlayback() {
+    clusterPlaybackActive = !clusterPlaybackActive;
+    const btn = document.getElementById('cluster-play-btn');
+    btn.textContent = clusterPlaybackActive ? '⏸' : '▶';
+}
+window.toggleClusterPlayback = toggleClusterPlayback;
+
+function onClusterTimelineChange(value) {
+    clusterTimelinePosition = value / 100;
+    updateClusterTimeline(clusterTimelinePosition);
+}
+window.onClusterTimelineChange = onClusterTimelineChange;
+
+function createMiniSolarSystem(systemData, index) {
+    const group = new THREE.Group();
+    group.userData = { systemId: systemData.id, systemName: systemData.name };
+
+    // Create mini sun
+    const sunGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+    const sunMaterial = new THREE.MeshBasicMaterial({
+        color: systemData.isReality ? 0xffd700 : 0x627eea,
+        transparent: true,
+        opacity: 0.9
+    });
+    const miniSun = new THREE.Mesh(sunGeometry, sunMaterial);
+
+    // Sun glow
+    const glowGeometry = new THREE.SphereGeometry(2, 32, 32);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: systemData.isReality ? 0xffaa00 : 0x9c27b0,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.BackSide
+    });
+    const sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+    miniSun.add(sunGlow);
+
+    group.add(miniSun);
+    group.userData.sun = miniSun;
+    group.userData.planets = [];
+
+    // Create label
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'cluster-system-label';
+    labelDiv.style.cssText = `
+        position: absolute;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        text-align: center;
+        text-shadow: 0 0 10px black;
+        pointer-events: none;
+        white-space: nowrap;
+    `;
+    labelDiv.textContent = systemData.name;
+    group.userData.labelDiv = labelDiv;
+    document.body.appendChild(labelDiv);
+
+    // Get initial frame data to create planets
+    const initialFrame = systemData.frames[0];
+    if (initialFrame && initialFrame.holdings) {
+        const totalValue = initialFrame.total_value || 1;
+        initialFrame.holdings.forEach((holding, i) => {
+            const planet = createMiniPlanet(holding, i, initialFrame.holdings.length, totalValue);
+            group.add(planet);
+            group.userData.planets.push(planet);
+        });
+    }
+
+    systemData.group = group;
+    scene.add(group);
+}
+
+function createMiniPlanet(holding, index, total, totalValue) {
+    const { ticker, value, price, shares } = holding;
+
+    // Scale down for mini system
+    const sizeRatio = value / totalValue;
+    const radius = 0.2 + sizeRatio * 2;
+
+    // Orbit distance based on index
+    const orbitDistance = 4 + index * 2;
+    const angle = (index / total) * Math.PI * 2;
+
+    // Planet colors
+    const tickerColors = {
+        BMNR: 0x8B4513, NBIS: 0x4169E1, TSLA: 0xC0C0C0,
+        META: 0x1877F2, RKLB: 0x9400D3, PLTR: 0x00CED1
+    };
+    const color = tickerColors[ticker] || 0x888888;
+
+    const geometry = new THREE.SphereGeometry(radius, 16, 16);
+    const material = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8
+    });
+    const planet = new THREE.Mesh(geometry, material);
+
+    planet.position.x = Math.cos(angle) * orbitDistance;
+    planet.position.z = Math.sin(angle) * orbitDistance;
+
+    planet.userData = { ticker, orbitDistance, orbitAngle: angle, orbitSpeed: 0.3 + Math.random() * 0.2 };
+
+    return planet;
+}
+
+function positionClusterSystems() {
+    const count = clusterSystems.length;
+    if (count === 0) return;
+
+    // Arrange in a circle or grid formation
+    const radius = count <= 4 ? 25 : 20 + count * 3;
+
+    clusterSystems.forEach((sys, index) => {
+        if (!sys.group) return;
+
+        if (count === 1) {
+            sys.group.position.set(0, 0, 0);
+        } else {
+            const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
+            sys.group.position.x = Math.cos(angle) * radius;
+            sys.group.position.z = Math.sin(angle) * radius;
+            sys.group.position.y = 0;
+        }
+    });
+}
+
+function updateClusterTimeline(position) {
+    clusterTimelinePosition = position;
+
+    clusterSystems.forEach(sys => {
+        if (!sys.frames || sys.frames.length === 0 || !sys.group) return;
+
+        // Get frame at current position
+        const frameIndex = Math.floor(position * (sys.frames.length - 1));
+        const frame = sys.frames[frameIndex];
+
+        if (!frame) return;
+
+        // Update sun size based on total value
+        const initialValue = sys.frames[0]?.total_value || 1;
+        const currentValue = frame.total_value || initialValue;
+        const growthFactor = currentValue / initialValue;
+        const sunScale = 1 + (growthFactor - 1) * 0.5; // Subtle scaling
+
+        if (sys.group.userData.sun) {
+            sys.group.userData.sun.scale.setScalar(Math.max(0.5, Math.min(3, sunScale)));
+        }
+
+        // Update planets based on holdings in frame
+        const planets = sys.group.userData.planets || [];
+        const holdings = frame.holdings || [];
+
+        planets.forEach((planet, i) => {
+            if (holdings[i]) {
+                const holding = holdings[i];
+                const initialHolding = sys.frames[0]?.holdings?.[i];
+                if (initialHolding) {
+                    const holdingGrowth = holding.value / (initialHolding.value || 1);
+                    const planetScale = 0.5 + holdingGrowth * 0.5;
+                    planet.scale.setScalar(Math.max(0.3, Math.min(2, planetScale)));
+                }
+            }
+        });
+
+        // Store current value for leaderboard
+        sys.currentValue = currentValue;
+        sys.growthPercent = ((currentValue / initialValue) - 1) * 100;
+    });
+
+    // Update date display
+    if (clusterSystems[0]?.frames) {
+        const frameIndex = Math.floor(position * (clusterSystems[0].frames.length - 1));
+        const frame = clusterSystems[0].frames[frameIndex];
+        if (frame?.date) {
+            document.getElementById('cluster-date').textContent = frame.date;
+        }
+    }
+
+    // Update slider
+    document.getElementById('cluster-timeline-slider').value = position * 100;
+
+    // Update leaderboard
+    updateClusterLeaderboard();
+}
+
+function updateClusterLeaderboard() {
+    const container = document.getElementById('leaderboard-items');
+    if (!container) return;
+
+    // Sort systems by current value
+    const sorted = [...clusterSystems]
+        .filter(s => s.currentValue !== undefined)
+        .sort((a, b) => b.currentValue - a.currentValue);
+
+    if (sorted.length === 0) {
+        container.innerHTML = '<p style="color: #666; font-size: 12px;">Move timeline to see rankings</p>';
+        return;
+    }
+
+    container.innerHTML = sorted.map((sys, index) => {
+        const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : 'other';
+        const nameClass = sys.isReality ? 'reality' : '';
+        const valueClass = sys.growthPercent >= 0 ? '' : 'negative';
+        const growthSign = sys.growthPercent >= 0 ? '+' : '';
+
+        return `
+            <div class="leaderboard-item">
+                <span class="leaderboard-rank ${rankClass}">${index + 1}</span>
+                <span class="leaderboard-name ${nameClass}">${sys.name}</span>
+                <span class="leaderboard-value ${valueClass}">${growthSign}${sys.growthPercent?.toFixed(1) || 0}%</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function hideMainSystem() {
+    // Hide sun and planets
+    if (sun) sun.visible = false;
+    planets.forEach(planet => {
+        if (planet.group) planet.group.visible = false;
+    });
+    // Hide pyramid
+    const pyramid = scene.getObjectByName('alternatePyramid');
+    if (pyramid) pyramid.visible = false;
+    // Hide cash planet
+    const cashPlanet = scene.getObjectByName('cashPlanet');
+    if (cashPlanet) cashPlanet.visible = false;
+}
+
+function showMainSystem() {
+    if (sun) sun.visible = true;
+    planets.forEach(planet => {
+        if (planet.group) planet.group.visible = true;
+    });
+    const pyramid = scene.getObjectByName('alternatePyramid');
+    if (pyramid) pyramid.visible = true;
+    const cashPlanet = scene.getObjectByName('cashPlanet');
+    if (cashPlanet) cashPlanet.visible = true;
+}
+
+// Update cluster view in animation loop
+function updateClusterView(deltaTime) {
+    if (!clusterViewActive) return;
+
+    // Animate planets orbiting
+    clusterSystems.forEach(sys => {
+        if (!sys.group) return;
+
+        const planets = sys.group.userData.planets || [];
+        planets.forEach(planet => {
+            if (planet.userData.orbitDistance) {
+                planet.userData.orbitAngle += planet.userData.orbitSpeed * deltaTime * 0.5;
+                planet.position.x = Math.cos(planet.userData.orbitAngle) * planet.userData.orbitDistance;
+                planet.position.z = Math.sin(planet.userData.orbitAngle) * planet.userData.orbitDistance;
+            }
+        });
+
+        // Update label position
+        if (sys.group.userData.labelDiv) {
+            const pos = sys.group.position.clone();
+            pos.y += 8;
+            pos.project(camera);
+            const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-pos.y * 0.5 + 0.5) * window.innerHeight;
+            sys.group.userData.labelDiv.style.left = x + 'px';
+            sys.group.userData.labelDiv.style.top = y + 'px';
+            sys.group.userData.labelDiv.style.transform = 'translate(-50%, -50%)';
+        }
+    });
+
+    // Auto-play if active
+    if (clusterPlaybackActive) {
+        const speed = 0.0005 * clusterPlaybackSpeed;
+        clusterTimelinePosition = Math.min(1, clusterTimelinePosition + speed);
+        updateClusterTimeline(clusterTimelinePosition);
+
+        if (clusterTimelinePosition >= 1) {
+            clusterPlaybackActive = false;
+            document.getElementById('cluster-play-btn').textContent = '▶';
+        }
+    }
+}
+
+// ============ End Cluster View Functions ============
+
 function createPlanet(holding, index, total, portfolioTotal) {
     const { ticker, shares, market_value, unrealized_gain_pct, current_price } = holding;
 
@@ -1688,6 +2343,9 @@ function animate() {
     if (selectedPlanet) {
         updatePopupPosition(selectedPlanet);
     }
+
+    // Update cluster view if active
+    updateClusterView(deltaTime);
 
     renderer.render(scene, camera);
 }
