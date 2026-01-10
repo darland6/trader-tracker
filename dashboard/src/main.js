@@ -1549,6 +1549,9 @@ window.enterClusterView = enterClusterView;
 function exitClusterView() {
     clusterViewActive = false;
 
+    // Stop any playback
+    clusterPlaybackActive = false;
+
     // Remove cluster systems from scene
     clusterSystems.forEach(sys => {
         // Remove label
@@ -1572,9 +1575,16 @@ function exitClusterView() {
     });
     clusterSystems = [];
 
-    // Remove cluster UI
+    // Remove cluster UI elements
     const clusterUI = document.getElementById('cluster-ui');
     if (clusterUI) clusterUI.remove();
+
+    // Remove info panel if open
+    const infoPanel = document.getElementById('cluster-system-info');
+    if (infoPanel) infoPanel.remove();
+
+    // Remove any lingering cluster labels
+    document.querySelectorAll('.cluster-system-label').forEach(el => el.remove());
 
     // Show main system again
     showMainSystem();
@@ -1619,35 +1629,48 @@ async function loadClusterData() {
 
     // Load reality projection first
     const realityProjection = await generateOrLoadProjection('reality');
-    if (realityProjection) {
+    console.log('Reality projection:', realityProjection);
+
+    if (realityProjection && realityProjection.frames?.length > 0) {
+        // Validate frames have data
+        const firstFrame = realityProjection.frames[0];
+        console.log('Reality first frame:', firstFrame);
+
         clusterSystems.push({
             id: 'reality',
             name: 'Reality',
             projection: realityProjection,
-            frames: realityProjection.frames || [],
+            frames: realityProjection.frames,
             group: null,
-            isReality: true
+            isReality: true,
+            modifications: []
         });
-        clusterMaxMonths = realityProjection.frames?.length || 36;
+        clusterMaxMonths = realityProjection.frames.length;
     }
 
     // Load alternate history projections
     const altResponse = await fetch('/api/alt-history');
     const altData = await altResponse.json();
+    console.log('Alternate histories:', altData);
 
     for (const history of (altData.histories || [])) {
         const projection = await generateOrLoadProjection(history.id);
-        if (projection) {
+        console.log(`Alternate ${history.name} projection:`, projection);
+
+        if (projection && projection.frames?.length > 0) {
             clusterSystems.push({
                 id: history.id,
                 name: history.name,
                 projection: projection,
-                frames: projection.frames || [],
+                frames: projection.frames,
                 group: null,
-                isReality: false
+                isReality: false,
+                modifications: history.modifications || []
             });
         }
     }
+
+    console.log('Loaded cluster systems:', clusterSystems.length);
 }
 
 async function generateOrLoadProjection(historyId) {
@@ -1849,6 +1872,7 @@ window.toggleClusterPlayback = toggleClusterPlayback;
 
 function onClusterTimelineChange(value) {
     clusterTimelinePosition = value / 100;
+    console.log('Timeline slider changed to:', clusterTimelinePosition);
     updateClusterTimeline(clusterTimelinePosition);
 }
 window.onClusterTimelineChange = onClusterTimelineChange;
@@ -1971,57 +1995,142 @@ function positionClusterSystems() {
 function updateClusterTimeline(position) {
     clusterTimelinePosition = position;
 
+    // PASS 1: Calculate all growth values first
     clusterSystems.forEach(sys => {
-        if (!sys.frames || sys.frames.length === 0 || !sys.group) return;
+        if (sys.frames && sys.frames.length > 0) {
+            const frameIndex = Math.floor(position * (sys.frames.length - 1));
+            const frame = sys.frames[frameIndex];
 
-        // Get frame at current position
-        const frameIndex = Math.floor(position * (sys.frames.length - 1));
-        const frame = sys.frames[frameIndex];
+            if (frame) {
+                const initialValue = sys.frames[0]?.total_value || 1;
+                const currentValue = frame.total_value || initialValue;
+                sys.currentValue = currentValue;
+                sys.growthPercent = ((currentValue / initialValue) - 1) * 100;
+            }
+        }
+    });
 
-        if (!frame) return;
+    // Calculate relative differences for EXTREME visualization
+    const growths = clusterSystems.filter(s => s.growthPercent !== undefined).map(s => s.growthPercent);
+    const minGrowth = Math.min(...growths);
+    const maxGrowth = Math.max(...growths);
+    const avgGrowth = growths.reduce((a, b) => a + b, 0) / growths.length;
+    const growthRange = maxGrowth - minGrowth || 1;
 
-        // Update sun size based on total value
-        const initialValue = sys.frames[0]?.total_value || 1;
-        const currentValue = frame.total_value || initialValue;
-        const growthFactor = currentValue / initialValue;
-        const sunScale = 1 + (growthFactor - 1) * 0.5; // Subtle scaling
+    // PASS 2: Update visuals with EXTREME RELATIVE scaling
+    clusterSystems.forEach(sys => {
+        if (!sys.group || sys.growthPercent === undefined) return;
 
+        // Calculate relative performance (0 = worst, 1 = best)
+        const relativePerformance = (sys.growthPercent - minGrowth) / growthRange;
+
+        // Apply power curve to EXAGGERATE small differences
+        // relativePerf 0.5 becomes 0.25, making differences more visible
+        const exaggeratedPerf = Math.pow(relativePerformance, 0.5); // sqrt makes middle values lower
+        // Then apply another curve to spread out the top performers
+        const amplifiedPerf = relativePerformance < 0.5
+            ? relativePerformance * 0.3  // Losers get crushed down
+            : 0.15 + (relativePerformance - 0.5) * 1.7; // Winners get boosted up
+
+        // EXTREME scaling: worst = 0.15x, best = 4x
+        const systemScale = 0.15 + amplifiedPerf * 3.85;
+
+        // Scale the entire system group
+        sys.group.scale.setScalar(systemScale);
+
+        // Update sun color/glow based on relative performance
         if (sys.group.userData.sun) {
-            sys.group.userData.sun.scale.setScalar(Math.max(0.5, Math.min(3, sunScale)));
+            const sun = sys.group.userData.sun;
+            const glow = sun.children[0]; // The glow mesh
+
+            // Winner gets MUCH brighter, loser almost disappears
+            const opacity = 0.15 + amplifiedPerf * 0.85;
+            sun.material.opacity = opacity;
+
+            // Emissive intensity for glow effect
+            if (sun.material.emissiveIntensity !== undefined) {
+                sun.material.emissiveIntensity = amplifiedPerf * 2;
+            }
+
+            // Color shift: deep red (loser) -> bright green (winner)
+            if (!sys.isReality) {
+                const hue = relativePerformance * 0.35; // 0=red, 0.35=green
+                const saturation = 0.7 + relativePerformance * 0.3;
+                const lightness = 0.25 + amplifiedPerf * 0.5;
+                sun.material.color.setHSL(hue, saturation, lightness);
+                if (glow) {
+                    glow.material.color.setHSL(hue, saturation * 0.8, lightness * 0.8);
+                    glow.material.opacity = 0.1 + amplifiedPerf * 0.6;
+                    // Scale glow based on performance
+                    glow.scale.setScalar(1 + amplifiedPerf * 1.5);
+                }
+            } else {
+                // Reality: gold that intensifies with performance
+                const lightness = 0.3 + amplifiedPerf * 0.4;
+                sun.material.color.setHSL(0.12, 0.95, lightness);
+                if (glow) {
+                    glow.material.opacity = 0.2 + amplifiedPerf * 0.5;
+                    glow.scale.setScalar(1 + amplifiedPerf * 1.2);
+                }
+            }
         }
 
-        // Update planets based on holdings in frame
+        // Adjust Y position: winners float up, losers sink down
+        const yOffset = (relativePerformance - 0.5) * 15;
+        sys.group.position.y = yOffset;
+
+        // Update planets based on holdings
+        const frameIndex = Math.floor(position * (sys.frames.length - 1));
+        const frame = sys.frames[frameIndex];
         const planets = sys.group.userData.planets || [];
-        const holdings = frame.holdings || [];
+        const holdings = frame?.holdings || [];
 
         planets.forEach((planet, i) => {
             if (holdings[i]) {
                 const holding = holdings[i];
                 const initialHolding = sys.frames[0]?.holdings?.[i];
-                if (initialHolding) {
-                    const holdingGrowth = holding.value / (initialHolding.value || 1);
-                    const planetScale = 0.5 + holdingGrowth * 0.5;
-                    planet.scale.setScalar(Math.max(0.3, Math.min(2, planetScale)));
+                if (initialHolding && initialHolding.value > 0) {
+                    const holdingGrowth = holding.value / initialHolding.value;
+                    // Planet scale relative to BOTH its growth AND system performance
+                    const planetScale = (0.2 + holdingGrowth * 0.8) * (0.5 + amplifiedPerf);
+                    planet.scale.setScalar(Math.max(0.1, Math.min(4, planetScale)));
+
+                    // Planets fade with poor performance
+                    if (planet.material) {
+                        planet.material.opacity = 0.3 + amplifiedPerf * 0.7;
+                    }
                 }
             }
         });
 
-        // Store current value for leaderboard
-        sys.currentValue = currentValue;
-        sys.growthPercent = ((currentValue / initialValue) - 1) * 100;
+        // Update label size/opacity to match
+        if (sys.group.userData.labelDiv) {
+            const label = sys.group.userData.labelDiv;
+            label.style.opacity = 0.3 + amplifiedPerf * 0.7;
+            label.style.fontSize = `${10 + amplifiedPerf * 8}px`;
+        }
+
+        // Debug logging at key positions
+        if (position === 0 || position > 0.99) {
+            console.log(`${sys.name}: growth=${sys.growthPercent.toFixed(1)}%, relative=${relativePerformance.toFixed(2)}, amplified=${amplifiedPerf.toFixed(2)}, scale=${systemScale.toFixed(2)}`);
+        }
     });
 
     // Update date display
-    if (clusterSystems[0]?.frames) {
+    const dateEl = document.getElementById('cluster-date');
+    if (dateEl && clusterSystems[0]?.frames) {
         const frameIndex = Math.floor(position * (clusterSystems[0].frames.length - 1));
         const frame = clusterSystems[0].frames[frameIndex];
         if (frame?.date) {
-            document.getElementById('cluster-date').textContent = frame.date;
+            dateEl.textContent = frame.date;
         }
     }
 
     // Update slider
-    document.getElementById('cluster-timeline-slider').value = position * 100;
+    const slider = document.getElementById('cluster-timeline-slider');
+    if (slider) {
+        slider.value = position * 100;
+    }
 
     // Update leaderboard
     updateClusterLeaderboard();
@@ -2029,12 +2138,17 @@ function updateClusterTimeline(position) {
 
 function updateClusterLeaderboard() {
     const container = document.getElementById('leaderboard-items');
-    if (!container) return;
+    if (!container) {
+        console.log('Leaderboard container not found!');
+        return;
+    }
 
     // Sort systems by current value
     const sorted = [...clusterSystems]
-        .filter(s => s.currentValue !== undefined)
+        .filter(s => s.currentValue !== undefined && s.currentValue > 0)
         .sort((a, b) => b.currentValue - a.currentValue);
+
+    console.log('Leaderboard update: sorted systems=', sorted.length, 'values=', sorted.map(s => `${s.name}:${s.growthPercent?.toFixed(1)}%`));
 
     if (sorted.length === 0) {
         container.innerHTML = '<p style="color: #666; font-size: 12px;">Move timeline to see rankings</p>';
@@ -2046,12 +2160,15 @@ function updateClusterLeaderboard() {
         const nameClass = sys.isReality ? 'reality' : '';
         const valueClass = sys.growthPercent >= 0 ? '' : 'negative';
         const growthSign = sys.growthPercent >= 0 ? '+' : '';
+        const valueStr = sys.currentValue > 1000000
+            ? `$${(sys.currentValue/1000000).toFixed(2)}M`
+            : `$${(sys.currentValue/1000).toFixed(0)}K`;
 
         return `
             <div class="leaderboard-item">
                 <span class="leaderboard-rank ${rankClass}">${index + 1}</span>
                 <span class="leaderboard-name ${nameClass}">${sys.name}</span>
-                <span class="leaderboard-value ${valueClass}">${growthSign}${sys.growthPercent?.toFixed(1) || 0}%</span>
+                <span class="leaderboard-value ${valueClass}">${valueStr} (${growthSign}${sys.growthPercent?.toFixed(1) || 0}%)</span>
             </div>
         `;
     }).join('');
@@ -2123,6 +2240,355 @@ function updateClusterView(deltaTime) {
             document.getElementById('cluster-play-btn').textContent = '▶';
         }
     }
+}
+
+// Handle clicks in cluster view
+function onClusterClick(event) {
+    if (!clusterViewActive) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check each system's sun for intersection
+    for (const sys of clusterSystems) {
+        if (!sys.group?.userData?.sun) continue;
+
+        const intersects = raycaster.intersectObject(sys.group.userData.sun, true);
+        if (intersects.length > 0) {
+            showClusterSystemInfo(sys);
+            return;
+        }
+    }
+
+    // Click on empty space closes any open info panel
+    closeClusterSystemInfo();
+}
+
+function showClusterSystemInfo(sys) {
+    // Close existing
+    closeClusterSystemInfo();
+
+    // Analyze major lifecycle events
+    const lifecycleEvents = analyzeLifecycleEvents(sys);
+
+    // Get history details if it's an alternate
+    const modifications = sys.projection?.analysis?.ticker_analysis ?
+        Object.keys(sys.projection.analysis.ticker_analysis).slice(0, 3) : [];
+
+    const description = sys.isReality ?
+        'Your actual portfolio - the ground truth against which all alternates are compared.' :
+        (sys.projection?.description || getAlternateDescription(sys));
+
+    // Calculate stats
+    const startValue = sys.frames[0]?.total_value || 0;
+    const endValue = sys.frames[sys.frames.length - 1]?.total_value || 0;
+    const totalGrowth = ((endValue / startValue) - 1) * 100;
+
+    const panel = document.createElement('div');
+    panel.id = 'cluster-system-info';
+    panel.innerHTML = `
+        <style>
+            #cluster-system-info {
+                position: fixed;
+                top: 50%;
+                right: 20px;
+                transform: translateY(-50%);
+                width: 320px;
+                max-height: 80vh;
+                overflow-y: auto;
+                background: rgba(0,0,0,0.95);
+                border: 1px solid ${sys.isReality ? '#ffd700' : '#627eea'};
+                border-radius: 16px;
+                padding: 20px;
+                z-index: 1001;
+                box-shadow: 0 0 30px ${sys.isReality ? 'rgba(255,215,0,0.3)' : 'rgba(98,126,234,0.3)'};
+            }
+            .csi-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 15px;
+            }
+            .csi-header h2 {
+                margin: 0;
+                color: ${sys.isReality ? '#ffd700' : '#627eea'};
+                font-size: 20px;
+            }
+            .csi-close {
+                background: none;
+                border: none;
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                opacity: 0.7;
+                padding: 0;
+                line-height: 1;
+            }
+            .csi-close:hover { opacity: 1; }
+            .csi-badge {
+                display: inline-block;
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 11px;
+                margin-top: 5px;
+                background: ${sys.isReality ? '#ffd70033' : '#627eea33'};
+                color: ${sys.isReality ? '#ffd700' : '#627eea'};
+            }
+            .csi-description {
+                color: #ccc;
+                font-size: 13px;
+                line-height: 1.5;
+                margin-bottom: 20px;
+                padding-bottom: 15px;
+                border-bottom: 1px solid #ffffff15;
+            }
+            .csi-stats {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            .csi-stat {
+                background: #ffffff08;
+                padding: 12px;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .csi-stat label {
+                display: block;
+                font-size: 11px;
+                color: #888;
+                margin-bottom: 5px;
+            }
+            .csi-stat value {
+                display: block;
+                font-size: 18px;
+                font-weight: bold;
+                color: white;
+            }
+            .csi-stat value.positive { color: #00ff88; }
+            .csi-stat value.negative { color: #ff4444; }
+            .csi-section {
+                margin-bottom: 15px;
+            }
+            .csi-section h3 {
+                color: #627eea;
+                font-size: 13px;
+                margin: 0 0 10px 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            .csi-lifecycle {
+                background: #ffffff08;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 8px;
+            }
+            .csi-lifecycle .date {
+                font-size: 11px;
+                color: #888;
+            }
+            .csi-lifecycle .event {
+                font-size: 13px;
+                color: white;
+                margin-top: 4px;
+            }
+            .csi-lifecycle .impact {
+                font-size: 12px;
+                margin-top: 4px;
+            }
+            .csi-lifecycle .impact.positive { color: #00ff88; }
+            .csi-lifecycle .impact.negative { color: #ff4444; }
+            .csi-modifications {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .csi-mod {
+                background: #627eea22;
+                color: #627eea;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+            }
+        </style>
+
+        <div class="csi-header">
+            <div>
+                <h2>${sys.name}</h2>
+                <span class="csi-badge">${sys.isReality ? '🌟 Reality' : '🔮 Alternate Timeline'}</span>
+            </div>
+            <button class="csi-close" onclick="closeClusterSystemInfo()">&times;</button>
+        </div>
+
+        <p class="csi-description">${description}</p>
+
+        <div class="csi-stats">
+            <div class="csi-stat">
+                <label>Starting Value</label>
+                <value>$${(startValue / 1000).toFixed(0)}K</value>
+            </div>
+            <div class="csi-stat">
+                <label>Projected Value</label>
+                <value>$${(endValue / 1000).toFixed(0)}K</value>
+            </div>
+            <div class="csi-stat">
+                <label>Total Growth</label>
+                <value class="${totalGrowth >= 0 ? 'positive' : 'negative'}">${totalGrowth >= 0 ? '+' : ''}${totalGrowth.toFixed(1)}%</value>
+            </div>
+            <div class="csi-stat">
+                <label>Projection</label>
+                <value>${sys.projection?.years || 3} Years</value>
+            </div>
+        </div>
+
+        ${!sys.isReality && sys.projection?.modifications?.length ? `
+            <div class="csi-section">
+                <h3>📝 Modifications</h3>
+                <div class="csi-modifications">
+                    ${sys.projection.modifications.map(mod =>
+                        `<span class="csi-mod">${formatModification(mod)}</span>`
+                    ).join('')}
+                </div>
+            </div>
+        ` : ''}
+
+        <div class="csi-section">
+            <h3>📊 Major Lifecycle Events</h3>
+            ${lifecycleEvents.map(evt => `
+                <div class="csi-lifecycle">
+                    <div class="date">${evt.date}</div>
+                    <div class="event">${evt.event}</div>
+                    <div class="impact ${evt.impact >= 0 ? 'positive' : 'negative'}">
+                        ${evt.impact >= 0 ? '📈' : '📉'} ${evt.impact >= 0 ? '+' : ''}${evt.impact.toFixed(1)}% ${evt.reason}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    document.body.appendChild(panel);
+}
+
+function closeClusterSystemInfo() {
+    const panel = document.getElementById('cluster-system-info');
+    if (panel) panel.remove();
+}
+window.closeClusterSystemInfo = closeClusterSystemInfo;
+
+function analyzeLifecycleEvents(sys) {
+    const events = [];
+    const frames = sys.frames || [];
+
+    if (frames.length < 2) return events;
+
+    // Find significant changes (> 5% monthly change)
+    let prevValue = frames[0].total_value;
+
+    for (let i = 1; i < frames.length; i++) {
+        const frame = frames[i];
+        const change = ((frame.total_value / prevValue) - 1) * 100;
+
+        if (Math.abs(change) > 5) {
+            // Find which holdings drove the change
+            const drivers = findChangeDrivers(frames[i-1], frame);
+
+            events.push({
+                date: frame.date,
+                event: change > 0 ? 'Portfolio Surge' : 'Portfolio Decline',
+                impact: change,
+                reason: drivers
+            });
+        }
+
+        prevValue = frame.total_value;
+    }
+
+    // Also add milestone events (first to reach certain thresholds)
+    const startValue = frames[0].total_value;
+    const milestones = [1.25, 1.5, 2.0]; // 25%, 50%, 100% growth
+
+    for (const milestone of milestones) {
+        const targetValue = startValue * milestone;
+        const frameIndex = frames.findIndex(f => f.total_value >= targetValue);
+
+        if (frameIndex > 0) {
+            const alreadyHas = events.some(e => e.date === frames[frameIndex].date);
+            if (!alreadyHas) {
+                events.push({
+                    date: frames[frameIndex].date,
+                    event: `🎯 Reached ${((milestone - 1) * 100).toFixed(0)}% Growth Milestone`,
+                    impact: (milestone - 1) * 100,
+                    reason: `Portfolio value hit $${(targetValue/1000).toFixed(0)}K`
+                });
+            }
+        }
+    }
+
+    // Sort by date and return top 4
+    events.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return events.slice(0, 4);
+}
+
+function findChangeDrivers(prevFrame, currFrame) {
+    const prevHoldings = prevFrame.holdings || [];
+    const currHoldings = currFrame.holdings || [];
+
+    const changes = [];
+
+    for (const curr of currHoldings) {
+        const prev = prevHoldings.find(h => h.ticker === curr.ticker);
+        if (prev) {
+            const change = ((curr.value / prev.value) - 1) * 100;
+            if (Math.abs(change) > 3) {
+                changes.push({ ticker: curr.ticker, change });
+            }
+        }
+    }
+
+    // Sort by absolute change
+    changes.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+    if (changes.length === 0) return 'Market movement';
+
+    const top = changes[0];
+    return `${top.ticker} ${top.change > 0 ? 'up' : 'down'} ${Math.abs(top.change).toFixed(0)}%`;
+}
+
+function formatModification(mod) {
+    switch (mod.type) {
+        case 'remove_ticker':
+            return `No ${mod.ticker}`;
+        case 'scale_position':
+            return `${mod.scale}x ${mod.ticker}`;
+        case 'add_trade':
+            return `${mod.action} ${mod.shares} ${mod.ticker}`;
+        default:
+            return mod.type;
+    }
+}
+
+function getAlternateDescription(sys) {
+    const mods = sys.projection?.modifications || [];
+    if (mods.length === 0) return 'An alternate version of your portfolio.';
+
+    const descriptions = mods.map(mod => {
+        switch (mod.type) {
+            case 'remove_ticker':
+                return `never invested in ${mod.ticker}`;
+            case 'scale_position':
+                return `${mod.scale > 1 ? 'increased' : 'decreased'} ${mod.ticker} position by ${mod.scale}x`;
+            case 'add_trade':
+                return `${mod.action.toLowerCase()} ${mod.shares} shares of ${mod.ticker}`;
+            default:
+                return 'made changes to the portfolio';
+        }
+    });
+
+    return `What if you ${descriptions.join(' and ')}?`;
 }
 
 // ============ End Cluster View Functions ============
@@ -2377,7 +2843,7 @@ function updateHUD(data) {
     document.getElementById('income-progress').style.width =
         Math.min(data.income.progress_pct, 100) + '%';
 
-    // Update holdings grid
+    // Update holdings grid with command deck styling
     const grid = document.getElementById('holdings-grid');
     grid.innerHTML = '';
 
@@ -2386,24 +2852,11 @@ function updateHUD(data) {
         const cb = data.cash_breakdown;
         const cashCard = document.createElement('div');
         cashCard.className = 'holding-card cash-card';
-        cashCard.style.borderLeft = '3px solid #ffd700';
-        cashCard.style.background = 'linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(20, 20, 40, 0.95) 100%)';
         cashCard.innerHTML = `
-            <div class="ticker" style="color: #ffd700;">CASH</div>
-            <div class="value">$${cb.total.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-            <div style="font-size: 10px; margin-top: 4px;">
-                <div style="display: flex; justify-content: space-between; color: #00ff88;">
-                    <span>Available:</span>
-                    <span>$${cb.available.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; color: #ff8c00;">
-                    <span>Collateral:</span>
-                    <span>$${cb.secured_put_collateral.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; color: #ff4444;">
-                    <span>Tax Reserve:</span>
-                    <span>$${cb.tax_reserve.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                </div>
+            <div class="holding-ticker">CASH</div>
+            <div class="holding-value">$${cb.total.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+            <div style="font-size: 9px; margin-top: 4px; color: #888;">
+                <div>Avail: $${cb.available.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
             </div>
         `;
         cashCard.onclick = () => focusOnPlanet('CASH');
@@ -2413,15 +2866,14 @@ function updateHUD(data) {
     data.holdings.forEach(h => {
         const isGain = h.unrealized_gain_pct >= 0;
         const card = document.createElement('div');
-        card.className = 'holding-card';
-        card.style.borderLeft = `3px solid ${isGain ? '#00ff88' : '#ff4444'}`;
+        card.className = 'holding-card' + (isGain ? '' : ' loss');
         card.innerHTML = `
-            <div class="ticker">${h.ticker}</div>
-            <div class="value">$${h.market_value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-            <div class="${isGain ? 'gain-positive' : 'gain-negative'}" style="font-weight: bold;">
+            <div class="holding-ticker">${h.ticker}</div>
+            <div class="holding-value">$${h.market_value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+            <div class="holding-gain ${isGain ? 'positive' : 'negative'}">
                 ${isGain ? '+' : ''}${h.unrealized_gain_pct.toFixed(1)}%
             </div>
-            <div style="font-size: 11px; opacity: 0.6;">${h.shares.toLocaleString()} shares</div>
+            <div class="holding-shares">${h.shares.toLocaleString()} shares</div>
         `;
 
         // Focus camera on planet when clicked
@@ -2520,6 +2972,12 @@ function onCanvasClick(event) {
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     raycaster.setFromCamera(mouse, camera);
+
+    // Handle cluster view clicks separately
+    if (clusterViewActive) {
+        onClusterClick(event);
+        return;
+    }
 
     // Check sun first
     if (sun) {
@@ -2793,6 +3251,164 @@ function navigateTo(path) {
     window.location.href = window.location.origin + path;
 }
 window.navigateTo = navigateTo;
+
+// ==================== INCOME EVENTS MODAL ====================
+
+async function showIncomeEvents(period = 'ytd') {
+    const modal = document.getElementById('income-events-modal');
+    const title = document.getElementById('income-modal-title');
+    const summary = document.getElementById('income-summary');
+    const list = document.getElementById('income-events-list');
+
+    // Determine date range
+    const now = new Date();
+    let startDate, endDate, titleText;
+
+    if (period === 'ytd') {
+        startDate = new Date(now.getFullYear(), 0, 1);
+        endDate = now;
+        titleText = `${now.getFullYear()} Income Events`;
+    } else if (period === 'lastyear') {
+        startDate = new Date(now.getFullYear() - 1, 0, 1);
+        endDate = new Date(now.getFullYear() - 1, 11, 31);
+        titleText = `${now.getFullYear() - 1} Income Events`;
+    }
+
+    title.textContent = titleText;
+    list.innerHTML = '<p class="income-empty">Loading events...</p>';
+    modal.style.display = 'flex';
+
+    try {
+        // Fetch all events
+        const response = await fetch('/api/events?limit=5000');
+        const data = await response.json();
+
+        // Filter for income-generating events within date range
+        const incomeTypes = ['OPTION_OPEN', 'OPTION_CLOSE', 'OPTION_EXPIRE', 'DIVIDEND', 'TRADE'];
+        const incomeEvents = data.events.filter(event => {
+            const eventDate = new Date(event.timestamp);
+            if (eventDate < startDate || eventDate > endDate) return false;
+            if (!incomeTypes.includes(event.event_type)) return false;
+
+            // Only include trades with gains
+            if (event.event_type === 'TRADE') {
+                const eventData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                return eventData.action === 'SELL' && (eventData.gain_loss > 0 || event.cash_delta > 0);
+            }
+
+            // Options and dividends always count
+            return true;
+        });
+
+        // Calculate totals by category
+        let optionIncome = 0;
+        let dividendIncome = 0;
+        let tradeGains = 0;
+        let eventCount = 0;
+
+        incomeEvents.forEach(event => {
+            const eventData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+
+            if (event.event_type === 'OPTION_OPEN') {
+                optionIncome += eventData.total_premium || eventData.premium || 0;
+            } else if (event.event_type === 'OPTION_CLOSE' || event.event_type === 'OPTION_EXPIRE') {
+                optionIncome += eventData.profit || 0;
+            } else if (event.event_type === 'DIVIDEND') {
+                dividendIncome += eventData.amount || 0;
+            } else if (event.event_type === 'TRADE') {
+                tradeGains += eventData.gain_loss || 0;
+            }
+            eventCount++;
+        });
+
+        const totalIncome = optionIncome + dividendIncome + tradeGains;
+
+        // Update summary
+        summary.innerHTML = `
+            <div class="income-stat">
+                <div class="income-stat-value">$${totalIncome.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                <div class="income-stat-label">Total Income</div>
+            </div>
+            <div class="income-stat">
+                <div class="income-stat-value">$${optionIncome.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                <div class="income-stat-label">Options</div>
+            </div>
+            <div class="income-stat">
+                <div class="income-stat-value">$${dividendIncome.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                <div class="income-stat-label">Dividends</div>
+            </div>
+            <div class="income-stat">
+                <div class="income-stat-value">${eventCount}</div>
+                <div class="income-stat-label">Events</div>
+            </div>
+        `;
+
+        // Sort events by date descending
+        incomeEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        // Build event list
+        if (incomeEvents.length === 0) {
+            list.innerHTML = '<p class="income-empty">No income events found for this period.</p>';
+        } else {
+            list.innerHTML = incomeEvents.map(event => {
+                const eventData = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                const date = new Date(event.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                let typeClass, typeLabel, description, amount;
+
+                if (event.event_type === 'OPTION_OPEN') {
+                    typeClass = 'option';
+                    typeLabel = 'OPTION';
+                    const strategy = eventData.strategy || 'option';
+                    description = `Opened <span class="ticker">${eventData.ticker}</span> ${strategy} $${eventData.strike}`;
+                    amount = eventData.total_premium || eventData.premium || 0;
+                } else if (event.event_type === 'OPTION_CLOSE') {
+                    typeClass = 'option';
+                    typeLabel = 'CLOSE';
+                    description = `Closed <span class="ticker">${eventData.ticker || 'option'}</span> position`;
+                    amount = eventData.profit || 0;
+                } else if (event.event_type === 'OPTION_EXPIRE') {
+                    typeClass = 'option';
+                    typeLabel = 'EXPIRE';
+                    description = `<span class="ticker">${eventData.ticker || 'Option'}</span> expired worthless`;
+                    amount = eventData.full_premium || 0;
+                } else if (event.event_type === 'DIVIDEND') {
+                    typeClass = 'dividend';
+                    typeLabel = 'DIVIDEND';
+                    description = `<span class="ticker">${eventData.ticker}</span> dividend (${eventData.shares || '?'} shares)`;
+                    amount = eventData.amount || 0;
+                } else if (event.event_type === 'TRADE') {
+                    typeClass = 'trade';
+                    typeLabel = 'TRADE';
+                    description = `Sold <span class="ticker">${eventData.ticker}</span> (${eventData.shares} shares)`;
+                    amount = eventData.gain_loss || 0;
+                }
+
+                const amountClass = amount >= 0 ? '' : 'negative';
+                const amountStr = amount >= 0 ? `+$${amount.toLocaleString(undefined, {maximumFractionDigits: 0})}` : `-$${Math.abs(amount).toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+
+                return `
+                    <div class="income-event">
+                        <span class="income-event-date">${date}</span>
+                        <span class="income-event-type ${typeClass}">${typeLabel}</span>
+                        <span class="income-event-desc">${description}</span>
+                        <span class="income-event-amount ${amountClass}">${amountStr}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+    } catch (error) {
+        console.error('Failed to load income events:', error);
+        list.innerHTML = '<p class="income-empty">Failed to load events. Please try again.</p>';
+    }
+}
+window.showIncomeEvents = showIncomeEvents;
+
+function closeIncomeModal() {
+    document.getElementById('income-events-modal').style.display = 'none';
+}
+window.closeIncomeModal = closeIncomeModal;
 
 // ==================== PLAYBACK FUNCTIONALITY ====================
 
@@ -3556,16 +4172,19 @@ window.onSliderChange = onSliderChange;
 // ==================== LEGEND FUNCTIONALITY ====================
 
 function toggleLegend() {
-    const panel = document.getElementById('legend-panel');
+    const panel = document.getElementById('legend-console');
     const icon = document.getElementById('legend-toggle-icon');
+    const body = document.getElementById('legend-body');
     const isMinimized = panel.classList.contains('minimized');
 
     if (isMinimized) {
         panel.classList.remove('minimized');
         icon.textContent = '−';
+        if (body) body.style.display = 'block';
     } else {
         panel.classList.add('minimized');
         icon.textContent = '+';
+        if (body) body.style.display = 'none';
     }
 }
 window.toggleLegend = toggleLegend;
@@ -3575,16 +4194,19 @@ window.toggleLegend = toggleLegend;
 let insightsMinimized = false;
 
 function toggleInsights() {
-    const panel = document.getElementById('insights-panel');
+    const panel = document.getElementById('insights-console');
     const icon = document.getElementById('insights-toggle-icon');
+    const body = document.getElementById('insights-body');
     insightsMinimized = !insightsMinimized;
 
     if (insightsMinimized) {
         panel.classList.add('minimized');
         icon.textContent = '+';
+        if (body) body.style.display = 'none';
     } else {
         panel.classList.remove('minimized');
         icon.textContent = '−';
+        if (body) body.style.display = 'block';
     }
 }
 window.toggleInsights = toggleInsights;
@@ -3593,7 +4215,7 @@ async function fetchInsights() {
     const loadingEl = document.getElementById('insights-loading');
     const listEl = document.getElementById('insights-list');
     const timestampEl = document.getElementById('insights-timestamp');
-    const panel = document.getElementById('insights-panel');
+    const panel = document.getElementById('insights-console');
 
     // Show loading state
     loadingEl.style.display = 'flex';
@@ -3685,17 +4307,20 @@ function escapeHtml(text) {
 let conversationHistory = [];
 
 function toggleChat() {
-    const panel = document.getElementById('chat-panel');
+    const panel = document.getElementById('chat-console');
     const icon = document.getElementById('chat-toggle-icon');
+    const body = document.getElementById('chat-body');
     const isMinimized = panel.classList.contains('minimized');
 
     if (isMinimized) {
         panel.classList.remove('minimized');
         icon.textContent = '−';
+        if (body) body.style.display = 'block';
         document.getElementById('chat-input').focus();
     } else {
         panel.classList.add('minimized');
         icon.textContent = '+';
+        if (body) body.style.display = 'none';
     }
 }
 window.toggleChat = toggleChat;
@@ -3792,7 +4417,7 @@ window.sendChatMessage = sendChatMessage;
 // ==================== LLM SETTINGS ====================
 
 function toggleSettings() {
-    const panel = document.getElementById('settings-panel');
+    const panel = document.getElementById('settings-console');
     const isVisible = panel.classList.contains('visible');
 
     if (isVisible) {
@@ -4182,6 +4807,167 @@ function hideDemoBanner() {
     document.body.classList.remove('demo-mode');
 }
 
+// ==================== OPTIONS SCANNER ====================
+
+let scannerData = null;
+
+async function openOptionsScanner() {
+    const modal = document.getElementById('options-scanner-modal');
+    const loading = document.getElementById('scanner-loading');
+    const summary = document.getElementById('scanner-summary');
+    const results = document.getElementById('scanner-results');
+    const analysis = document.getElementById('scanner-analysis');
+    const errors = document.getElementById('scanner-errors');
+
+    // Show modal with loading state
+    modal.style.display = 'flex';
+    loading.style.display = 'block';
+    summary.style.display = 'none';
+    results.style.display = 'none';
+    analysis.style.display = 'none';
+    errors.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/scanner/recommendations');
+        if (!response.ok) throw new Error('Scan failed');
+
+        scannerData = await response.json();
+        displayScannerResults(scannerData);
+    } catch (error) {
+        console.error('Scanner error:', error);
+        loading.style.display = 'none';
+        results.innerHTML = `
+            <div class="scanner-empty">
+                <h3>Scan Failed</h3>
+                <p>${error.message}</p>
+                <p>Make sure the API server is running and you have holdings with optionable stocks.</p>
+            </div>
+        `;
+        results.style.display = 'block';
+    }
+}
+window.openOptionsScanner = openOptionsScanner;
+
+async function runAnalyzedScan() {
+    const loading = document.getElementById('scanner-loading');
+    const summary = document.getElementById('scanner-summary');
+    const results = document.getElementById('scanner-results');
+    const analysis = document.getElementById('scanner-analysis');
+    const analyzeBtn = document.querySelector('.scanner-analyze-btn');
+
+    // Show loading
+    loading.style.display = 'block';
+    summary.style.display = 'none';
+    results.style.display = 'none';
+    analysis.style.display = 'none';
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing...';
+
+    try {
+        const response = await fetch('/api/scanner/recommendations/analyze');
+        if (!response.ok) throw new Error('Analysis failed');
+
+        scannerData = await response.json();
+        displayScannerResults(scannerData);
+    } catch (error) {
+        console.error('Scanner analysis error:', error);
+        alert('Analysis failed: ' + error.message);
+    } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = 'AI Analyze';
+    }
+}
+window.runAnalyzedScan = runAnalyzedScan;
+
+function displayScannerResults(data) {
+    const loading = document.getElementById('scanner-loading');
+    const summary = document.getElementById('scanner-summary');
+    const results = document.getElementById('scanner-results');
+    const resultsList = document.getElementById('scanner-results-list');
+    const analysis = document.getElementById('scanner-analysis');
+    const analysisText = document.getElementById('scanner-analysis-text');
+    const errors = document.getElementById('scanner-errors');
+
+    loading.style.display = 'none';
+
+    // Update summary
+    if (data.portfolio_summary) {
+        const ps = data.portfolio_summary;
+        document.getElementById('scanner-holdings-count').textContent = ps.holdings_scanned;
+        document.getElementById('scanner-ytd-income').textContent =
+            '$' + (ps.ytd_income || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        document.getElementById('scanner-remaining').textContent =
+            '$' + (ps.remaining_goal || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        document.getElementById('scanner-potential').textContent =
+            '$' + (data.potential_income || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        summary.style.display = 'grid';
+    }
+
+    // Show AI analysis if available
+    if (data.analysis && data.analysis.summary) {
+        analysisText.textContent = data.analysis.summary;
+        analysis.style.display = 'block';
+    }
+
+    // Display recommendations
+    if (data.recommendations && data.recommendations.length > 0) {
+        resultsList.innerHTML = data.recommendations.map(rec => `
+            <div class="scanner-rec">
+                <div class="scanner-rec-ticker">${rec.ticker}</div>
+                <div class="scanner-rec-strategy ${rec.type.toLowerCase()}">${rec.strategy}</div>
+                <div class="scanner-rec-details">
+                    <div>
+                        <span class="strike">$${rec.strike.toFixed(2)}</span>
+                        <span class="exp">exp ${rec.expiration} (${rec.dte}d)</span>
+                    </div>
+                    <div class="metrics">
+                        Delta: ${rec.delta.toFixed(2)} |
+                        OTM: ${rec.otm_pct.toFixed(1)}% |
+                        ${rec.prob_otm ? `Win Rate: ${rec.prob_otm.toFixed(0)}%` : ''}
+                    </div>
+                </div>
+                <div class="scanner-rec-premium">
+                    <div class="amount">$${rec.premium_per_contract.toFixed(0)}</div>
+                    <div class="yield">${rec.annualized_yield_pct.toFixed(1)}% ann.</div>
+                </div>
+                <div class="scanner-rec-score">
+                    <div class="score-value">${rec.score.toFixed(0)}</div>
+                    <div class="score-label">score</div>
+                </div>
+            </div>
+        `).join('');
+        results.style.display = 'block';
+    } else {
+        resultsList.innerHTML = `
+            <div class="scanner-empty">
+                <h3>No Recommendations Found</h3>
+                <p>No suitable options opportunities were found for your current holdings.</p>
+                <p>This could be because:</p>
+                <ul style="text-align: left; margin-top: 12px;">
+                    <li>Your holdings don't have active options chains</li>
+                    <li>No options meet the minimum premium threshold</li>
+                    <li>Current market conditions don't favor premium selling</li>
+                </ul>
+            </div>
+        `;
+        results.style.display = 'block';
+    }
+
+    // Show errors if any
+    if (data.scan_errors && data.scan_errors.length > 0) {
+        errors.innerHTML = `
+            <div class="scanner-error-title">Scan Notes</div>
+            <div class="scanner-error-list">${data.scan_errors.join('<br>')}</div>
+        `;
+        errors.style.display = 'block';
+    }
+}
+
+function closeOptionsScanner() {
+    document.getElementById('options-scanner-modal').style.display = 'none';
+}
+window.closeOptionsScanner = closeOptionsScanner;
+
 // Main initialization
 async function main() {
     // Check setup status first
@@ -4206,9 +4992,9 @@ async function main() {
     portfolioData = await fetchPortfolioData();
 
     if (portfolioData) {
-        // Hide loading, show HUD
+        // Hide loading, show command deck
         document.getElementById('loading').style.display = 'none';
-        document.getElementById('hud').style.display = 'block';
+        document.getElementById('command-deck').style.display = 'block';
 
         // Update HUD
         updateHUD(portfolioData);

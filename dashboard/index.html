@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Portfolio Dashboard - 3D View</title>
+    <title>Portfolio Command Deck</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -12,9 +14,9 @@
         }
 
         body {
-            background: #0a0a1a;
+            background: #050510;
             color: #fff;
-            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            font-family: 'Share Tech Mono', 'JetBrains Mono', monospace;
             overflow: hidden;
         }
 
@@ -32,888 +34,715 @@
             left: 0;
         }
 
-        /* HUD Overlay */
-        #hud {
+        /* ==================== COMMAND DECK FRAME ==================== */
+        #command-deck {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             pointer-events: none;
+            z-index: 100;
         }
 
-        .hud-panel {
+        /* Corner brackets */
+        .corner-bracket {
             position: absolute;
-            background: rgba(26, 26, 46, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 16px;
-            backdrop-filter: blur(10px);
-            pointer-events: auto;
-        }
-
-        #summary-panel {
-            top: 20px;
-            left: 20px;
-            min-width: 280px;
-        }
-
-        #actions-panel {
-            top: 20px;
-            right: 20px;
-        }
-
-        #holdings-panel {
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .panel-title {
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #888;
-            margin-bottom: 12px;
-        }
-
-        .stat-value {
-            font-size: 32px;
-            font-weight: bold;
-            color: #ffd700;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: #aaa;
-        }
-
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 4px;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
-        }
-
-        .gain-positive { color: #00ff88; }
-        .gain-negative { color: #ff4444; }
-
-        .holdings-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 12px;
-        }
-
-        .holding-card {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 12px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .holding-card:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .ticker {
-            font-size: 18px;
-            font-weight: bold;
-        }
-
-        .value {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
-        }
-
-        /* Loading state */
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #ffd700;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Progress bar */
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00ff88, #ffd700);
-            border-radius: 4px;
-            transition: width 0.5s ease;
-        }
-
-        /* Tooltip */
-        #tooltip {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 12px;
+            width: 80px;
+            height: 80px;
             pointer-events: none;
-            display: none;
-            z-index: 1000;
         }
 
-        /* Chat Panel */
-        #chat-panel {
+        .corner-bracket::before,
+        .corner-bracket::after {
+            content: '';
             position: absolute;
-            bottom: 240px;
-            right: 20px;
-            width: 380px;
-            max-height: 500px;
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            display: flex;
-            flex-direction: column;
-            pointer-events: auto;
-            transition: all 0.3s ease;
+            background: linear-gradient(90deg, #00ffff, #0088ff);
+            box-shadow: 0 0 10px #00ffff, 0 0 20px rgba(0, 255, 255, 0.3);
         }
 
-        #chat-panel.minimized {
-            max-height: 48px;
-            overflow: hidden;
-        }
+        .corner-bracket.top-left { top: 10px; left: 10px; }
+        .corner-bracket.top-left::before { width: 60px; height: 3px; top: 0; left: 0; }
+        .corner-bracket.top-left::after { width: 3px; height: 60px; top: 0; left: 0; }
 
-        #chat-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            cursor: pointer;
-        }
+        .corner-bracket.top-right { top: 10px; right: 10px; }
+        .corner-bracket.top-right::before { width: 60px; height: 3px; top: 0; right: 0; }
+        .corner-bracket.top-right::after { width: 3px; height: 60px; top: 0; right: 0; }
 
-        #chat-header h3 {
-            margin: 0;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .corner-bracket.bottom-left { bottom: 10px; left: 10px; }
+        .corner-bracket.bottom-left::before { width: 60px; height: 3px; bottom: 0; left: 0; }
+        .corner-bracket.bottom-left::after { width: 3px; height: 60px; bottom: 0; left: 0; }
 
-        #chat-header .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #00ff88;
-        }
+        .corner-bracket.bottom-right { bottom: 10px; right: 10px; }
+        .corner-bracket.bottom-right::before { width: 60px; height: 3px; bottom: 0; right: 0; }
+        .corner-bracket.bottom-right::after { width: 3px; height: 60px; bottom: 0; right: 0; }
 
-        #chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            max-height: 350px;
-        }
-
-        .chat-message {
-            padding: 10px 14px;
-            border-radius: 12px;
-            max-width: 90%;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .chat-message.user {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            align-self: flex-end;
-        }
-
-        .chat-message.assistant {
-            background: rgba(255, 255, 255, 0.1);
-            align-self: flex-start;
-        }
-
-        .chat-message.loading {
-            color: #888;
-            font-style: italic;
-        }
-
-        #chat-input-container {
-            padding: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            gap: 8px;
-        }
-
-        #chat-input {
-            flex: 1;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 10px 14px;
-            color: white;
-            font-size: 13px;
-            outline: none;
-        }
-
-        #chat-input:focus {
-            border-color: #667eea;
-        }
-
-        #chat-input::placeholder {
-            color: #666;
-        }
-
-        #chat-send {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 8px;
-            padding: 10px 16px;
-            color: white;
-            cursor: pointer;
-            font-size: 13px;
-            transition: transform 0.2s;
-        }
-
-        #chat-send:hover {
-            transform: scale(1.05);
-        }
-
-        #chat-send:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .chat-toggle-btn {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 18px;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-        }
-
-        /* Settings Panel */
-        #settings-panel {
+        /* Scan line effect */
+        #scan-line {
             position: absolute;
-            top: 80px;
-            right: 20px;
-            width: 300px;
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            pointer-events: auto;
-            display: none;
-        }
-
-        #settings-panel.visible {
-            display: block;
-        }
-
-        .settings-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .settings-header h3 {
-            margin: 0;
-            font-size: 14px;
-        }
-
-        .settings-close {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 18px;
-            cursor: pointer;
-        }
-
-        .settings-body {
-            padding: 16px;
-        }
-
-        .setting-group {
-            margin-bottom: 16px;
-        }
-
-        .setting-label {
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 6px;
-            display: block;
-        }
-
-        .setting-select, .setting-input {
+            top: 0;
+            left: 0;
             width: 100%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: white;
-            font-size: 13px;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.5), transparent);
+            animation: scan 4s linear infinite;
+            pointer-events: none;
         }
 
-        .setting-select:focus, .setting-input:focus {
-            outline: none;
-            border-color: #667eea;
+        @keyframes scan {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
         }
 
-        .setting-select option {
-            background: #1a1a2e;
-        }
-
-        .settings-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 16px;
-        }
-
-        .settings-btn {
-            flex: 1;
-            padding: 8px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-            border: none;
-        }
-
-        .settings-btn.primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .settings-btn.secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .settings-status {
-            margin-top: 12px;
-            padding: 8px;
-            border-radius: 6px;
-            font-size: 12px;
-        }
-
-        .settings-status.success {
-            background: rgba(0, 255, 136, 0.2);
-            color: #00ff88;
-        }
-
-        .settings-status.error {
-            background: rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-        }
-
-        /* Space-themed LLM Connection Indicator */
-        .llm-status-panel {
-            background: linear-gradient(135deg, rgba(10, 10, 30, 0.95) 0%, rgba(20, 20, 50, 0.95) 100%);
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-            position: relative;
+        /* ==================== CONTROL PANELS ==================== */
+        .control-panel {
+            position: absolute;
+            background: linear-gradient(180deg, rgba(10, 20, 40, 0.95) 0%, rgba(5, 10, 25, 0.98) 100%);
+            border: 2px solid #0088ff;
+            border-radius: 4px;
+            pointer-events: auto;
             overflow: hidden;
         }
 
-        .llm-status-panel::before {
+        .control-panel::before {
             content: '';
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             height: 2px;
-            background: linear-gradient(90deg, transparent, #667eea, #764ba2, transparent);
-            animation: scan-line 2s linear infinite;
+            background: linear-gradient(90deg, transparent, #00ffff, transparent);
         }
 
-        @keyframes scan-line {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
-        }
-
-        .llm-status-header {
+        .panel-header {
+            background: linear-gradient(90deg, rgba(0, 136, 255, 0.3), rgba(0, 255, 255, 0.1));
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
         }
 
-        .llm-status-indicator {
-            width: 12px;
-            height: 12px;
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #00ffff;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .panel-status {
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
-            position: relative;
-        }
-
-        .llm-status-indicator.connected {
             background: #00ff88;
-            box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0, 255, 136, 0.5);
-            animation: pulse-green 2s ease-in-out infinite;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulse-status 2s ease-in-out infinite;
         }
 
-        .llm-status-indicator.disconnected {
-            background: #ff4444;
-            box-shadow: 0 0 10px #ff4444;
-            animation: pulse-red 1s ease-in-out infinite;
-        }
-
-        .llm-status-indicator.checking {
-            background: #ffd700;
-            box-shadow: 0 0 10px #ffd700;
-            animation: pulse-yellow 0.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse-green {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(1.1); }
-        }
-
-        @keyframes pulse-red {
+        @keyframes pulse-status {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
 
-        @keyframes pulse-yellow {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+        .panel-body {
+            padding: 12px;
         }
 
-        .llm-status-title {
-            font-size: 11px;
-            text-transform: uppercase;
+        /* ==================== LEFT CONSOLE - STATUS ==================== */
+        #left-console {
+            top: 20px;
+            left: 20px;
+            width: 300px;
+        }
+
+        .status-display {
+            text-align: center;
+            padding: 16px 0;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .status-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 36px;
+            font-weight: 700;
+            color: #ffd700;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
             letter-spacing: 2px;
-            color: #888;
         }
 
-        .llm-status-details {
+        .status-label {
+            font-size: 10px;
+            color: #0088ff;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 4px;
+        }
+
+        .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-            font-size: 11px;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
         }
 
-        .llm-status-item {
-            display: flex;
-            flex-direction: column;
-            padding: 8px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 6px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+        .metric-box {
+            background: rgba(0, 136, 255, 0.1);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
         }
 
-        .llm-status-label {
-            color: #666;
+        .metric-box:hover {
+            background: rgba(0, 255, 255, 0.15);
+            border-color: #00ffff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+        }
+
+        .metric-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .metric-label {
             font-size: 9px;
+            color: #0088ff;
             text-transform: uppercase;
             letter-spacing: 1px;
-            margin-bottom: 4px;
+            margin-top: 4px;
         }
 
-        .llm-status-value {
-            color: #fff;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-        }
-
-        .llm-status-value.highlight {
-            color: #00ff88;
-        }
-
-        .llm-status-value.error {
-            color: #ff4444;
-            font-size: 10px;
-        }
-
-        .llm-status-latency {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .latency-bar {
-            flex: 1;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .latency-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00ff88, #ffd700);
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-
-        .llm-status-footer {
+        /* Income progress bar */
+        .progress-container {
             margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 136, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .progress-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 8px;
         }
 
-        .llm-status-message {
+        .progress-title {
             font-size: 10px;
-            color: #888;
-            font-style: italic;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
-        .llm-status-message.connected {
+        .progress-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
             color: #00ff88;
         }
 
-        .llm-refresh-btn {
-            background: none;
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            color: #667eea;
-            padding: 4px 8px;
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(0, 136, 255, 0.2);
             border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00ffff);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+
+        .progress-links {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 8px;
+            font-size: 10px;
+        }
+
+        .progress-links a {
+            color: #0088ff;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .progress-links a:hover {
+            color: #00ffff;
+            text-shadow: 0 0 10px #00ffff;
+        }
+
+        /* ==================== RIGHT CONSOLE - CONTROLS ==================== */
+        #right-console {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .control-btn {
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.2) 0%, rgba(0, 68, 136, 0.3) 100%);
+            border: 1px solid rgba(0, 136, 255, 0.5);
+            border-radius: 4px;
+            color: #00ffff;
+            padding: 12px 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .control-btn:hover {
+            background: linear-gradient(180deg, rgba(0, 255, 255, 0.3) 0%, rgba(0, 136, 255, 0.4) 100%);
+            border-color: #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3), inset 0 0 20px rgba(0, 255, 255, 0.1);
+            transform: scale(1.02);
+        }
+
+        .control-btn.primary {
+            background: linear-gradient(180deg, rgba(0, 255, 136, 0.3) 0%, rgba(0, 136, 68, 0.4) 100%);
+            border-color: #00ff88;
+            color: #00ff88;
+            grid-column: span 2;
+        }
+
+        .control-btn.primary:hover {
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.4), inset 0 0 20px rgba(0, 255, 136, 0.1);
+        }
+
+        /* ==================== BOTTOM CONSOLE - HOLDINGS ==================== */
+        #bottom-console {
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            max-height: 180px;
+        }
+
+        .holdings-scroll {
+            max-height: 130px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .holdings-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .holdings-scroll::-webkit-scrollbar-track {
+            background: rgba(0, 136, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .holdings-scroll::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.4);
+            border-radius: 3px;
+        }
+
+        .holdings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+        }
+
+        .holding-card {
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.1) 0%, rgba(0, 50, 100, 0.2) 100%);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .holding-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: #00ff88;
+        }
+
+        .holding-card.loss::before {
+            background: #ff4444;
+        }
+
+        .holding-card:hover {
+            background: linear-gradient(180deg, rgba(0, 255, 255, 0.15) 0%, rgba(0, 136, 255, 0.2) 100%);
+            border-color: #00ffff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0, 255, 255, 0.2);
+        }
+
+        .holding-ticker {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: #00ffff;
+            margin-bottom: 4px;
+        }
+
+        .holding-value {
+            font-size: 13px;
+            color: #fff;
+        }
+
+        .holding-gain {
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .holding-gain.positive { color: #00ff88; }
+        .holding-gain.negative { color: #ff4444; }
+
+        .holding-shares {
+            font-size: 9px;
+            color: #0088ff;
+            margin-top: 2px;
+        }
+
+        /* Cash card special styling */
+        .holding-card.cash-card {
+            background: linear-gradient(180deg, rgba(255, 215, 0, 0.1) 0%, rgba(136, 100, 0, 0.2) 100%);
+            border-color: rgba(255, 215, 0, 0.4);
+        }
+
+        .holding-card.cash-card::before {
+            background: #ffd700;
+        }
+
+        .holding-card.cash-card .holding-ticker {
+            color: #ffd700;
+        }
+
+        /* ==================== TOP CENTER - MODE INDICATOR ==================== */
+        #mode-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: auto;
+        }
+
+        .mode-btn {
+            background: linear-gradient(180deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.4) 100%);
+            border: 2px solid rgba(102, 126, 234, 0.6);
+            border-radius: 25px;
+            color: #fff;
+            padding: 10px 24px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mode-btn:hover {
+            background: linear-gradient(180deg, rgba(102, 126, 234, 0.5) 0%, rgba(118, 75, 162, 0.6) 100%);
+            box-shadow: 0 0 30px rgba(102, 126, 234, 0.4);
+            transform: scale(1.05);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(180deg, rgba(0, 255, 136, 0.4) 0%, rgba(0, 170, 85, 0.5) 100%);
+            border-color: #00ff88;
+        }
+
+        .mode-icon {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulse-status 1.5s ease-in-out infinite;
+        }
+
+        /* ==================== INCOME SCANNER FAB ==================== */
+        #scanner-fab {
+            position: absolute;
+            bottom: 220px;
+            right: 30px;
+            pointer-events: auto;
+        }
+
+        .scanner-btn {
+            background: linear-gradient(180deg, rgba(0, 200, 83, 0.4) 0%, rgba(0, 150, 60, 0.5) 100%);
+            border: 2px solid #00c853;
+            border-radius: 50px;
+            color: #00ff88;
+            padding: 14px 24px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s;
+            animation: scanner-pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes scanner-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 200, 83, 0.4); }
+            50% { box-shadow: 0 0 40px rgba(0, 200, 83, 0.6), 0 0 60px rgba(0, 200, 83, 0.2); }
+        }
+
+        .scanner-btn:hover {
+            background: linear-gradient(180deg, rgba(0, 255, 136, 0.5) 0%, rgba(0, 200, 83, 0.6) 100%);
+            transform: scale(1.08);
+            box-shadow: 0 0 50px rgba(0, 255, 136, 0.5);
+        }
+
+        .scanner-icon {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        /* ==================== SIDE PANELS ==================== */
+        #chat-console {
+            position: absolute;
+            bottom: 220px;
+            right: 320px;
+            width: 350px;
+            max-height: 400px;
+            pointer-events: auto;
+        }
+
+        #chat-console.minimized {
+            max-height: 40px;
+            overflow: hidden;
+        }
+
+        .chat-messages {
+            max-height: 280px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .chat-message {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .chat-message.user {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            margin-left: 20px;
+        }
+
+        .chat-message.assistant {
+            background: rgba(0, 136, 255, 0.1);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            margin-right: 20px;
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .chat-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #fff;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        .chat-send {
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.3), rgba(0, 100, 200, 0.4));
+            border: 1px solid #0088ff;
+            border-radius: 4px;
+            color: #00ffff;
+            padding: 8px 16px;
+            font-family: 'Orbitron', sans-serif;
             font-size: 10px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
-        .llm-refresh-btn:hover {
-            background: rgba(102, 126, 234, 0.1);
-            border-color: #667eea;
+        .chat-send:hover {
+            background: linear-gradient(180deg, rgba(0, 255, 255, 0.4), rgba(0, 136, 255, 0.5));
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
         }
 
-        .settings-toggle {
-            background: none;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #888;
-            padding: 6px 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            margin-left: 8px;
-        }
-
-        .settings-toggle:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-
-        /* Insights Panel */
-        #insights-panel {
+        /* ==================== INSIGHTS PANEL ==================== */
+        #insights-console {
             position: absolute;
             top: 20px;
-            left: 320px;
-            width: 320px;
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
+            left: 340px;
+            width: 300px;
+            max-height: calc(100vh - 240px);
             pointer-events: auto;
-            transition: all 0.3s ease;
-            max-height: calc(100vh - 280px);
+        }
+
+        #insights-console.minimized {
+            max-height: 40px;
             overflow: hidden;
         }
 
-        #insights-panel.minimized {
-            max-height: 48px;
-        }
-
-        #insights-panel.loading .insights-content {
-            opacity: 0.5;
-        }
-
-        #insights-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            cursor: pointer;
-        }
-
-        #insights-header h3 {
-            margin: 0;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .insights-toggle-btn {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 18px;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-        }
-
-        .insights-content {
-            padding: 12px 16px;
-            overflow-y: auto;
+        .insights-scroll {
             max-height: calc(100vh - 340px);
+            overflow-y: auto;
+            padding: 8px;
         }
 
         .insight-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 136, 255, 0.2);
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 8px;
             transition: all 0.2s;
         }
 
         .insight-card:hover {
-            background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(255, 255, 255, 0.15);
+            border-color: rgba(0, 255, 255, 0.4);
+            background: rgba(0, 136, 255, 0.1);
         }
 
-        .insight-card:last-child {
-            margin-bottom: 0;
-        }
-
-        .insight-card.risk {
-            border-left: 3px solid #ff4444;
-        }
-
-        .insight-card.opportunity {
-            border-left: 3px solid #00ff88;
-        }
-
-        .insight-card.info {
-            border-left: 3px solid #667eea;
-        }
+        .insight-card.risk { border-left: 3px solid #ff4444; }
+        .insight-card.opportunity { border-left: 3px solid #00ff88; }
+        .insight-card.info { border-left: 3px solid #0088ff; }
 
         .insight-header {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .insight-icon {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
-            flex-shrink: 0;
+            font-size: 10px;
         }
 
-        .insight-card.risk .insight-icon {
-            background: rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-        }
-
-        .insight-card.opportunity .insight-icon {
-            background: rgba(0, 255, 136, 0.2);
-            color: #00ff88;
-        }
-
-        .insight-card.info .insight-icon {
-            background: rgba(102, 126, 234, 0.2);
-            color: #667eea;
-        }
+        .insight-card.risk .insight-icon { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+        .insight-card.opportunity .insight-icon { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .insight-card.info .insight-icon { background: rgba(0, 136, 255, 0.2); color: #0088ff; }
 
         .insight-title {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 600;
             color: #fff;
         }
 
         .insight-text {
-            font-size: 12px;
-            color: #aaa;
+            font-size: 10px;
+            color: #888;
             line-height: 1.5;
         }
 
-        .insights-loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 30px;
-            color: #888;
-        }
-
-        .insights-loading .spinner {
-            width: 30px;
-            height: 30px;
-            margin-bottom: 12px;
-        }
-
         .insights-footer {
-            padding: 10px 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px;
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 10px;
-            color: #666;
+        }
+
+        .insights-timestamp {
+            font-size: 9px;
+            color: #0088ff;
         }
 
         .insights-refresh {
-            background: none;
-            border: 1px solid rgba(102, 126, 234, 0.3);
-            color: #667eea;
-            padding: 4px 10px;
+            background: transparent;
+            border: 1px solid rgba(0, 136, 255, 0.4);
             border-radius: 4px;
-            font-size: 10px;
+            color: #0088ff;
+            padding: 4px 10px;
+            font-size: 9px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .insights-refresh:hover {
-            background: rgba(102, 126, 234, 0.1);
-            border-color: #667eea;
+            border-color: #00ffff;
+            color: #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
         }
 
-        .dexter-analysis {
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-            border: 1px solid rgba(102, 126, 234, 0.2);
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 12px;
-        }
-
-        .dexter-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-
-        .dexter-badge {
-            font-size: 9px;
-            padding: 2px 6px;
-            border-radius: 4px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .dexter-ticker {
-            font-size: 13px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .dexter-text {
-            font-size: 12px;
-            color: #bbb;
-            line-height: 1.6;
-        }
-
-        /* Legend Panel */
-        #legend-panel {
+        /* ==================== LEGEND PANEL ==================== */
+        #legend-console {
             position: absolute;
-            bottom: 240px;
+            bottom: 220px;
             left: 20px;
-            width: 260px;
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
+            width: 240px;
             pointer-events: auto;
-            transition: all 0.3s ease;
         }
 
-        #legend-panel.minimized {
-            max-height: 48px;
+        #legend-console.minimized {
+            max-height: 40px;
             overflow: hidden;
-        }
-
-        #legend-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            cursor: pointer;
-        }
-
-        #legend-header h3 {
-            margin: 0;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .legend-toggle-btn {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 18px;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-        }
-
-        #legend-content {
-            padding: 12px 16px;
         }
 
         .legend-item {
             display: flex;
             align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 12px;
+            gap: 10px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(0, 136, 255, 0.1);
         }
 
         .legend-item:last-child {
-            margin-bottom: 0;
+            border-bottom: none;
         }
 
         .legend-icon {
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             flex-shrink: 0;
             display: flex;
             align-items: center;
@@ -921,37 +750,9 @@
         }
 
         .legend-icon-circle {
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
             border-radius: 50%;
-        }
-
-        .legend-icon-ring {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 3px solid;
-            background: transparent;
-        }
-
-        .legend-icon-orbit {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 1px dashed #666;
-            position: relative;
-        }
-
-        .legend-icon-orbit::after {
-            content: '';
-            position: absolute;
-            width: 6px;
-            height: 6px;
-            background: #ffd700;
-            border-radius: 50%;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
         }
 
         .legend-text {
@@ -959,193 +760,49 @@
         }
 
         .legend-title {
-            font-size: 12px;
-            font-weight: bold;
-            color: #fff;
-            margin-bottom: 2px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #00ffff;
         }
 
         .legend-desc {
-            font-size: 11px;
-            color: #888;
+            font-size: 9px;
+            color: #666;
             line-height: 1.4;
         }
 
-        /* Playback Controls */
-        #playback-panel {
+        /* ==================== PLAYBACK PANEL ==================== */
+        #playback-console {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
-            padding: 12px 20px;
-            backdrop-filter: blur(10px);
+            width: 500px;
             pointer-events: auto;
             display: none;
-            transition: all 0.3s ease;
-            max-width: 90vw;
         }
 
-        #playback-panel.visible {
+        #playback-console.visible {
             display: block;
-        }
-
-        /* Compact mode - default when playing */
-        #playback-panel.compact {
-            padding: 8px 16px;
-            border-radius: 30px;
-        }
-
-        #playback-panel.compact .playback-header,
-        #playback-panel.compact .playback-speed,
-        #playback-panel.compact .playback-event,
-        #playback-panel.compact .playback-snapshot-values {
-            display: none;
-        }
-
-        #playback-panel.compact .playback-controls {
-            margin: 0;
-            gap: 8px;
-        }
-
-        #playback-panel.compact .playback-btn {
-            width: 32px;
-            height: 32px;
-            font-size: 14px;
-        }
-
-        #playback-panel.compact .playback-btn.primary {
-            width: 40px;
-            height: 40px;
-            font-size: 18px;
-        }
-
-        #playback-panel.compact .playback-timeline {
-            margin: 8px 0 0 0;
-            min-width: 200px;
-        }
-
-        #playback-panel.compact .playback-info {
-            margin-top: 4px;
-            font-size: 11px;
-        }
-
-        /* Expand button for compact mode */
-        .playback-expand-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: #888;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 11px;
-            margin-left: 12px;
-        }
-
-        .playback-expand-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            color: #fff;
-        }
-
-        #playback-panel.compact .playback-expand-btn {
-            display: inline-block;
-        }
-
-        #playback-panel:not(.compact) .playback-expand-btn {
-            display: none;
-        }
-
-        /* Full mode */
-        #playback-panel:not(.compact) {
-            min-width: 450px;
-            padding: 20px 30px;
-        }
-
-        .playback-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        .playback-header h3 {
-            margin: 0;
-            font-size: 16px;
-        }
-
-        .playback-close {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 20px;
-            cursor: pointer;
-            padding: 4px;
-        }
-
-        .playback-close:hover {
-            color: #fff;
-        }
-
-        .playback-timeline {
-            margin: 20px 0;
-        }
-
-        .playback-slider {
-            width: 100%;
-            height: 8px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            appearance: none;
-            outline: none;
-            cursor: pointer;
-        }
-
-        .playback-slider::-webkit-slider-thumb {
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
-        }
-
-        .playback-slider::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            cursor: pointer;
-            border: none;
-        }
-
-        .playback-info {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 8px;
-            font-size: 12px;
-            color: #888;
         }
 
         .playback-controls {
             display: flex;
             justify-content: center;
             align-items: center;
-            gap: 16px;
-            margin: 20px 0;
+            gap: 12px;
+            padding: 12px;
         }
 
         .playback-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            width: 44px;
-            height: 44px;
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.2), rgba(0, 100, 200, 0.3));
+            border: 1px solid rgba(0, 136, 255, 0.5);
             border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            color: #00ffff;
             cursor: pointer;
-            font-size: 18px;
+            font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1153,155 +810,534 @@
         }
 
         .playback-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: linear-gradient(180deg, rgba(0, 255, 255, 0.3), rgba(0, 136, 255, 0.4));
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
             transform: scale(1.1);
         }
 
         .playback-btn.primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            width: 56px;
-            height: 56px;
-            font-size: 24px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(180deg, rgba(102, 126, 234, 0.4), rgba(118, 75, 162, 0.5));
+            border-color: #667eea;
         }
 
-        .playback-btn.primary:hover {
-            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        .playback-slider {
+            flex: 1;
+            height: 6px;
+            background: rgba(0, 136, 255, 0.2);
+            border-radius: 3px;
+            appearance: none;
+            cursor: pointer;
         }
 
-        .playback-speed {
+        .playback-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00ffff, #0088ff);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .playback-info {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 12px 8px;
+            font-size: 10px;
+            color: #0088ff;
+        }
+
+        /* ==================== SETTINGS PANEL ==================== */
+        #settings-console {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            width: 280px;
+            pointer-events: auto;
+            display: none;
+        }
+
+        #settings-console.visible {
+            display: block;
+        }
+
+        .setting-group {
+            margin-bottom: 12px;
+        }
+
+        .setting-label {
+            font-size: 10px;
+            color: #0088ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .setting-input, .setting-select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #fff;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+        }
+
+        .setting-input:focus, .setting-select:focus {
+            outline: none;
+            border-color: #00ffff;
+        }
+
+        .setting-select option {
+            background: #0a1428;
+        }
+
+        .settings-actions {
             display: flex;
             gap: 8px;
-            justify-content: center;
-            margin-bottom: 16px;
+            margin-top: 12px;
         }
 
-        .speed-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #888;
-            padding: 6px 12px;
+        .settings-btn {
+            flex: 1;
+            padding: 8px;
             border-radius: 4px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
             cursor: pointer;
-            font-size: 12px;
             transition: all 0.2s;
         }
 
-        .speed-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
+        .settings-btn.primary {
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.3), rgba(0, 100, 200, 0.4));
+            border: 1px solid #0088ff;
+            color: #00ffff;
         }
 
-        .speed-btn.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-color: transparent;
-            color: white;
+        .settings-btn.secondary {
+            background: transparent;
+            border: 1px solid rgba(0, 136, 255, 0.4);
+            color: #0088ff;
         }
 
-        .playback-event {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
+        /* LLM Status Panel */
+        .llm-status-box {
+            background: linear-gradient(180deg, rgba(0, 50, 100, 0.3), rgba(0, 30, 60, 0.4));
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
             padding: 12px;
-            margin-top: 16px;
+            margin-bottom: 12px;
         }
 
-        .playback-event-type {
-            font-size: 11px;
+        .llm-status-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .llm-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .llm-indicator.connected {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+        }
+
+        .llm-indicator.disconnected {
+            background: #ff4444;
+            box-shadow: 0 0 10px #ff4444;
+        }
+
+        .llm-indicator.checking {
+            background: #ffd700;
+            box-shadow: 0 0 10px #ffd700;
+            animation: pulse-status 0.5s ease-in-out infinite;
+        }
+
+        .llm-status-text {
+            font-size: 10px;
+            color: #00ffff;
             text-transform: uppercase;
-            color: #888;
-            margin-bottom: 4px;
+            letter-spacing: 1px;
         }
 
-        .playback-event-summary {
+        /* ==================== LOADING STATE ==================== */
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 200;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(0, 255, 255, 0.2);
+            border-top-color: #00ffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* ==================== GAIN/LOSS COLORS ==================== */
+        .gain-positive { color: #00ff88; }
+        .gain-negative { color: #ff4444; }
+
+        /* ==================== MODALS ==================== */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(5px);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: linear-gradient(180deg, rgba(10, 20, 40, 0.98) 0%, rgba(5, 10, 25, 0.99) 100%);
+            border: 2px solid #0088ff;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 85vh;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0, 136, 255, 0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(90deg, rgba(0, 136, 255, 0.3), rgba(0, 255, 255, 0.1));
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-family: 'Orbitron', sans-serif;
             font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #00ffff;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #0088ff;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            color: #ff4444;
+            text-shadow: 0 0 10px #ff4444;
+        }
+
+        .modal-body {
+            padding: 20px;
+            max-height: calc(85vh - 70px);
+            overflow-y: auto;
+        }
+
+        /* Scanner Modal Specifics */
+        .scanner-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(0, 136, 255, 0.2);
+        }
+
+        .scanner-stat {
+            text-align: center;
+        }
+
+        .scanner-stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 600;
             color: #fff;
         }
 
-        .playback-event-date {
-            font-size: 12px;
+        .scanner-stat-label {
+            font-size: 9px;
+            color: #0088ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+
+        .scanner-rec {
+            display: grid;
+            grid-template-columns: 100px 90px 1fr 100px 70px;
+            gap: 12px;
+            padding: 12px;
+            background: rgba(0, 136, 255, 0.05);
+            border: 1px solid rgba(0, 136, 255, 0.2);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .scanner-rec:hover {
+            background: rgba(0, 255, 255, 0.1);
+            border-color: #00ffff;
+            transform: translateX(4px);
+        }
+
+        .scanner-rec-ticker {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            color: #00ffff;
+        }
+
+        .scanner-rec-strategy {
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .scanner-rec-strategy.put {
+            background: rgba(156, 39, 176, 0.2);
+            border: 1px solid rgba(156, 39, 176, 0.4);
+            color: #ce93d8;
+        }
+
+        .scanner-rec-strategy.call {
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.4);
+            color: #64b5f6;
+        }
+
+        .scanner-rec-details {
+            font-size: 11px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+
+        .scanner-rec-details .strike {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .scanner-rec-details .metrics {
+            font-size: 9px;
             color: #666;
             margin-top: 4px;
         }
 
-        .playback-toggle-btn {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            pointer-events: auto;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s;
+        .scanner-rec-premium .amount {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            color: #00ff88;
         }
 
-        .playback-toggle-btn:hover {
-            transform: translateX(-50%) scale(1.05);
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+        .scanner-rec-premium .yield {
+            font-size: 9px;
+            color: #0088ff;
         }
 
-        .playback-toggle-btn.active {
-            background: linear-gradient(135deg, #00ff88 0%, #00aa55 100%);
-        }
-
-        .playback-snapshot-values {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .playback-stat {
-            text-align: center;
-        }
-
-        .playback-stat-value {
+        .scanner-rec-score .score-value {
+            font-family: 'Orbitron', sans-serif;
             font-size: 18px;
-            font-weight: bold;
-            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: #00ffff;
         }
 
-        .playback-stat-label {
-            font-size: 10px;
-            color: #888;
+        .scanner-rec-score .score-label {
+            font-size: 8px;
+            color: #0088ff;
             text-transform: uppercase;
         }
 
-        /* Setup Screen */
+        .scanner-analysis {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 4px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .scanner-analysis-badge {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .scanner-analysis-text {
+            font-size: 12px;
+            color: #ccc;
+            line-height: 1.7;
+            margin-top: 12px;
+            white-space: pre-wrap;
+        }
+
+        /* Income Modal */
+        .income-modal-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(0, 136, 255, 0.2);
+        }
+
+        .income-event {
+            display: grid;
+            grid-template-columns: 90px 70px 1fr 90px;
+            gap: 12px;
+            padding: 10px 12px;
+            background: rgba(0, 136, 255, 0.05);
+            border: 1px solid rgba(0, 136, 255, 0.15);
+            border-radius: 4px;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+
+        .income-event:hover {
+            background: rgba(0, 255, 255, 0.08);
+            border-color: rgba(0, 255, 255, 0.3);
+        }
+
+        .income-event-date {
+            font-size: 10px;
+            color: #0088ff;
+        }
+
+        .income-event-type {
+            font-size: 9px;
+            padding: 3px 6px;
+            border-radius: 3px;
+            text-align: center;
+        }
+
+        .income-event-type.option { background: rgba(156, 39, 176, 0.2); color: #ce93d8; }
+        .income-event-type.dividend { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .income-event-type.trade { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+
+        .income-event-desc {
+            font-size: 11px;
+            color: #ccc;
+        }
+
+        .income-event-desc .ticker {
+            color: #00ffff;
+            font-weight: 600;
+        }
+
+        .income-event-amount {
+            text-align: right;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 600;
+            color: #00ff88;
+        }
+
+        .income-event-amount.negative { color: #ff4444; }
+
+        /* ==================== DEMO BANNER ==================== */
+        #demo-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(90deg, #ff6b35, #f7c531);
+            color: #000;
+            padding: 8px 16px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            z-index: 9998;
+            display: none;
+        }
+
+        #demo-banner.visible { display: block; }
+
+        #demo-banner button {
+            background: rgba(0, 0, 0, 0.2);
+            border: none;
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 4px;
+            margin-left: 12px;
+            cursor: pointer;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+        }
+
+        body.demo-mode #command-deck { top: 40px; }
+
+        /* ==================== SETUP SCREEN ==================== */
         #setup-screen {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0a0a1a 100%);
+            background: linear-gradient(135deg, #050510 0%, #0a1428 50%, #050510 100%);
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 9999;
         }
 
-        #setup-screen.hidden {
-            display: none;
-        }
+        #setup-screen.hidden { display: none; }
 
         .setup-container {
-            background: rgba(26, 26, 46, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(10, 20, 40, 0.95), rgba(5, 10, 25, 0.98));
+            border: 2px solid #0088ff;
+            border-radius: 8px;
             padding: 40px;
             max-width: 500px;
             width: 90%;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 50px rgba(0, 136, 255, 0.3);
         }
 
         .setup-header {
@@ -1310,267 +1346,148 @@
         }
 
         .setup-header h1 {
-            font-size: 28px;
-            margin: 0 0 8px 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            color: #00ffff;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            margin-bottom: 8px;
         }
 
         .setup-header p {
-            color: #888;
-            margin: 0;
-            font-size: 14px;
+            color: #0088ff;
+            font-size: 12px;
         }
 
         .setup-options {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 12px;
         }
 
         .setup-option {
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 20px;
+            background: rgba(0, 136, 255, 0.1);
+            border: 1px solid rgba(0, 136, 255, 0.3);
+            border-radius: 4px;
+            padding: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s;
         }
 
         .setup-option:hover {
-            border-color: rgba(102, 126, 234, 0.5);
-            background: rgba(255, 255, 255, 0.08);
-            transform: translateY(-2px);
+            border-color: #00ffff;
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
         }
 
         .setup-option.featured {
-            border-color: rgba(102, 126, 234, 0.3);
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border-color: #00ff88;
+            background: linear-gradient(180deg, rgba(0, 255, 136, 0.1), rgba(0, 136, 68, 0.1));
         }
 
         .setup-option h3 {
-            margin: 0 0 8px 0;
-            font-size: 16px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            color: #00ffff;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
             gap: 10px;
         }
 
         .setup-option p {
-            margin: 0;
-            font-size: 13px;
+            font-size: 11px;
             color: #888;
             line-height: 1.5;
         }
 
         .setup-option .badge {
-            font-size: 10px;
+            font-size: 8px;
             padding: 2px 8px;
             border-radius: 10px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .setup-divider {
-            display: flex;
-            align-items: center;
-            margin: 24px 0;
-            color: #666;
-            font-size: 12px;
-        }
-
-        .setup-divider::before,
-        .setup-divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .setup-divider::before {
-            margin-right: 12px;
-        }
-
-        .setup-divider::after {
-            margin-left: 12px;
-        }
-
-        .setup-input-group {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .setup-input-group label {
-            display: block;
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 8px;
-        }
-
-        .setup-input-group input {
-            width: 100%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-size: 14px;
-        }
-
-        .setup-input-group input:focus {
-            outline: none;
-            border-color: #667eea;
+            background: #00ff88;
+            color: #000;
         }
 
         .setup-btn {
             width: 100%;
-            padding: 14px;
-            margin-top: 16px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 10px;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
+            padding: 12px;
+            margin-top: 12px;
+            background: linear-gradient(180deg, rgba(0, 136, 255, 0.3), rgba(0, 100, 200, 0.4));
+            border: 1px solid #0088ff;
+            border-radius: 4px;
+            color: #00ffff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s;
         }
 
         .setup-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .setup-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
+            background: linear-gradient(180deg, rgba(0, 255, 255, 0.4), rgba(0, 136, 255, 0.5));
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
         }
 
         .setup-btn.secondary {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: transparent;
+            border-color: rgba(0, 136, 255, 0.4);
+            color: #0088ff;
         }
 
         .setup-loading {
             text-align: center;
             padding: 40px;
         }
-
-        .setup-loading .spinner {
-            margin: 0 auto 16px;
-        }
-
-        /* Demo Banner */
-        #demo-banner {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(90deg, #ff6b35 0%, #f7c531 100%);
-            color: #000;
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: bold;
-            text-align: center;
-            z-index: 9998;
-            display: none;
-        }
-
-        #demo-banner.visible {
-            display: block;
-        }
-
-        #demo-banner button {
-            background: rgba(0, 0, 0, 0.2);
-            border: none;
-            color: #000;
-            padding: 4px 12px;
-            border-radius: 4px;
-            margin-left: 16px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        #demo-banner button:hover {
-            background: rgba(0, 0, 0, 0.3);
-        }
-
-        /* Adjust HUD when demo banner is visible */
-        body.demo-mode #hud {
-            top: 40px;
-        }
-
-        body.demo-mode #playback-toggle {
-            top: 60px;
-        }
     </style>
 </head>
 <body>
     <!-- Demo Mode Banner -->
     <div id="demo-banner">
-        DEMO MODE - This is sample data for demonstration purposes
+        DEMO MODE - SAMPLE DATA
         <button onclick="exitDemoMode()">Exit Demo</button>
         <button onclick="startFresh()">Start Fresh</button>
     </div>
 
-    <!-- Setup Screen (shown when no database exists) -->
+    <!-- Setup Screen -->
     <div id="setup-screen" class="hidden">
         <div class="setup-container">
             <div class="setup-header">
-                <h1>Portfolio Dashboard</h1>
-                <p>Welcome! Let's get your portfolio set up.</p>
+                <h1>COMMAND DECK</h1>
+                <p>Portfolio Control System</p>
             </div>
-
             <div class="setup-options">
                 <div class="setup-option featured" onclick="initDemo()">
-                    <h3>
-                        Try Demo Mode
-                        <span class="badge">Recommended</span>
-                    </h3>
-                    <p>Explore the dashboard with 6 months of sample trading data. Perfect for getting familiar with the features.</p>
+                    <h3>Demo Mode <span class="badge">Recommended</span></h3>
+                    <p>Explore with 6 months of sample trading data.</p>
                 </div>
-
                 <div class="setup-option" onclick="showFreshSetup()">
                     <h3>Start Fresh</h3>
-                    <p>Create a new portfolio from scratch. You'll start with an empty portfolio and add your own trades.</p>
+                    <p>Create a new portfolio from scratch.</p>
                 </div>
-
                 <div class="setup-option" onclick="showUploadSetup()">
-                    <h3>Import Existing Data</h3>
-                    <p>Upload an existing event log CSV file to restore a previous portfolio.</p>
+                    <h3>Import Data</h3>
+                    <p>Upload an existing event log CSV.</p>
                 </div>
             </div>
-
-            <!-- Fresh setup form (hidden by default) -->
             <div id="fresh-setup-form" style="display: none;">
-                <div class="setup-divider">New Portfolio Setup</div>
-                <div class="setup-input-group">
-                    <label>Starting Cash Balance</label>
-                    <input type="number" id="starting-cash" value="50000" placeholder="50000">
+                <div class="setting-group" style="margin-top: 16px;">
+                    <label class="setting-label">Starting Cash</label>
+                    <input type="number" id="starting-cash" class="setting-input" value="50000">
                 </div>
                 <button class="setup-btn" onclick="initFresh()">Create Portfolio</button>
                 <button class="setup-btn secondary" onclick="hideSetupForms()">Back</button>
             </div>
-
-            <!-- Upload form (hidden by default) -->
             <div id="upload-setup-form" style="display: none;">
-                <div class="setup-divider">Import Event Log</div>
-                <div class="setup-input-group">
-                    <label>Select CSV File</label>
-                    <input type="file" id="csv-upload" accept=".csv">
+                <div class="setting-group" style="margin-top: 16px;">
+                    <label class="setting-label">CSV File</label>
+                    <input type="file" id="csv-upload" class="setting-input" accept=".csv">
                 </div>
-                <button class="setup-btn" onclick="uploadCSV()">Import Data</button>
+                <button class="setup-btn" onclick="uploadCSV()">Import</button>
                 <button class="setup-btn secondary" onclick="hideSetupForms()">Back</button>
             </div>
-
-            <!-- Loading state -->
             <div id="setup-loading" class="setup-loading" style="display: none;">
                 <div class="spinner"></div>
-                <p id="setup-loading-text">Setting up your portfolio...</p>
+                <p id="setup-loading-text" class="loading-text">Initializing...</p>
             </div>
         </div>
     </div>
@@ -1579,94 +1496,224 @@
         <div id="canvas-container"></div>
 
         <!-- Loading State -->
-        <div id="loading" class="loading">
+        <div id="loading">
             <div class="spinner"></div>
-            <p style="margin-top: 16px;">Loading Portfolio...</p>
+            <p class="loading-text">Loading Systems...</p>
         </div>
 
-        <!-- HUD Overlay -->
-        <div id="hud" style="display: none;">
-            <!-- Summary Panel -->
-            <div id="summary-panel" class="hud-panel">
-                <div class="panel-title">Portfolio Summary</div>
-                <div class="stat-value" id="total-value">$0</div>
-                <div class="stat-label">Total Value</div>
+        <!-- Command Deck Frame -->
+        <div id="command-deck" style="display: none;">
+            <!-- Corner Brackets -->
+            <div class="corner-bracket top-left"></div>
+            <div class="corner-bracket top-right"></div>
+            <div class="corner-bracket bottom-left"></div>
+            <div class="corner-bracket bottom-right"></div>
 
-                <div class="stat-row">
-                    <span>Cash</span>
-                    <span id="cash-value">$0</span>
-                </div>
-                <div class="stat-row">
-                    <span>Holdings</span>
-                    <span id="holdings-value">$0</span>
-                </div>
+            <!-- Scan Line Effect -->
+            <div id="scan-line"></div>
 
-                <div style="margin-top: 16px;">
-                    <div class="stat-label">YTD Income Progress</div>
-                    <div class="stat-row">
-                        <span id="income-value" class="gain-positive">$0</span>
-                        <span id="income-pct">0%</span>
+            <!-- Left Console - Status -->
+            <div id="left-console" class="control-panel">
+                <div class="panel-header">
+                    <span class="panel-title">System Status</span>
+                    <span class="panel-status"></span>
+                </div>
+                <div class="panel-body">
+                    <div class="status-display">
+                        <div class="status-value" id="total-value">$0</div>
+                        <div class="status-label">Total Portfolio Value</div>
                     </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="income-progress" style="width: 0%"></div>
+                    <div class="metrics-grid">
+                        <div class="metric-box" onclick="focusOnPlanet('CASH')">
+                            <div class="metric-value" id="cash-value">$0</div>
+                            <div class="metric-label">Cash</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-value" id="holdings-value">$0</div>
+                            <div class="metric-label">Holdings</div>
+                        </div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-header">
+                            <span class="progress-title">YTD Income</span>
+                            <span class="progress-value" id="income-pct">0%</span>
+                        </div>
+                        <div class="stat-row clickable-row" onclick="showIncomeEvents('ytd')" style="cursor: pointer;">
+                            <span id="income-value" class="gain-positive">$0</span>
+                            <span style="color: #666;">/ $30,000</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="income-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="progress-links">
+                            <a href="#" onclick="showIncomeEvents('ytd'); return false;">This Year</a>
+                            <span style="color: #333;">|</span>
+                            <a href="#" onclick="showIncomeEvents('lastyear'); return false;">Last Year</a>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Actions Panel -->
-            <div id="actions-panel" class="hud-panel">
-                <div class="panel-title">
-                    Quick Actions
-                    <button class="settings-toggle" onclick="toggleSettings()">LLM Settings</button>
+            <!-- Right Console - Controls -->
+            <div id="right-console" class="control-panel">
+                <div class="panel-header">
+                    <span class="panel-title">Controls</span>
+                    <span class="panel-status"></span>
                 </div>
-                <button class="btn" onclick="navigateTo('/trade')">Trade</button>
-                <button class="btn" onclick="navigateTo('/options')">Options</button>
-                <button class="btn" onclick="navigateTo('/')">Web UI</button>
-                <button class="btn" onclick="refreshPrices()">Update Prices</button>
+                <div class="panel-body">
+                    <div class="control-grid">
+                        <button class="control-btn" onclick="navigateTo('/trade')">Trade</button>
+                        <button class="control-btn" onclick="navigateTo('/options')">Options</button>
+                        <button class="control-btn" onclick="navigateTo('/')">Web UI</button>
+                        <button class="control-btn" onclick="toggleSettings()">Settings</button>
+                        <button class="control-btn primary" onclick="refreshPrices()">Update Prices</button>
+                    </div>
+                </div>
             </div>
 
-            <!-- Settings Panel -->
-            <div id="settings-panel">
-                <div class="settings-header">
-                    <h3>LLM Configuration</h3>
-                    <button class="settings-close" onclick="toggleSettings()">x</button>
+            <!-- Mode Indicator -->
+            <div id="mode-indicator">
+                <button class="mode-btn" id="playback-toggle" onclick="togglePlaybackMode()">
+                    <span class="mode-icon"></span>
+                    <span>History Mode</span>
+                </button>
+            </div>
+
+            <!-- Scanner FAB -->
+            <div id="scanner-fab">
+                <button class="scanner-btn" onclick="openOptionsScanner()">
+                    <span class="scanner-icon">$</span>
+                    <span>Income Scanner</span>
+                </button>
+            </div>
+
+            <!-- Bottom Console - Holdings -->
+            <div id="bottom-console" class="control-panel">
+                <div class="panel-header">
+                    <span class="panel-title">Holdings Array</span>
+                    <span class="panel-status"></span>
                 </div>
-                <div class="settings-body">
-                    <!-- Space-themed Connection Status -->
-                    <div class="llm-status-panel" id="llm-status-panel">
-                        <div class="llm-status-header">
-                            <div class="llm-status-indicator checking" id="llm-indicator"></div>
-                            <span class="llm-status-title">Neural Link Status</span>
+                <div class="panel-body">
+                    <div class="holdings-scroll">
+                        <div class="holdings-grid" id="holdings-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Insights Console -->
+            <div id="insights-console" class="control-panel">
+                <div class="panel-header" onclick="toggleInsights()" style="cursor: pointer;">
+                    <span class="panel-title">AI Insights</span>
+                    <span id="insights-toggle-icon" style="color: #00ffff;">-</span>
+                </div>
+                <div class="panel-body" id="insights-body">
+                    <div class="insights-scroll" id="insights-content">
+                        <div id="insights-loading" style="text-align: center; padding: 20px;">
+                            <div class="spinner" style="width: 30px; height: 30px;"></div>
+                            <p style="font-size: 10px; color: #0088ff; margin-top: 10px;">Analyzing...</p>
                         </div>
-                        <div class="llm-status-details">
-                            <div class="llm-status-item">
-                                <span class="llm-status-label">Provider</span>
-                                <span class="llm-status-value" id="llm-status-provider">--</span>
-                            </div>
-                            <div class="llm-status-item">
-                                <span class="llm-status-label">Model</span>
-                                <span class="llm-status-value" id="llm-status-model">--</span>
-                            </div>
-                            <div class="llm-status-item">
-                                <span class="llm-status-label">Latency</span>
-                                <div class="llm-status-latency">
-                                    <span class="llm-status-value" id="llm-status-latency">--</span>
-                                    <div class="latency-bar">
-                                        <div class="latency-fill" id="llm-latency-bar" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="llm-status-item">
-                                <span class="llm-status-label">Status</span>
-                                <span class="llm-status-value" id="llm-status-text">Checking...</span>
-                            </div>
-                        </div>
-                        <div class="llm-status-footer">
-                            <span class="llm-status-message" id="llm-status-message">Initializing connection...</span>
-                            <button class="llm-refresh-btn" onclick="refreshLLMStatus()">Refresh</button>
+                        <div id="insights-list" style="display: none;"></div>
+                    </div>
+                    <div class="insights-footer">
+                        <span class="insights-timestamp" id="insights-timestamp">Loading...</span>
+                        <button class="insights-refresh" onclick="refreshInsights()">Refresh</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend Console -->
+            <div id="legend-console" class="control-panel minimized">
+                <div class="panel-header" onclick="toggleLegend()" style="cursor: pointer;">
+                    <span class="panel-title">Legend</span>
+                    <span id="legend-toggle-icon" style="color: #00ffff;">+</span>
+                </div>
+                <div class="panel-body" id="legend-body">
+                    <div class="legend-item">
+                        <div class="legend-icon"><div class="legend-icon-circle" style="background: #ffd700; box-shadow: 0 0 8px #ffd700;"></div></div>
+                        <div class="legend-text">
+                            <div class="legend-title">Sun</div>
+                            <div class="legend-desc">Total portfolio value</div>
                         </div>
                     </div>
+                    <div class="legend-item">
+                        <div class="legend-icon"><div class="legend-icon-circle" style="background: #00ff88; box-shadow: 0 0 8px #00ff88;"></div></div>
+                        <div class="legend-text">
+                            <div class="legend-title">Green Glow</div>
+                            <div class="legend-desc">Position in profit</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon"><div class="legend-icon-circle" style="background: #ff4444; box-shadow: 0 0 8px #ff4444;"></div></div>
+                        <div class="legend-text">
+                            <div class="legend-title">Red Glow</div>
+                            <div class="legend-desc">Position at a loss</div>
+                        </div>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-icon"><div style="width: 14px; height: 14px; border: 2px solid #00ffff; border-radius: 50%;"></div></div>
+                        <div class="legend-text">
+                            <div class="legend-title">Planet Ring</div>
+                            <div class="legend-desc">High momentum (+/-20%)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
+            <!-- Chat Console -->
+            <div id="chat-console" class="control-panel minimized">
+                <div class="panel-header" onclick="toggleChat()" style="cursor: pointer;">
+                    <span class="panel-title">AI Assistant</span>
+                    <span id="chat-toggle-icon" style="color: #00ffff;">+</span>
+                </div>
+                <div class="panel-body" id="chat-body">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="chat-message assistant">
+                            Hello! I'm your portfolio assistant. Ask me anything about your portfolio.
+                        </div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" class="chat-input" id="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKeypress(event)">
+                        <button class="chat-send" id="chat-send" onclick="sendChatMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Playback Console -->
+            <div id="playback-console" class="control-panel">
+                <div class="panel-header">
+                    <span class="panel-title">Timeline Control</span>
+                    <button class="modal-close" onclick="togglePlaybackMode()" style="font-size: 16px;">&times;</button>
+                </div>
+                <div class="panel-body">
+                    <div class="playback-controls">
+                        <button class="playback-btn" onclick="playbackStep(-1)">|&lt;</button>
+                        <button class="playback-btn primary" id="playback-play-btn" onclick="togglePlayback()">|&gt;</button>
+                        <button class="playback-btn" onclick="playbackStep(1)">&gt;|</button>
+                    </div>
+                    <input type="range" class="playback-slider" id="playback-slider" min="0" max="100" value="0" oninput="onSliderChange(this.value)" style="width: 100%; margin: 12px 0;">
+                    <div class="playback-info">
+                        <span id="playback-date">Loading...</span>
+                        <span id="playback-progress">0 / 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Console -->
+            <div id="settings-console" class="control-panel">
+                <div class="panel-header">
+                    <span class="panel-title">LLM Settings</span>
+                    <button class="modal-close" onclick="toggleSettings()" style="font-size: 16px;">&times;</button>
+                </div>
+                <div class="panel-body">
+                    <div class="llm-status-box">
+                        <div class="llm-status-row">
+                            <div class="llm-indicator checking" id="llm-indicator"></div>
+                            <span class="llm-status-text" id="llm-status-text">Checking...</span>
+                        </div>
+                        <div style="font-size: 9px; color: #666;">
+                            <span id="llm-status-provider">--</span> | <span id="llm-status-model">--</span>
+                        </div>
+                    </div>
                     <div class="setting-group">
                         <label class="setting-label">Provider</label>
                         <select id="llm-provider" class="setting-select" onchange="onProviderChange()">
@@ -1674,223 +1721,97 @@
                             <option value="local">Local LLM</option>
                         </select>
                     </div>
-
                     <div class="setting-group" id="api-key-group">
-                        <label class="setting-label">Anthropic API Key</label>
-                        <input type="password" id="api-key" class="setting-input" placeholder="sk-ant-api03-...">
-                        <div style="font-size: 10px; color: #666; margin-top: 4px;" id="api-key-status"></div>
+                        <label class="setting-label">API Key</label>
+                        <input type="password" id="api-key" class="setting-input" placeholder="sk-ant-...">
                     </div>
-
                     <div class="setting-group" id="claude-model-group">
-                        <label class="setting-label">Claude Model</label>
+                        <label class="setting-label">Model</label>
                         <input type="text" id="claude-model" class="setting-input" placeholder="claude-sonnet-4-20250514">
                     </div>
-
                     <div class="setting-group" id="local-url-group" style="display: none;">
-                        <label class="setting-label">Local LLM URL</label>
-                        <input type="text" id="local-url" class="setting-input" placeholder="http://192.168.50.10:1234/v1">
+                        <label class="setting-label">Local URL</label>
+                        <input type="text" id="local-url" class="setting-input" placeholder="http://localhost:1234/v1">
                     </div>
-
                     <div class="setting-group" id="local-model-group" style="display: none;">
-                        <label class="setting-label">Local Model Name</label>
+                        <label class="setting-label">Local Model</label>
                         <input type="text" id="local-model" class="setting-input" placeholder="mistral-7b">
                     </div>
-
                     <div class="settings-actions">
                         <button class="settings-btn secondary" onclick="testLLM()">Test</button>
                         <button class="settings-btn primary" onclick="saveLLMSettings()">Save</button>
                     </div>
-
-                    <div id="settings-status"></div>
-                </div>
-            </div>
-
-            <!-- Holdings Panel -->
-            <div id="holdings-panel" class="hud-panel">
-                <div class="panel-title">Holdings</div>
-                <div class="holdings-grid" id="holdings-grid"></div>
-            </div>
-
-            <!-- AI Insights Panel -->
-            <div id="insights-panel">
-                <div id="insights-header" onclick="toggleInsights()">
-                    <h3>AI Insights</h3>
-                    <button class="insights-toggle-btn" id="insights-toggle-icon">-</button>
-                </div>
-                <div class="insights-content" id="insights-content">
-                    <div class="insights-loading" id="insights-loading">
-                        <div class="spinner"></div>
-                        <span>Analyzing portfolio...</span>
-                    </div>
-                    <div id="insights-list" style="display: none;"></div>
-                </div>
-                <div class="insights-footer">
-                    <span id="insights-timestamp">Loading...</span>
-                    <button class="insights-refresh" onclick="refreshInsights()">Refresh</button>
-                </div>
-            </div>
-
-            <!-- Legend Panel -->
-            <div id="legend-panel" class="minimized">
-                <div id="legend-header" onclick="toggleLegend()">
-                    <h3>3D Legend</h3>
-                    <button class="legend-toggle-btn" id="legend-toggle-icon">+</button>
-                </div>
-                <div id="legend-content">
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-orbit"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Orbit Distance</div>
-                            <div class="legend-desc">Closer to sun = larger portfolio allocation. Core holdings orbit near the center.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-circle" style="background: linear-gradient(135deg, #888 0%, #555 100%); width: 20px; height: 20px;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Planet Size</div>
-                            <div class="legend-desc">Larger planet = higher market value of that position.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-circle" style="background: #00ff88; box-shadow: 0 0 8px #00ff88;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Green Glow</div>
-                            <div class="legend-desc">Position is in profit. Brighter glow = larger gain %.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-circle" style="background: #ff4444; box-shadow: 0 0 8px #ff4444;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Red Glow</div>
-                            <div class="legend-desc">Position is at a loss. Brighter glow = larger loss %.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-ring" style="border-color: #00ff88;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Planetary Ring</div>
-                            <div class="legend-desc">High momentum position (+/- 20% or more). Ring color matches gain/loss.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div style="font-size: 16px;">*</div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Particle Cloud</div>
-                            <div class="legend-desc">Orbiting particles show momentum intensity. More particles = stronger movement.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-circle" style="background: radial-gradient(circle, #ffee88 0%, #ff8800 50%, #ff4400 100%); width: 20px; height: 20px;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">The Sun</div>
-                            <div class="legend-desc">Represents total portfolio value. Click to return to system view.</div>
-                        </div>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-icon">
-                            <div class="legend-icon-circle" style="background: linear-gradient(135deg, #ffd700 0%, #b8860b 100%); width: 18px; height: 18px; box-shadow: 0 0 6px #ffd700;"></div>
-                        </div>
-                        <div class="legend-text">
-                            <div class="legend-title">Cash Planet</div>
-                            <div class="legend-desc">Golden planet with colored rings showing breakdown: green (available), orange (collateral), red (tax reserve).</div>
-                        </div>
-                    </div>
+                    <div id="settings-status" style="margin-top: 8px; font-size: 10px;"></div>
                 </div>
             </div>
         </div>
 
         <!-- Tooltip -->
-        <div id="tooltip"></div>
+        <div id="tooltip" style="position: absolute; background: rgba(10, 20, 40, 0.95); border: 1px solid #00ffff; border-radius: 4px; padding: 12px; pointer-events: none; display: none; z-index: 1000;"></div>
+    </div>
 
-        <!-- Playback Toggle Button (in HUD) -->
-        <button id="playback-toggle" class="playback-toggle-btn" onclick="togglePlaybackMode()">
-            <span>History Mode</span>
-        </button>
-
-        <!-- Playback Control Panel -->
-        <div id="playback-panel" class="compact">
-            <div class="playback-header">
-                <h3>Portfolio History Playback</h3>
-                <button class="playback-close" onclick="togglePlaybackMode()">x</button>
-            </div>
-
-            <div class="playback-speed">
-                <button class="speed-btn" onclick="setPlaybackSpeed(0.5)">0.5x</button>
-                <button class="speed-btn active" onclick="setPlaybackSpeed(1)">1x</button>
-                <button class="speed-btn" onclick="setPlaybackSpeed(2)">2x</button>
-                <button class="speed-btn" onclick="setPlaybackSpeed(5)">5x</button>
-            </div>
-
-            <div class="playback-controls">
-                <button class="playback-btn" onclick="playbackStep(-1)" title="Previous Event">|&lt;</button>
-                <button class="playback-btn primary" id="playback-play-btn" onclick="togglePlayback()" title="Play/Pause">|&gt;</button>
-                <button class="playback-btn" onclick="playbackStep(1)" title="Next Event">&gt;|</button>
-                <button class="playback-expand-btn" onclick="togglePlaybackExpand()" title="Expand controls">Expand</button>
-            </div>
-
-            <div class="playback-timeline">
-                <input type="range" class="playback-slider" id="playback-slider" min="0" max="100" value="0" oninput="onSliderChange(this.value)">
-                <div class="playback-info">
-                    <span id="playback-date">Loading...</span>
-                    <span id="playback-progress">0 / 0 events</span>
+    <!-- Options Scanner Modal -->
+    <div id="options-scanner-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">$ Income Scanner</span>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button class="control-btn" onclick="runAnalyzedScan()" style="padding: 8px 16px;">AI Analyze</button>
+                    <button class="modal-close" onclick="closeOptionsScanner()">&times;</button>
                 </div>
             </div>
-
-            <div class="playback-event" id="playback-event">
-                <div class="playback-event-type" id="playback-event-type">-</div>
-                <div class="playback-event-summary" id="playback-event-summary">Select an event to see details</div>
-                <div class="playback-event-date" id="playback-event-timestamp"></div>
+            <div class="scanner-summary" id="scanner-summary" style="display: none;">
+                <div class="scanner-stat">
+                    <div class="scanner-stat-value" id="scanner-holdings-count">0</div>
+                    <div class="scanner-stat-label">Scanned</div>
+                </div>
+                <div class="scanner-stat">
+                    <div class="scanner-stat-value" id="scanner-ytd-income">$0</div>
+                    <div class="scanner-stat-label">YTD Income</div>
+                </div>
+                <div class="scanner-stat">
+                    <div class="scanner-stat-value" id="scanner-remaining">$0</div>
+                    <div class="scanner-stat-label">Remaining</div>
+                </div>
+                <div class="scanner-stat">
+                    <div class="scanner-stat-value gain-positive" id="scanner-potential">$0</div>
+                    <div class="scanner-stat-label">Potential</div>
+                </div>
             </div>
-
-            <div class="playback-snapshot-values">
-                <div class="playback-stat">
-                    <div class="playback-stat-value" id="playback-cash">$0</div>
-                    <div class="playback-stat-label">Cash</div>
+            <div class="modal-body">
+                <div id="scanner-loading" style="text-align: center; padding: 60px;">
+                    <div class="spinner"></div>
+                    <p class="loading-text" style="margin-top: 20px;">Scanning Options Chains...</p>
+                    <p style="font-size: 10px; color: #0088ff; margin-top: 8px;">Fetching theta, delta, and premium data</p>
                 </div>
-                <div class="playback-stat">
-                    <div class="playback-stat-value" id="playback-holdings">$0</div>
-                    <div class="playback-stat-label">Holdings</div>
+                <div id="scanner-analysis" class="scanner-analysis" style="display: none;">
+                    <span class="scanner-analysis-badge">AI Analysis</span>
+                    <div class="scanner-analysis-text" id="scanner-analysis-text"></div>
                 </div>
-                <div class="playback-stat">
-                    <div class="playback-stat-value" id="playback-total">$0</div>
-                    <div class="playback-stat-label">Total</div>
+                <div id="scanner-results" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(0, 136, 255, 0.2);">
+                        <span style="font-family: 'Orbitron', sans-serif; font-size: 12px; color: #00ffff;">Top Recommendations</span>
+                        <span style="font-size: 9px; color: #666;">Sorted by score</span>
+                    </div>
+                    <div id="scanner-results-list"></div>
                 </div>
-                <button class="playback-expand-btn" onclick="togglePlaybackExpand()" style="margin-top: 12px;">Minimize</button>
+                <div id="scanner-errors" style="display: none; padding: 12px; background: rgba(255, 68, 68, 0.1); border-radius: 4px; margin-top: 12px;">
+                    <div style="color: #ff6b6b; font-size: 10px; font-weight: 600; margin-bottom: 6px;">Scan Notes</div>
+                    <div id="scanner-errors-list" style="font-size: 9px; color: #888;"></div>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Chat Panel -->
-        <div id="chat-panel" class="minimized">
-            <div id="chat-header" onclick="toggleChat()">
-                <h3>
-                    <span class="status-dot"></span>
-                    Portfolio AI Assistant
-                </h3>
-                <button class="chat-toggle-btn" id="chat-toggle-icon">+</button>
+    <!-- Income Events Modal -->
+    <div id="income-events-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title" id="income-modal-title">Income Events</span>
+                <button class="modal-close" onclick="closeIncomeModal()">&times;</button>
             </div>
-            <div id="chat-messages">
-                <div class="chat-message assistant">
-                    Hello! I'm your portfolio assistant. I have access to your trading history and current holdings. Ask me anything about your portfolio, strategy, or trades.
-                </div>
-            </div>
-            <div id="chat-input-container">
-                <input type="text" id="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKeypress(event)">
-                <button id="chat-send" onclick="sendChatMessage()">Send</button>
-            </div>
+            <div class="income-modal-summary" id="income-summary"></div>
+            <div class="modal-body" id="income-events-list"></div>
         </div>
     </div>
 

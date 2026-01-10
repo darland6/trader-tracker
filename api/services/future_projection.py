@@ -44,7 +44,18 @@ def generate_projection(
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
     from reconstruct_state import load_event_log, reconstruct_state
-    from api.services.alt_history import get_history_events
+    from api.services.alt_history import get_history_events, get_history
+
+    # Get alternate history metadata if not reality
+    history_context = None
+    if history_id != "reality":
+        history_metadata = get_history(history_id)
+        if history_metadata:
+            history_context = {
+                "name": history_metadata.get("name", ""),
+                "description": history_metadata.get("description", ""),
+                "modifications": history_metadata.get("modifications", [])
+            }
 
     # Load current state
     if history_id == "reality":
@@ -57,11 +68,22 @@ def generate_projection(
 
     current_state = reconstruct_state(events)
 
+    # Always load reality's prices as fallback for alternates
+    reality_prices = current_state.get('latest_prices', {})
+    if history_id != "reality":
+        # Load reality prices to use as fallback
+        reality_events = load_event_log(str(DATA_DIR / "event_log_enhanced.csv"))
+        reality_state = reconstruct_state(reality_events)
+        reality_prices = reality_state.get('latest_prices', {})
+
     # Get holdings for analysis
     holdings = []
     for ticker, shares in current_state.get('holdings', {}).items():
         if shares > 0.01:
+            # Use reality prices as fallback if alternate doesn't have prices
             price = current_state.get('latest_prices', {}).get(ticker, 0)
+            if price == 0:
+                price = reality_prices.get(ticker, 0)
             cost_info = current_state.get('cost_basis', {}).get(ticker, {})
             holdings.append({
                 "ticker": ticker,
@@ -74,9 +96,9 @@ def generate_projection(
 
     # Generate analysis and projections
     if use_llm:
-        analysis = get_llm_analysis(holdings, years)
+        analysis = get_llm_analysis(holdings, years, history_context)
     else:
-        analysis = get_statistical_analysis(holdings, years)
+        analysis = get_statistical_analysis(holdings, years, history_context)
 
     # Generate future price frames
     projection_id = str(uuid.uuid4())[:8]
@@ -112,15 +134,21 @@ def generate_projection(
     return projection
 
 
-def get_llm_analysis(holdings: list, years: int) -> dict:
-    """Get LLM-powered analysis of holdings and market trends."""
+def get_llm_analysis(holdings: list, years: int, history_context: dict = None) -> dict:
+    """Get LLM-powered analysis of holdings and market trends.
+
+    Args:
+        holdings: List of portfolio holdings
+        years: Number of years to project
+        history_context: Optional context for alternate realities with name, description, modifications
+    """
     try:
         from llm.config import get_llm_config
         from llm.client import get_llm_client
 
         config = get_llm_config()
         if not config.enabled:
-            return get_statistical_analysis(holdings, years)
+            return get_statistical_analysis(holdings, years, history_context)
 
         # Build analysis prompt
         holdings_summary = "\n".join([
@@ -129,8 +157,27 @@ def get_llm_analysis(holdings: list, years: int) -> dict:
             for h in holdings
         ])
 
-        prompt = f"""Analyze these portfolio holdings and provide a {years}-year projection:
+        # Build alternate reality context if provided
+        reality_context = ""
+        if history_context and history_context.get("description"):
+            reality_context = f"""
+ALTERNATE REALITY SCENARIO:
+Name: {history_context.get('name', 'Alternate')}
+Description: {history_context.get('description', '')}
 
+This is a "what-if" scenario. The user's description above should STRONGLY influence your projections.
+Interpret the description to adjust growth rates, risk levels, and key events accordingly.
+For example:
+- "More aggressive on tech" → Higher growth rates for tech stocks, but also higher volatility
+- "Conservative dividend focus" → Lower growth but more stable, income-focused projections
+- "What if crypto crashed?" → Model a significant downturn scenario
+- "Bull market continues" → Optimistic projections across the board
+
+Apply the user's intent to ALL growth rate estimates and analysis.
+"""
+
+        prompt = f"""Analyze these portfolio holdings and provide a {years}-year projection:
+{reality_context}
 CURRENT HOLDINGS:
 {holdings_summary}
 
@@ -178,7 +225,7 @@ Respond in JSON format:
 
         client = get_llm_client()
         if client is None:
-            return get_statistical_analysis(holdings, years)
+            return get_statistical_analysis(holdings, years, history_context)
 
         response = client.generate(prompt, max_tokens=2000)
 
@@ -190,19 +237,62 @@ Respond in JSON format:
             if json_start >= 0 and json_end > json_start:
                 analysis = json.loads(response[json_start:json_end])
                 analysis["source"] = "llm"
+                if history_context:
+                    analysis["history_context"] = history_context
                 return analysis
         except json.JSONDecodeError:
             pass
 
-        return get_statistical_analysis(holdings, years)
+        return get_statistical_analysis(holdings, years, history_context)
 
     except Exception as e:
         print(f"LLM analysis failed: {e}")
-        return get_statistical_analysis(holdings, years)
+        return get_statistical_analysis(holdings, years, history_context)
 
 
-def get_statistical_analysis(holdings: list, years: int) -> dict:
-    """Generate statistical analysis without LLM."""
+def get_statistical_analysis(holdings: list, years: int, history_context: dict = None) -> dict:
+    """Generate statistical analysis without LLM.
+
+    Args:
+        holdings: List of portfolio holdings
+        years: Number of years to project
+        history_context: Optional context for alternate realities - used to adjust projections
+    """
+
+    # Parse description to get adjustment multipliers
+    growth_multiplier = 1.0
+    volatility_multiplier = 1.0
+    scenario_note = "Statistical projection"
+
+    if history_context and history_context.get("description"):
+        desc = history_context.get("description", "").lower()
+
+        # Bullish/optimistic keywords → higher growth
+        if any(word in desc for word in ["bull", "optimistic", "moon", "rocket", "aggressive", "growth", "boom"]):
+            growth_multiplier = 1.5
+            scenario_note = "Bullish scenario - higher growth rates"
+
+        # Bearish/pessimistic keywords → lower growth
+        elif any(word in desc for word in ["bear", "pessimistic", "crash", "recession", "conservative", "safe", "downturn"]):
+            growth_multiplier = 0.5
+            volatility_multiplier = 1.5
+            scenario_note = "Bearish scenario - reduced growth, higher volatility"
+
+        # Tech-focused keywords → boost tech stocks
+        elif any(word in desc for word in ["tech", "ai", "innovation", "disruption"]):
+            growth_multiplier = 1.3
+            scenario_note = "Tech-focused scenario - higher tech growth"
+
+        # Doubling/scaling specific ticker (check modifications)
+        mods = history_context.get("modifications", [])
+        for mod in mods:
+            if mod.get("type") == "scale_position":
+                scale = mod.get("scale", 1.0)
+                if scale > 1:
+                    growth_multiplier *= 1.1  # Scaled up = more aggressive
+                    scenario_note = f"Position scaled {scale}x - adjusted projections"
+            elif mod.get("type") == "remove_ticker":
+                scenario_note = f"Removed {mod.get('ticker', 'ticker')} - portfolio rebalanced"
 
     # Default sector characteristics
     sector_profiles = {
@@ -222,11 +312,12 @@ def get_statistical_analysis(holdings: list, years: int) -> dict:
         ticker = h['ticker']
         profile = sector_profiles.get(ticker, sector_profiles["DEFAULT"])
 
-        base_growth = profile["growth"]
-        volatility = profile["volatility"]
+        # Apply multipliers from description
+        base_growth = profile["growth"] * growth_multiplier
+        volatility = profile["volatility"] * volatility_multiplier
 
         ticker_analysis[ticker] = {
-            "current_catalysts": ["Statistical projection - no LLM analysis"],
+            "current_catalysts": [scenario_note],
             "industry_trend": "projected based on historical patterns",
             "seasonality": f"Q1-Q4 factors: {profile['seasonality']}",
             "annual_growth_rates": {
@@ -235,7 +326,7 @@ def get_statistical_analysis(holdings: list, years: int) -> dict:
                 "optimistic": base_growth + volatility * 0.5
             },
             "key_events": ["Earnings reports", "Product launches"],
-            "confidence": "low",
+            "confidence": "low" if growth_multiplier == 1.0 else "medium",
             "risk_factors": ["Market volatility", "Competition", "Macro conditions"],
             "sector": profile["sector"]
         }
@@ -260,10 +351,12 @@ def get_statistical_analysis(holdings: list, years: int) -> dict:
             "optimistic": round(cumulative["optimistic"], 1)
         }
 
-    return {
+    result = {
         "source": "statistical",
+        "scenario_note": scenario_note,
+        "growth_multiplier": growth_multiplier,
         "macro_outlook": {
-            "summary": "Projection based on historical patterns and sector analysis",
+            "summary": scenario_note if growth_multiplier != 1.0 else "Projection based on historical patterns and sector analysis",
             "interest_rates": "Assumed stable",
             "inflation": "Moderate (2-3%)",
             "gdp_growth": "2-3% annually"
@@ -271,6 +364,11 @@ def get_statistical_analysis(holdings: list, years: int) -> dict:
         "ticker_analysis": ticker_analysis,
         "portfolio_projection": portfolio_projection
     }
+
+    if history_context:
+        result["history_context"] = history_context
+
+    return result
 
 
 def generate_future_frames(
@@ -283,6 +381,17 @@ def generate_future_frames(
 
     frames = []
     ticker_analysis = analysis.get("ticker_analysis", {})
+
+    # Check scenario type from analysis
+    growth_multiplier = analysis.get("growth_multiplier", 1.0)
+    scenario_note = analysis.get("scenario_note", "").lower()
+
+    # Determine noise bias based on scenario
+    noise_bias = 0  # neutral
+    if "bear" in scenario_note or "recession" in scenario_note or "crash" in scenario_note:
+        noise_bias = -0.01  # Negative bias for bearish scenarios
+    elif "bull" in scenario_note or "aggressive" in scenario_note or "growth" in scenario_note:
+        noise_bias = 0.005  # Slight positive bias for bullish scenarios
 
     # Generate monthly frames (more manageable than daily)
     months = years * 12
@@ -320,17 +429,23 @@ def generate_future_frames(
 
             # Calculate projected price with randomness
             annual_growth = base_growth / 100
-            # Add noise based on volatility
-            noise = random.gauss(0, 0.02)  # 2% monthly noise
+            # Add noise with scenario-appropriate bias
+            noise = random.gauss(noise_bias, 0.015)  # Reduced noise with scenario bias
 
             # Compound growth
             growth_factor = (1 + annual_growth / 12 + noise) ** month * seasonality
             projected_price = current_price * growth_factor
 
-            # Ensure reasonable bounds
-            min_price = current_price * (1 + pessimistic / 100) ** year_progress
-            max_price = current_price * (1 + optimistic / 100) ** year_progress
-            projected_price = max(min_price * 0.8, min(max_price * 1.2, projected_price))
+            # Ensure reasonable bounds - tighter for bearish scenarios
+            if noise_bias < 0:
+                # Bearish: favor pessimistic bound
+                min_price = current_price * (1 + pessimistic / 100) ** year_progress
+                max_price = current_price * (1 + base_growth / 100) ** year_progress
+            else:
+                min_price = current_price * (1 + pessimistic / 100) ** year_progress
+                max_price = current_price * (1 + optimistic / 100) ** year_progress
+
+            projected_price = max(min_price * 0.9, min(max_price * 1.1, projected_price))
 
             holding_value = h["shares"] * projected_price
             total_value += holding_value

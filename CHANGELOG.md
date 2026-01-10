@@ -4,6 +4,106 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Options Income Scanner (2026-01-10)
+
+New floating action button and scanner system for finding premium-selling opportunities:
+
+#### Options Scanner Service (`api/services/options_scanner.py`)
+- **Parallel Scanning** - Uses ThreadPoolExecutor with 5 workers to scan multiple tickers concurrently
+- **Options Chain Analysis** - Fetches real-time options data via yfinance
+- **Dual Strategy Support**
+  - **Covered Calls** - For holdings with 100+ shares
+  - **Cash-Secured Puts** - Based on available cash (max 50% per position)
+- **Scoring Algorithm** (0-100 points)
+  - Annualized premium yield (0-40 pts)
+  - OTM safety margin (0-25 pts)
+  - Delta/probability of profit (0-20 pts)
+  - DTE sweet spot 30-45 days (0-10 pts)
+  - Liquidity volume/open interest (0-5 pts)
+- **LLM Integration** - Optional AI analysis for recommendation reasoning
+
+#### API Endpoints (`api/routes/scanner.py`)
+```
+GET  /api/scanner/recommendations         - Quick scan with defaults
+GET  /api/scanner/recommendations/analyze - Scan with LLM analysis
+POST /api/scanner/scan                    - Full scan with custom parameters
+GET  /api/scanner/ticker/{ticker}         - Scan specific ticker
+```
+
+#### Frontend
+- **Floating Action Button** - Green pulsing "$" button in command deck
+- **Scanner Modal** - Shows portfolio summary, recommendations sorted by score
+- **AI Analyze Button** - Runs scan with LLM-powered insights
+
+### Changed - Command Deck UI Redesign (2026-01-10)
+
+Complete UI overhaul with spaceship cockpit aesthetic:
+
+#### Visual Design
+- **Orbitron Font** - Futuristic sci-fi headers and values
+- **Share Tech Mono** - Terminal/console body text
+- **Cyan/Blue Color Scheme** - Glowing accents and borders
+- **Corner Brackets** - Frame the viewport like a cockpit display
+- **Animated Scan Line** - Sweeps across the screen every 4 seconds
+- **Panel Status Indicators** - Green pulsing dots on each panel
+
+#### Control Panel Layout
+- **Left Console** - System Status (total value, cash, holdings, income progress)
+- **Right Console** - Controls (Trade, Options, Web UI, Settings buttons)
+- **Top Center** - Mode indicator (History Mode toggle)
+- **Bottom Console** - Holdings Array grid with all positions
+- **Insights Console** - AI Insights panel (collapsible with +/- toggle)
+- **Legend Console** - Visual guide (minimized by default)
+- **Chat Console** - AI Assistant (minimized by default)
+- **Scanner FAB** - Income Scanner button with pulsing green glow
+
+#### Styling
+- All panels use `.control-panel` class with gradient backgrounds
+- Glowing borders and hover effects on interactive elements
+- Modals styled to match command deck theme
+- Settings panel slides in from the right
+
+### Added - Description-Influenced Projections (2026-01-10)
+
+Alternate reality descriptions now directly influence future projection calculations:
+
+#### LLM Analysis
+- History context (name, description) passed to LLM prompts
+- Scenario-aware analysis considers user's stated intent
+
+#### Statistical Analysis
+- **Keyword Parsing** - Detects bull/bear/tech keywords in descriptions
+- **Growth Multipliers**
+  - Bull keywords (moon, rocket, aggressive): 1.5x growth
+  - Bear keywords (crash, recession, conservative): 0.5x growth, 1.5x volatility
+  - Tech keywords (AI, software, cloud): 1.3x growth
+- **Noise Bias** - Bearish scenarios get negative noise bias to ensure lower projections
+
+#### Frame Generation
+- Scenario-appropriate random walk with directional bias
+- Tighter bounds for bearish scenarios to prevent unrealistic gains
+
+### Fixed - Cluster View Improvements (2026-01-10)
+
+- **Leaderboard Fix** - Alternates now show actual percentages (was showing 0%)
+  - Separated value calculation from 3D updates
+  - Added reality price fallback for alternates without price data
+- **Timeline UI Cleanup** - Properly removes cluster UI when exiting view
+- **Extreme Relative Visualization**
+  - Power curve amplification: losers crushed (0.3x), winners boosted (1.7x)
+  - Scale range: 0.15x to 4x based on relative performance
+  - Y-position offset: winners float up, losers sink down
+  - Enhanced glow scaling and label opacity changes
+
+### Added - Income Events Modal (2026-01-10)
+
+Quick access to view income-generating events from the dashboard:
+
+- **Clickable Income Row** - Click YTD income value to open modal
+- **Year Links** - "This Year" and "Last Year" quick filters
+- **Summary Stats** - Breakdown by options, dividends, trading gains
+- **Event List** - Shows date, type, description, and amount for each event
+
 ### Added - Alternate Reality & Future Projections (2026-01-10)
 
 Explore "what-if" scenarios and project portfolio futures with AI-powered analysis.
