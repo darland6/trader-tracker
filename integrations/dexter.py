@@ -10,6 +10,10 @@ Setup:
 3. cd dexter && bun install
 4. Configure dexter/.env with API keys
 5. Set DEXTER_PATH in your .env to the dexter directory
+
+Local LLM Support:
+When your portfolio system is configured to use a local LLM, Dexter will
+automatically be configured to use the same LLM via OpenAI-compatible API.
 """
 
 import subprocess
@@ -22,6 +26,35 @@ import asyncio
 
 # Get Dexter path from environment or default to sibling directory
 DEXTER_PATH = os.getenv('DEXTER_PATH', str(Path(__file__).parent.parent.parent / 'dexter'))
+
+
+def get_dexter_env() -> dict:
+    """Build environment variables for Dexter, including local LLM config if enabled."""
+    env = {**os.environ}
+
+    try:
+        # Import LLM config to check if using local LLM
+        from llm.config import get_llm_config
+        config = get_llm_config()
+
+        if config.provider == "local" and config.local_url:
+            # Configure Dexter to use the local LLM via OpenAI-compatible API
+            env['OPENAI_API_BASE'] = config.local_url
+            env['OPENAI_BASE_URL'] = config.local_url
+            env['OPENAI_API_KEY'] = os.getenv('OPENAI_API_KEY', 'local-llm')  # Dummy key for local
+            env['OPENAI_MODEL'] = config.local_model
+
+            # Some frameworks use these alternative names
+            env['LLM_BASE_URL'] = config.local_url
+            env['LLM_MODEL'] = config.local_model
+
+    except ImportError:
+        pass  # LLM module not available, use default env
+
+    # Ensure CI mode for non-interactive
+    env['CI'] = 'true'
+
+    return env
 
 
 @dataclass
@@ -54,7 +87,9 @@ def get_dexter_status() -> dict:
         "has_package_json": False,
         "has_node_modules": False,
         "has_env": False,
-        "ready": False
+        "ready": False,
+        "using_local_llm": False,
+        "local_llm_url": None
     }
 
     if dexter_dir.exists():
@@ -67,6 +102,16 @@ def get_dexter_status() -> dict:
             status["has_node_modules"],
             status["has_env"]
         ])
+
+    # Check if local LLM is configured
+    try:
+        from llm.config import get_llm_config
+        config = get_llm_config()
+        if config.provider == "local" and config.local_url:
+            status["using_local_llm"] = True
+            status["local_llm_url"] = config.local_url
+    except ImportError:
+        pass
 
     return status
 
@@ -95,12 +140,15 @@ async def query_dexter(question: str, timeout: int = 120) -> DexterResult:
     try:
         # Run Dexter in non-interactive mode with the question
         # Dexter uses bun as its runtime
+        # Pass local LLM configuration via environment variables
+        dexter_env = get_dexter_env()
+
         process = await asyncio.create_subprocess_exec(
             'bun', 'run', 'start', '--query', question,
             cwd=str(dexter_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, 'CI': 'true'}  # CI mode for non-interactive
+            env=dexter_env
         )
 
         try:

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Local LLM Support for Dexter (2026-01-10)
+
+- Dexter research agent now automatically uses local LLM when configured
+- When portfolio system is set to use local LLM, Dexter receives the same configuration via environment variables:
+  - `OPENAI_API_BASE` / `OPENAI_BASE_URL` - Local LLM endpoint
+  - `OPENAI_MODEL` - Local model name
+- Added `get_dexter_env()` helper function to build environment variables
+- Updated `get_dexter_status()` to report local LLM configuration
+
 ### Changed - Project Reorganization (2026-01-10)
 
 Reorganized root-level files into a cleaner directory structure:
