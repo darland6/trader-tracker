@@ -253,6 +253,26 @@ def format_event_for_context(event: dict) -> str:
     return event_str
 
 
+# Company descriptions for ticker context
+TICKER_DESCRIPTIONS = {
+    "BMNR": "Bitdeer Technologies - Bitcoin/crypto mining infrastructure",
+    "TSLA": "Tesla - EVs, energy, AI/robotics",
+    "META": "Meta Platforms - Social media, VR/metaverse",
+    "PLTR": "Palantir - AI/data analytics, government & enterprise",
+    "RKLB": "Rocket Lab - Space launch, satellite services",
+    "SPOT": "Spotify - Music/audio streaming",
+    "NBIS": "Nebius - AI cloud infrastructure (Yandex spinoff)",
+    "COIN": "Coinbase - Crypto exchange",
+    "MSTR": "MicroStrategy - Bitcoin treasury company",
+    "NVDA": "NVIDIA - AI chips, GPUs",
+    "AMD": "AMD - Semiconductors, CPUs/GPUs",
+    "AAPL": "Apple - Consumer tech, services",
+    "MSFT": "Microsoft - Cloud, AI, enterprise software",
+    "GOOGL": "Alphabet/Google - Search, cloud, AI",
+    "AMZN": "Amazon - E-commerce, AWS cloud",
+}
+
+
 def format_portfolio_state(state: dict) -> str:
     """Format portfolio state for LLM context."""
     lines = [
@@ -264,8 +284,13 @@ def format_portfolio_state(state: dict) -> str:
     ]
 
     for h in state.get('holdings', []):
+        ticker = h['ticker']
+        company_desc = TICKER_DESCRIPTIONS.get(ticker, "")
         gain_str = f"+{h['unrealized_gain_pct']:.1f}%" if h['unrealized_gain_pct'] >= 0 else f"{h['unrealized_gain_pct']:.1f}%"
-        lines.append(f"  - {h['ticker']}: {h['shares']} shares @ ${h['current_price']:.2f} = ${h['market_value']:,.0f} ({gain_str})")
+        if company_desc:
+            lines.append(f"  - {ticker} ({company_desc}): {h['shares']} shares @ ${h['current_price']:.2f} = ${h['market_value']:,.0f} ({gain_str})")
+        else:
+            lines.append(f"  - {ticker}: {h['shares']} shares @ ${h['current_price']:.2f} = ${h['market_value']:,.0f} ({gain_str})")
 
     lines.append("")
     lines.append("Active Options:")
