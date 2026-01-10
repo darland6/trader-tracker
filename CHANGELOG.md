@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Alternate Reality & Future Projections (2026-01-10)
+
+Explore "what-if" scenarios and project portfolio futures with AI-powered analysis.
+
+#### Alternate Reality System
+- **Ethereum Pyramid** in 3D dashboard - Click to open alternate reality modal
+  - Octahedron geometry with pulsing glow effect
+  - Orbits the sun at a mysterious outer distance
+- **Alternate History Builder**
+  - Create modified versions of your portfolio history
+  - Modification types: remove ticker, scale position, add hypothetical trade
+  - Compare any two realities side-by-side
+- **Quick Scenarios**
+  - "What if I never bought X?" - Removes all trades for a ticker
+  - "What if I doubled down on X?" - Scales position by 2x
+- **Persistent Storage** - Alternate histories saved to `data/alt_histories/`
+
+#### Future Projections
+- **3-5 Year Portfolio Projections** from current reality or any alternate
+- **AI Analysis Mode** (when LLM available)
+  - Per-ticker catalysts, industry trends, seasonality patterns
+  - Macro outlook (interest rates, inflation, GDP)
+  - Confidence levels for each projection
+- **Statistical Analysis Mode** (fallback)
+  - Sector-based growth profiles
+  - Historical volatility patterns
+- **Three Scenarios** - Pessimistic, Base, Optimistic projections
+- **Timeline Visualization** - Monthly value bars with hover tooltips
+- **Saved Projections** - Persist to `data/projections/` for later viewing
+
+#### API Endpoints
+```
+GET    /api/alt-history                    - List alternate histories
+POST   /api/alt-history                    - Create new alternate
+GET    /api/alt-history/{id}               - Get history with state
+DELETE /api/alt-history/{id}               - Delete history
+POST   /api/alt-history/{id}/modify        - Apply modifications
+GET    /api/alt-history/{id}/compare/{id2} - Compare two histories
+GET    /api/alt-history/projections        - List saved projections
+POST   /api/alt-history/projections/generate - Generate new projection
+GET    /api/alt-history/projections/{id}   - Get saved projection
+DELETE /api/alt-history/projections/{id}   - Delete projection
+```
+
+#### Future Ideas (Not Yet Implemented)
+- **Cluster Visualization** - Multiple mini solar systems showing all alternates
+  - Animate through time together
+  - Size indicates performance
+  - Visual links showing divergence between realities
+- **Leaderboard** - Rank all timelines by projected performance
+- **Gaussian Splat Generator** - Given a simple idea (e.g., "more aggressive on tech"),
+  generate multiple variations at different intensities and compare
+
+### Fixed - Cost Basis Calculation (2026-01-10)
+
+- **Event Sorting Bug** - Events with same timestamp were processed in random order
+  - SELLs could be processed before BUYs on the same day
+  - Caused cost basis to go negative and corrupt calculations
+  - TSLA was showing -$6,603 loss when actual gain was +$10,433
+- **Fix**: Sort events by `[timestamp, event_id]` for deterministic ordering
+
 ### Added - Portfolio Reconciliation Tools (2026-01-10)
 
 Tools and fixes for reconciling imported portfolio data with actual brokerage positions:
