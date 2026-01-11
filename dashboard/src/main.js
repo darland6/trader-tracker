@@ -847,6 +847,7 @@ function showAlternateRealityModal() {
             .future-llm { grid-column: span 2; display: flex; align-items: center; gap: 10px; }
             .future-llm label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
             .loading-spinner { width: 40px; height: 40px; border: 3px solid #627eea33; border-top-color: #627eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+            .loading-spinner-inline { display: inline-block; width: 16px; height: 16px; border: 2px solid #627eea33; border-top-color: #627eea; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
             @keyframes spin { to { transform: rotate(360deg); } }
 
             .projection-result { margin-top: 20px; }
@@ -1783,31 +1784,96 @@ async function createAlternateHistory() {
         modifications.push(modification);
     });
 
+    // Show processing state
+    const createBtn = document.querySelector('button[onclick="createAlternateHistory()"]');
+    const originalText = createBtn.textContent;
+    createBtn.disabled = true;
+    createBtn.innerHTML = '<span class="loading-spinner-inline"></span> Building Reality...';
+
+    // Add processing message
+    let processingDiv = document.getElementById('alt-processing-status');
+    if (!processingDiv) {
+        processingDiv = document.createElement('div');
+        processingDiv.id = 'alt-processing-status';
+        processingDiv.style.cssText = 'margin-top: 15px; padding: 15px; background: #627eea22; border-radius: 8px; border-left: 3px solid #627eea;';
+        createBtn.parentElement.appendChild(processingDiv);
+    }
+
+    if (description && modifications.length === 0) {
+        processingDiv.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="loading-spinner-inline"></span>
+                <div>
+                    <strong>AI is analyzing your scenario...</strong>
+                    <p style="margin: 5px 0 0 0; opacity: 0.7; font-size: 13px;">Interpreting "${description.substring(0, 50)}${description.length > 50 ? '...' : ''}"</p>
+                </div>
+            </div>
+        `;
+    } else {
+        processingDiv.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="loading-spinner-inline"></span>
+                <span>Creating alternate timeline...</span>
+            </div>
+        `;
+    }
+
     try {
         const response = await fetch('/api/alt-history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description, modifications })
+            body: JSON.stringify({ name, description, modifications, use_llm: true })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            // Clear form
-            document.getElementById('alt-name').value = '';
-            document.getElementById('alt-description').value = '';
-            document.getElementById('alt-modifications').innerHTML = '';
-            modificationCount = 0;
+            // Show success with LLM analysis if available
+            if (data.llm_processed && data.llm_analysis) {
+                const analysis = data.llm_analysis;
+                processingDiv.innerHTML = `
+                    <div style="color: #00ff88;">
+                        <strong>✓ Reality Created Successfully!</strong>
+                        <div style="margin-top: 10px; padding: 10px; background: #00ff8811; border-radius: 6px;">
+                            <p style="margin: 0 0 8px 0; font-weight: 500;">AI Analysis:</p>
+                            <p style="margin: 0 0 5px 0; font-size: 13px;">${analysis.interpretation || 'Scenario analyzed'}</p>
+                            ${analysis.key_changes?.length > 0 ? `
+                                <p style="margin: 10px 0 5px 0; font-size: 12px; opacity: 0.8;">Changes made:</p>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 12px; opacity: 0.8;">
+                                    ${analysis.key_changes.map(c => `<li>${c}</li>`).join('')}
+                                </ul>
+                            ` : ''}
+                            ${analysis.expected_impact ? `
+                                <p style="margin: 10px 0 0 0; font-size: 12px; opacity: 0.8;"><em>Expected impact: ${analysis.expected_impact}</em></p>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            } else {
+                processingDiv.innerHTML = `<div style="color: #00ff88;"><strong>✓ Alternate reality created!</strong></div>`;
+            }
 
-            // Switch to list view
-            showAltTab('list');
-            loadAlternateHistories();
+            // Clear form after delay
+            setTimeout(() => {
+                document.getElementById('alt-name').value = '';
+                document.getElementById('alt-description').value = '';
+                document.getElementById('alt-modifications').innerHTML = '';
+                modificationCount = 0;
+                processingDiv.remove();
+
+                // Switch to list view
+                showAltTab('list');
+                loadAlternateHistories();
+            }, 2500);
         } else {
-            alert('Failed to create alternate reality: ' + (data.detail || 'Unknown error'));
+            processingDiv.innerHTML = `<div style="color: #ff4444;"><strong>✗ Failed:</strong> ${data.detail || 'Unknown error'}</div>`;
         }
     } catch (error) {
         console.error('Failed to create history:', error);
-        alert('Failed to create alternate reality');
+        processingDiv.innerHTML = `<div style="color: #ff4444;"><strong>✗ Error:</strong> ${error.message}</div>`;
+    } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = originalText;
     }
 }
 window.createAlternateHistory = createAlternateHistory;
@@ -1892,6 +1958,14 @@ async function generateFutureProjection() {
     const loading = document.getElementById('future-loading');
     const results = document.getElementById('future-results');
 
+    // Show detailed loading state
+    const sourceName = historyId === 'reality' ? 'Current Reality' : historyId;
+    loading.innerHTML = `
+        <div class="loading-spinner"></div>
+        <p style="font-weight: 500; margin-bottom: 10px;">${useLlm ? 'AI is building your future projection...' : 'Generating statistical projection...'}</p>
+        <p style="font-size: 13px; opacity: 0.7;">Source: ${sourceName} | ${years} years</p>
+        ${useLlm ? '<p style="font-size: 12px; opacity: 0.5; margin-top: 10px;">Analyzing catalysts, trends, and market conditions...</p>' : ''}
+    `;
     loading.style.display = 'block';
     results.innerHTML = '';
 
@@ -4536,11 +4610,14 @@ async function togglePlaybackMode() {
     const panel = document.getElementById('playback-console');
     const toggleBtn = document.getElementById('playback-toggle');
 
+    // Get the text span (second span, not the icon)
+    const textSpan = toggleBtn?.querySelectorAll('span')[1];
+
     if (playbackMode) {
         // Enter playback mode
         panel.classList.add('visible');
-        toggleBtn.classList.add('active');
-        toggleBtn.querySelector('span').textContent = 'Exit History';
+        toggleBtn?.classList.add('active');
+        if (textSpan) textSpan.textContent = 'Exit History';
 
         // Load timeline data if not already loaded
         if (!playbackData && !playbackLoading) {
@@ -4549,8 +4626,8 @@ async function togglePlaybackMode() {
     } else {
         // Exit playback mode
         panel.classList.remove('visible');
-        toggleBtn.classList.remove('active');
-        toggleBtn.querySelector('span').textContent = 'History Mode';
+        toggleBtn?.classList.remove('active');
+        if (textSpan) textSpan.textContent = 'History Mode';
 
         // Stop playback
         if (playbackPlaying) {
@@ -5446,25 +5523,33 @@ function toggleChatFullscreen() {
     chatFullscreen = !chatFullscreen;
 
     if (chatFullscreen) {
-        // Enter fullscreen
+        // Enter fullscreen - remove minimized FIRST, then add fullscreen
         panel.classList.remove('minimized');
+        // Double-check minimized is removed
+        setTimeout(() => panel.classList.remove('minimized'), 0);
         panel.classList.add('fullscreen');
         btn.textContent = '[X]';
-        btn.title = 'Exit fullscreen';
+        btn.title = 'Exit fullscreen (Esc)';
         icon.textContent = '−';
         if (body) body.style.display = 'block';
-        document.getElementById('chat-input').focus();
 
-        // Scroll to bottom
-        const messages = document.getElementById('chat-messages');
-        if (messages) {
-            messages.scrollTop = messages.scrollHeight;
-        }
+        // Focus input and scroll to bottom
+        setTimeout(() => {
+            const input = document.getElementById('chat-input');
+            if (input) input.focus();
+            const messages = document.getElementById('chat-messages');
+            if (messages) {
+                messages.scrollTop = messages.scrollHeight;
+            }
+        }, 100);
     } else {
-        // Exit fullscreen
+        // Exit fullscreen - remove fullscreen, add minimized back
         panel.classList.remove('fullscreen');
+        panel.classList.add('minimized');
         btn.textContent = '[ ]';
-        btn.title = 'Toggle fullscreen';
+        btn.title = 'Expand to fullscreen';
+        icon.textContent = '+';
+        if (body) body.style.display = 'none';
     }
 }
 window.toggleChatFullscreen = toggleChatFullscreen;
@@ -5546,10 +5631,27 @@ async function sendChatMessage() {
     input.value = '';
     sendBtn.disabled = true;
 
-    // Add user message to UI
+    // Add user message to UI with repeat button
     const userMsgEl = document.createElement('div');
     userMsgEl.className = 'chat-message user';
-    userMsgEl.textContent = message;
+
+    // Message text span
+    const msgText = document.createElement('span');
+    msgText.textContent = message;
+    userMsgEl.appendChild(msgText);
+
+    // Repeat button
+    const repeatBtn = document.createElement('button');
+    repeatBtn.className = 'message-repeat-btn';
+    repeatBtn.textContent = '↻ Repeat';
+    repeatBtn.title = 'Send this message again';
+    repeatBtn.onclick = (e) => {
+        e.stopPropagation();
+        document.getElementById('chat-input').value = message;
+        sendChatMessage();
+    };
+    userMsgEl.appendChild(repeatBtn);
+
     messagesContainer.appendChild(userMsgEl);
 
     // Add loading indicator
@@ -5732,17 +5834,14 @@ async function refreshLLMStatus() {
     const indicator = document.getElementById('llm-indicator');
     const providerEl = document.getElementById('llm-status-provider');
     const modelEl = document.getElementById('llm-status-model');
-    const latencyEl = document.getElementById('llm-status-latency');
-    const latencyBar = document.getElementById('llm-latency-bar');
     const statusText = document.getElementById('llm-status-text');
-    const messageEl = document.getElementById('llm-status-message');
+
+    // Skip if elements don't exist
+    if (!indicator || !providerEl || !modelEl || !statusText) return;
 
     // Set checking state
     indicator.className = 'llm-status-indicator checking';
     statusText.textContent = 'Checking...';
-    statusText.className = 'llm-status-value';
-    messageEl.textContent = 'Establishing neural link...';
-    messageEl.className = 'llm-status-message';
 
     try {
         const response = await fetch('/api/config/llm/status');
@@ -5755,38 +5854,13 @@ async function refreshLLMStatus() {
         if (status.connected) {
             indicator.className = 'llm-status-indicator connected';
             statusText.textContent = 'Online';
-            statusText.className = 'llm-status-value highlight';
-            messageEl.textContent = 'Neural link established';
-            messageEl.className = 'llm-status-message connected';
-
-            // Show latency
-            if (status.latency_ms) {
-                latencyEl.textContent = status.latency_ms + 'ms';
-                // Scale latency bar (0-2000ms range)
-                const pct = Math.min(100, (status.latency_ms / 2000) * 100);
-                latencyBar.style.width = pct + '%';
-            }
         } else {
             indicator.className = 'llm-status-indicator disconnected';
             statusText.textContent = 'Offline';
-            statusText.className = 'llm-status-value error';
-            latencyEl.textContent = '--';
-            latencyBar.style.width = '0%';
-
-            if (status.error) {
-                messageEl.textContent = status.error;
-                messageEl.className = 'llm-status-message';
-            } else {
-                messageEl.textContent = 'Connection failed';
-                messageEl.className = 'llm-status-message';
-            }
         }
     } catch (error) {
         indicator.className = 'llm-status-indicator disconnected';
         statusText.textContent = 'Error';
-        statusText.className = 'llm-status-value error';
-        messageEl.textContent = error.message;
-        messageEl.className = 'llm-status-message';
     }
 }
 window.refreshLLMStatus = refreshLLMStatus;
@@ -5837,10 +5911,11 @@ window.saveLLMSettings = saveLLMSettings;
 
 function updateApiKeyStatus(hasKey) {
     const statusEl = document.getElementById('api-key-status');
+    if (!statusEl) return;
     if (hasKey) {
         statusEl.innerHTML = '<span style="color: #00ff88;">✓ API key configured</span>';
     } else {
-        statusEl.innerHTML = '<span style="color: #ff4444;">✗ No API key set</span>';
+        statusEl.innerHTML = '';
     }
 }
 

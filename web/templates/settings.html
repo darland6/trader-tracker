@@ -73,325 +73,170 @@
     <!-- LLM Settings -->
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-            <h2 class="card-title">AI Insights Settings</h2>
-            <p class="text-base-content/60 mb-4">Configure the LLM for generating event insights.</p>
+            <h2 class="card-title">AI Settings</h2>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Provider Selection -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Provider</span>
-                    </label>
-                    <select id="llm-provider" class="select select-bordered" onchange="updateProviderFields()">
-                        <option value="local" {% if llm_config.provider == 'local' %}selected{% endif %}>Local LLM</option>
-                        <option value="claude" {% if llm_config.provider == 'claude' %}selected{% endif %}>Claude API</option>
-                    </select>
-                </div>
-
-                <!-- Enable Toggle -->
-                <div class="form-control">
-                    <label class="label cursor-pointer justify-start gap-4">
-                        <input type="checkbox" id="llm-enabled" class="toggle toggle-primary"
-                               {% if llm_config.enabled %}checked{% endif %}>
-                        <span class="label-text">Enable AI Insights</span>
-                    </label>
-                </div>
-
-                <!-- Local LLM URL (only for local) -->
-                <div class="form-control" id="local-url-field" style="{% if llm_config.provider != 'local' %}display: none;{% endif %}">
-                    <label class="label">
-                        <span class="label-text">Local LLM URL</span>
-                    </label>
-                    <input type="text" id="llm-url"
-                           class="input input-bordered"
-                           placeholder="http://192.168.50.10:1234/v1"
-                           value="{{ llm_config.local_url }}">
-                </div>
-
-                <!-- Local Model (only for local) -->
-                <div class="form-control" id="local-model-field" style="{% if llm_config.provider != 'local' %}display: none;{% endif %}">
-                    <label class="label">
-                        <span class="label-text">Local Model</span>
-                    </label>
-                    <input type="text" id="llm-local-model"
-                           class="input input-bordered"
-                           placeholder="meta/llama-3.3-70b"
-                           value="{{ llm_config.local_model }}">
-                </div>
-
-                <!-- Claude API Key (only for claude) -->
-                <div class="form-control" id="claude-key-field" style="{% if llm_config.provider != 'claude' %}display: none;{% endif %}">
-                    <label class="label">
-                        <span class="label-text">Anthropic API Key</span>
-                    </label>
-                    <input type="password" id="llm-api-key"
-                           class="input input-bordered"
-                           placeholder="{% if llm_config.has_api_key %}••••••••••••••••{% else %}sk-ant-...{% endif %}">
-                    {% if llm_config.has_api_key %}
-                    <label class="label">
-                        <span class="label-text-alt text-success">API key is configured</span>
-                    </label>
-                    {% endif %}
-                </div>
-
-                <!-- Claude Model (only for claude) -->
-                <div class="form-control" id="claude-model-field" style="{% if llm_config.provider != 'claude' %}display: none;{% endif %}">
-                    <label class="label">
-                        <span class="label-text">Claude Model</span>
-                    </label>
-                    <input type="text" id="llm-claude-model"
-                           class="input input-bordered"
-                           placeholder="claude-sonnet-4-20250514"
-                           value="{{ llm_config.claude_model }}">
+            <!-- Current Config Display -->
+            <div class="alert {% if llm_config.enabled %}alert-success{% else %}alert-warning{% endif %} mb-4">
+                <div>
+                    <strong>{{ llm_config.provider|upper }}</strong> |
+                    Model: <code>{% if llm_config.provider == 'local' %}{{ llm_config.local_model }}{% else %}{{ llm_config.claude_model }}{% endif %}</code> |
+                    {% if llm_config.enabled %}Enabled{% else %}Disabled{% endif %}
                 </div>
             </div>
 
-            <div class="mt-4">
-                <button onclick="saveLLMSettings()" class="btn btn-primary">Save Settings</button>
-                <button onclick="testLLMConnection()" class="btn btn-outline ml-2">Test Connection</button>
+            <!-- JSON Editor - populated by Jinja2 -->
+            <textarea id="llm-json" class="textarea textarea-bordered w-full font-mono text-sm" rows="10" spellcheck="false">{
+  "provider": "{{ llm_config.provider }}",
+  "enabled": {{ llm_config.enabled|lower }},
+  "claude_model": "{{ llm_config.claude_model }}",
+  "local_url": "{{ llm_config.local_url }}",
+  "local_model": "{{ llm_config.local_model }}",
+  "timeout": {{ llm_config.timeout }},
+  "max_history_events": {{ llm_config.max_history_events }}
+}</textarea>
+
+            <div class="mt-4 flex gap-2">
+                <button onclick="saveLLM()" class="btn btn-primary">Save</button>
+                <button onclick="testLLM()" class="btn btn-outline">Test Connection</button>
+                <button onclick="location.reload()" class="btn btn-ghost">Reload</button>
             </div>
 
-            <div id="llm-result" class="mt-4"></div>
+            <div id="llm-msg" class="mt-4"></div>
         </div>
     </div>
 </div>
 
 <script>
-    // Load backups on page load
-    document.addEventListener('DOMContentLoaded', loadBackups);
+document.addEventListener('DOMContentLoaded', function() {
+    loadBackups();
+});
 
-    async function loadBackups() {
-        try {
-            const response = await fetch('/api/backup/list');
-            const data = await response.json();
+async function loadBackups() {
+    try {
+        const response = await fetch('/api/backup/list');
+        const data = await response.json();
+        const container = document.getElementById('backups-list');
 
-            const container = document.getElementById('backups-list');
-
-            if (data.backups.length === 0) {
-                container.innerHTML = '<p class="text-base-content/60">No backups found.</p>';
-                return;
-            }
-
-            let html = '<div class="overflow-x-auto"><table class="table"><thead><tr><th>Filename</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
-
-            data.backups.forEach(backup => {
-                const date = new Date(backup.created).toLocaleString();
-                html += `
-                    <tr>
-                        <td class="font-mono text-sm">${backup.filename}</td>
-                        <td>${backup.size_kb} KB</td>
-                        <td>${date}</td>
-                        <td class="flex gap-2">
-                            <a href="/api/backup/download/${backup.filename}" class="btn btn-xs btn-ghost">Download</a>
-                            <button onclick="restoreBackup('${backup.filename}')" class="btn btn-xs btn-warning">Restore</button>
-                            <button onclick="deleteBackup('${backup.filename}')" class="btn btn-xs btn-error">Delete</button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            html += '</tbody></table></div>';
-            container.innerHTML = html;
-        } catch (error) {
-            document.getElementById('backups-list').innerHTML =
-                '<p class="text-error">Failed to load backups: ' + error.message + '</p>';
-        }
-    }
-
-    async function restoreBackup(filename) {
-        if (!confirm(`Are you sure you want to restore from ${filename}? A backup of the current state will be created first.`)) {
+        if (data.backups.length === 0) {
+            container.innerHTML = '<p class="text-base-content/60">No backups found.</p>';
             return;
         }
 
-        try {
-            const response = await fetch(`/api/backup/restore/${filename}`, { method: 'POST' });
-            const data = await response.json();
+        let html = '<div class="overflow-x-auto"><table class="table"><thead><tr><th>Filename</th><th>Size</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+        data.backups.forEach(backup => {
+            const date = new Date(backup.created).toLocaleString();
+            html += `<tr>
+                <td class="font-mono text-sm">${backup.filename}</td>
+                <td>${backup.size_kb} KB</td>
+                <td>${date}</td>
+                <td class="flex gap-2">
+                    <a href="/api/backup/download/${backup.filename}" class="btn btn-xs btn-ghost">Download</a>
+                    <button onclick="restoreBackup('${backup.filename}')" class="btn btn-xs btn-warning">Restore</button>
+                    <button onclick="deleteBackup('${backup.filename}')" class="btn btn-xs btn-error">Delete</button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    } catch (error) {
+        document.getElementById('backups-list').innerHTML = '<p class="text-error">Failed to load backups</p>';
+    }
+}
 
-            if (data.success) {
-                alert('Restored successfully! Reloading page...');
-                location.reload();
-            } else {
-                alert('Restore failed: ' + (data.detail || 'Unknown error'));
-            }
-        } catch (error) {
-            alert('Restore failed: ' + error.message);
+async function restoreBackup(filename) {
+    if (!confirm('Restore from ' + filename + '? Current data will be backed up first.')) return;
+    try {
+        const response = await fetch('/api/backup/restore/' + filename, { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            alert('Restored successfully!');
+            location.reload();
+        } else {
+            alert('Restore failed: ' + (data.detail || 'Unknown error'));
         }
+    } catch (error) {
+        alert('Restore failed: ' + error.message);
+    }
+}
+
+async function deleteBackup(filename) {
+    if (!confirm('Delete ' + filename + '?')) return;
+    try {
+        await fetch('/api/backup/' + filename, { method: 'DELETE' });
+        loadBackups();
+    } catch (error) {
+        alert('Delete failed: ' + error.message);
+    }
+}
+
+document.getElementById('upload-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('backup-file');
+    if (!fileInput.files.length) { alert('Select a file'); return; }
+    if (!confirm('Restore from uploaded file?')) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const response = await fetch('/api/backup/upload', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (data.success) {
+            document.getElementById('upload-result').innerHTML = '<div class="alert alert-success">Restored!</div>';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            document.getElementById('upload-result').innerHTML = '<div class="alert alert-error">' + (data.detail || 'Failed') + '</div>';
+        }
+    } catch (error) {
+        document.getElementById('upload-result').innerHTML = '<div class="alert alert-error">' + error.message + '</div>';
+    }
+});
+
+async function saveLLM() {
+    const ta = document.getElementById('llm-json');
+    const msg = document.getElementById('llm-msg');
+    const content = ta.value;
+
+    try {
+        JSON.parse(content);
+    } catch (e) {
+        msg.innerHTML = '<div class="alert alert-error">Invalid JSON: ' + e.message + '</div>';
+        return;
     }
 
-    async function deleteBackup(filename) {
-        if (!confirm(`Are you sure you want to delete ${filename}?`)) {
-            return;
+    try {
+        const r = await fetch('/api/config/llm/raw', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content: content})
+        });
+        if (r.ok) {
+            msg.innerHTML = '<div class="alert alert-success">Saved! Reloading...</div>';
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const d = await r.json();
+            msg.innerHTML = '<div class="alert alert-error">Error: ' + (d.detail || 'Unknown') + '</div>';
         }
-
-        try {
-            const response = await fetch(`/api/backup/${filename}`, { method: 'DELETE' });
-            const data = await response.json();
-
-            if (data.success) {
-                loadBackups();
-            } else {
-                alert('Delete failed: ' + (data.detail || 'Unknown error'));
-            }
-        } catch (error) {
-            alert('Delete failed: ' + error.message);
-        }
+    } catch (e) {
+        msg.innerHTML = '<div class="alert alert-error">Error: ' + e.message + '</div>';
     }
+}
 
-    // Handle file upload
-    document.getElementById('upload-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
+async function testLLM() {
+    const msg = document.getElementById('llm-msg');
+    msg.innerHTML = '<div class="alert"><span class="loading loading-spinner loading-sm"></span> Testing...</div>';
 
-        const fileInput = document.getElementById('backup-file');
-        if (!fileInput.files.length) {
-            alert('Please select a file');
-            return;
+    try {
+        const r = await fetch('/api/config/llm/test', {method: 'POST'});
+        const d = await r.json();
+        if (d.success) {
+            msg.innerHTML = '<div class="alert alert-success">Connected! Provider: ' + d.provider + ', Model: ' + d.model + '</div>';
+        } else {
+            msg.innerHTML = '<div class="alert alert-error">Failed: ' + d.error + '</div>';
         }
-
-        if (!confirm('Are you sure you want to restore from this file? A backup of the current state will be created first.')) {
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-
-        try {
-            const response = await fetch('/api/backup/upload', {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-
-            if (data.success) {
-                document.getElementById('upload-result').innerHTML =
-                    '<div class="alert alert-success">Restored successfully!</div>';
-                setTimeout(() => location.reload(), 1500);
-            } else {
-                document.getElementById('upload-result').innerHTML =
-                    '<div class="alert alert-error">' + (data.detail || 'Upload failed') + '</div>';
-            }
-        } catch (error) {
-            document.getElementById('upload-result').innerHTML =
-                '<div class="alert alert-error">Upload failed: ' + error.message + '</div>';
-        }
-    });
-
-    // Show/hide fields based on provider
-    function updateProviderFields() {
-        const provider = document.getElementById('llm-provider').value;
-        const isLocal = provider === 'local';
-
-        document.getElementById('local-url-field').style.display = isLocal ? 'block' : 'none';
-        document.getElementById('local-model-field').style.display = isLocal ? 'block' : 'none';
-        document.getElementById('claude-key-field').style.display = isLocal ? 'none' : 'block';
-        document.getElementById('claude-model-field').style.display = isLocal ? 'none' : 'block';
+    } catch (e) {
+        msg.innerHTML = '<div class="alert alert-error">Error: ' + e.message + '</div>';
     }
-
-    // LLM Settings
-    async function saveLLMSettings() {
-        const provider = document.getElementById('llm-provider').value;
-        const enabled = document.getElementById('llm-enabled').checked;
-
-        const resultDiv = document.getElementById('llm-result');
-        resultDiv.innerHTML = '<div class="alert">Saving settings...</div>';
-
-        try {
-            const payload = {
-                provider: provider,
-                enabled: enabled
-            };
-
-            // Set fields based on provider
-            if (provider === 'local') {
-                payload.local_url = document.getElementById('llm-url').value;
-                payload.local_model = document.getElementById('llm-local-model').value;
-            } else {
-                payload.claude_model = document.getElementById('llm-claude-model').value;
-                const apiKey = document.getElementById('llm-api-key').value;
-                if (apiKey && !apiKey.includes('•')) {
-                    payload.api_key = apiKey;
-                }
-            }
-
-            const response = await fetch('/api/config/llm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-success">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>Settings saved! Provider: ${data.provider}, Model: ${provider === 'local' ? data.local_model : data.claude_model}</span>
-                    </div>
-                `;
-            } else {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-error">
-                        <span>Failed to save: ${data.detail || 'Unknown error'}</span>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            resultDiv.innerHTML = `
-                <div class="alert alert-error">
-                    <span>Error: ${error.message}</span>
-                </div>
-            `;
-        }
-    }
-
-    async function testLLMConnection() {
-        const resultDiv = document.getElementById('llm-result');
-        resultDiv.innerHTML = `
-            <div class="alert">
-                <span class="loading loading-spinner loading-sm"></span>
-                <span>Testing connection...</span>
-            </div>
-        `;
-
-        try {
-            const response = await fetch('/api/config/llm/test', { method: 'POST' });
-            const data = await response.json();
-
-            if (data.success) {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-success">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                            <p class="font-bold">Connected!</p>
-                            <p class="text-sm">Provider: ${data.provider} | Model: ${data.model}</p>
-                            <p class="text-sm opacity-70">Response: "${data.response}"</p>
-                        </div>
-                    </div>
-                `;
-            } else {
-                resultDiv.innerHTML = `
-                    <div class="alert alert-error">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                            <p class="font-bold">Connection Failed</p>
-                            <p class="text-sm">${data.error}</p>
-                        </div>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            resultDiv.innerHTML = `
-                <div class="alert alert-error">
-                    <span>Error: ${error.message}</span>
-                </div>
-            `;
-        }
-    }
-
+}
 </script>
 {% endblock %}

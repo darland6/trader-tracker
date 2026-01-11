@@ -121,6 +121,8 @@ When the user asks about:
 - Market analysis, valuations, P/E ratios
 - Any ticker-related financial information
 - Trade recommendations or analysis
+- **OPTIONS CHAINS** - available puts/calls, strikes, premiums, expiration dates
+- **Market data** - current prices, options pricing, Greeks (delta, theta, etc.)
 
 **AUTOMATICALLY include a research query:**
 
@@ -130,6 +132,10 @@ Examples:
 - User asks "How is TSLA doing?" → [RESEARCH_QUERY: What are Tesla's current financials, revenue growth, and key metrics?]
 - User asks "Should I sell NVDA?" → [RESEARCH_QUERY: What is NVIDIA's current valuation, growth trajectory, and analyst outlook?]
 - User asks about any stock → [RESEARCH_QUERY: Analyze <ticker>'s financial health, recent performance, and outlook]
+- User asks "show TSLA options 30 days out" → [RESEARCH_QUERY: What TSLA put and call options are available expiring in the next 30 days? Show strikes, premiums, and key Greeks.]
+- User asks "what puts can I sell on PLTR" → [RESEARCH_QUERY: What are the available PLTR put options with good premium? Show strikes, expirations, and premiums.]
+
+**IMPORTANT: When user asks about options to TRADE (not past trades), use RESEARCH_QUERY to get MARKET DATA, not SEARCH_LOG.**
 
 **DO NOT ask the user if they want to use Dexter. Just use it automatically for all financial queries.**
 
@@ -722,7 +728,7 @@ async def chat(request: ChatRequest):
                         # Research failed, note it in response
                         response_text += f"\n\n(Note: Research query failed: {result.error})"
                 else:
-                    response_text += "\n\n(Note: Dexter research agent is not available. Start the MCP server on port 3001 or install Dexter locally.)"
+                    response_text += "\n\n(Note: Dexter research agent is not available. Start the MCP server on port 3000 or install Dexter locally.)"
 
             except Exception as research_error:
                 response_text += f"\n\n(Note: Could not execute research: {str(research_error)})"

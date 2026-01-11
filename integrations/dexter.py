@@ -82,7 +82,7 @@ class DexterResult:
 
 # MCP Server Configuration
 MCP_SERVER_NAME = "dexter-mcp"
-MCP_SERVER_PORT = int(os.getenv('DEXTER_MCP_PORT', '3001'))
+MCP_SERVER_PORT = int(os.getenv('DEXTER_MCP_PORT', '3000'))
 
 def get_mcp_host() -> str:
     """Get MCP host - from env, or infer from LLM config if using local LLM."""

@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Dashboard UI Testing & Chat Improvements (2026-01-11)
+
+#### Playwright E2E Test Suite (`tests/test_dashboard_ui.py`)
+- **33 Comprehensive Tests** for dashboard UI functionality:
+  - Panel basics (loads, content verification)
+  - Panel toggle (collapse/expand for chat, legend, insights)
+  - Chat fullscreen mode (enter/exit, Escape key)
+  - Panel dragging functionality
+  - Panel resizing with resize handles
+  - UI overlap detection (settings, panels, scanner button)
+  - Alternate timeline mode (history mode, controls, close)
+  - Settings panel (open, LLM options, close)
+  - Timeline controls (scrubber, play button)
+  - Responsive layout (mobile, tablet, desktop)
+  - JavaScript error detection
+- **Screenshot Capture** - Saves screenshots to `/tmp/dashboard_ui_tests/` for visual verification
+- **Test Isolation** - Proper state management between tests
+
+#### Bug Fixes Found & Fixed via E2E Testing
+- **Settings Panel Z-Index** - Settings close button was blocked by right-console (Options button intercepted clicks)
+  - Fixed by adding `z-index: 500` to `#settings-console` CSS
+- **Chat Fullscreen State Management** - Fullscreen and minimized classes were conflicting
+  - Fixed by properly managing class removal/addition in `toggleChatFullscreen()`
+  - Exit fullscreen now restores minimized state with hidden body
+- **Playback Toggle Button** - `querySelector('span')` was targeting wrong element (icon instead of text)
+  - Fixed by using `querySelectorAll('span')[1]` to target text span
+  - Added null checks for robustness
+
+#### Chat Console Improvements
+- **True Fullscreen Mode** - Chat now expands to full viewport (10px margins) with:
+  - `z-index: 9000` to overlay all other elements
+  - Flexbox layout for proper message/input distribution
+  - Messages auto-scroll and pin at bottom
+  - Escape key exits fullscreen
+- **Repeat Message Button** - Hover over any user message to see "↻ Repeat" button
+  - Clicking sends that message again (useful for retrying queries)
+  - Styled to match UI theme
+- **Improved Fullscreen CSS**:
+  - User messages align right, assistant messages align left
+  - Larger padding and font sizes in fullscreen mode
+  - Border accent around fullscreen panel
+
+#### Development Workflow & Tooling
+- **Playwright Browser Testing** - Used for visual verification and automated bug detection
+- **Screenshot-Based Verification** - Key states captured for documentation
+- **JavaScript Evaluation** - Some tests use `page.evaluate()` for more reliable toggle testing
+- **Test Independence** - Each test loads fresh page to avoid state bleeding
+
 ### Added - MCP Integration & Income Tracking (2026-01-11)
 
 #### Dexter MCP Integration (`integrations/dexter.py`)
