@@ -58,32 +58,46 @@ cd ..
 
 ### Running the Application
 
+**Quick Start (HTTPS - recommended):**
 ```bash
-# Activate virtual environment (if not already)
+./start.sh
+```
+
+This automatically:
+- Generates SSL certificates (first run)
+- Starts server with HTTPS on all interfaces
+- Shows your network URL for mobile access
+
+**Manual Start:**
+```bash
 source venv/bin/activate
 
-# Start the server (localhost only)
-python -m uvicorn api.main:app --port 8000
+# HTTPS (recommended for mobile/PWA)
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 \
+    --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
 
-# OR start with network access (for mobile/other devices)
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+# HTTP only
+./start.sh --http
 ```
 
 **Access Points:**
 | URL | Description |
 |-----|-------------|
-| http://localhost:8000/ | Web Management UI |
-| http://localhost:8000/dashboard | 3D Solar System Dashboard |
-| http://localhost:8000/docs | API Documentation |
+| https://localhost:8000/ | Web Management UI |
+| https://localhost:8000/dashboard | 3D Solar System Dashboard |
+| https://localhost:8000/docs | API Documentation |
+
+> **Browser Warning:** Self-signed cert will show a warning. Click "Advanced" → "Proceed" to continue.
 
 ### Mobile Access (PWA)
 
 The dashboard works as a Progressive Web App on mobile:
 
-1. Start server with network access: `--host 0.0.0.0`
-2. Find your IP: `ipconfig getifaddr en0` (Mac) or `hostname -I` (Linux)
-3. On phone, open: `http://<your-ip>:8000/dashboard`
-4. Add to home screen for app-like experience
+1. Run `./start.sh` (uses HTTPS automatically)
+2. Note the network URL shown (e.g., `https://192.168.50.127:8000`)
+3. On phone, open that URL
+4. Accept the certificate warning
+5. Add to home screen for app-like experience
 
 ### First-Time Setup
 

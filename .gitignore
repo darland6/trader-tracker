@@ -76,3 +76,6 @@ htmlcov/
 # Alternate history and projection data
 data/alt_histories/
 data/projections/
+
+# SSL Certificates (generated locally)
+certs/
