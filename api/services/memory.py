@@ -164,23 +164,119 @@ def add_memory_entry(
     save_memory(memory)
 
 
-def add_learned_pattern(pattern: str, category: str = "general") -> None:
-    """Add a learned pattern about the user or their portfolio."""
+def add_learned_pattern(
+    pattern: str,
+    category: str = "general",
+    source: str = "observed",  # "observed" | "stated" | "inferred"
+    confidence: float = 0.5,
+    evidence: str = None
+) -> dict:
+    """Add or update a learned pattern about the user or their portfolio.
+
+    If a similar pattern exists in the same category, increases its confidence
+    and adds new evidence. Otherwise creates a new pattern.
+
+    Args:
+        pattern: The pattern description
+        category: Category (trading_style, risk_tolerance, position_sizing, timing_preference, ticker_affinity, strategy_preference, goal_alignment)
+        source: How the pattern was learned (observed, stated, inferred)
+        confidence: Initial confidence (0.0-1.0), stated patterns start higher
+        evidence: Evidence for this pattern (event ID, quote, etc.)
+
+    Returns:
+        The pattern entry (new or updated)
+    """
     memory = load_memory()
 
-    pattern_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "pattern": pattern,
-        "category": category
-    }
+    # Normalize pattern for comparison
+    pattern_lower = pattern.lower().strip()
 
-    memory["learned_patterns"].append(pattern_entry)
+    # Look for existing similar pattern in same category
+    existing_idx = None
+    for idx, p in enumerate(memory.get("learned_patterns", [])):
+        if p.get("category") == category:
+            existing_lower = p.get("pattern", "").lower()
+            # Check for similarity (contains key words or very similar)
+            if (pattern_lower in existing_lower or
+                existing_lower in pattern_lower or
+                _patterns_similar(pattern_lower, existing_lower)):
+                existing_idx = idx
+                break
 
-    # Keep last 50 patterns
-    if len(memory["learned_patterns"]) > 50:
-        memory["learned_patterns"] = memory["learned_patterns"][-50:]
+    if existing_idx is not None:
+        # Update existing pattern
+        existing = memory["learned_patterns"][existing_idx]
+        existing["evidence_count"] = existing.get("evidence_count", 1) + 1
+        existing["confidence"] = min(1.0, existing.get("confidence", 0.5) + 0.1)
+        existing["last_confirmed"] = datetime.now().isoformat()
 
-    save_memory(memory)
+        if evidence:
+            existing.setdefault("evidence", []).append({
+                "text": evidence,
+                "timestamp": datetime.now().isoformat()
+            })
+            # Keep only last 10 evidence items
+            existing["evidence"] = existing["evidence"][-10:]
+
+        # Update pattern text if source is "stated" (user explicitly said it)
+        if source == "stated":
+            existing["pattern"] = pattern
+            existing["confidence"] = max(existing["confidence"], 0.8)
+
+        save_memory(memory)
+        return existing
+    else:
+        # Create new pattern
+        pattern_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "pattern": pattern,
+            "category": category,
+            "source": source,
+            "confidence": confidence if source != "stated" else max(confidence, 0.8),
+            "evidence_count": 1,
+            "last_confirmed": datetime.now().isoformat(),
+            "evidence": [{"text": evidence, "timestamp": datetime.now().isoformat()}] if evidence else []
+        }
+
+        memory.setdefault("learned_patterns", []).append(pattern_entry)
+
+        # Keep last 50 patterns
+        if len(memory["learned_patterns"]) > MAX_PATTERNS:
+            memory["learned_patterns"] = memory["learned_patterns"][-MAX_PATTERNS:]
+
+        save_memory(memory)
+        return pattern_entry
+
+
+def _patterns_similar(p1: str, p2: str) -> bool:
+    """Check if two patterns are similar enough to merge."""
+    # Simple word overlap check
+    words1 = set(p1.split())
+    words2 = set(p2.split())
+    if len(words1) < 3 or len(words2) < 3:
+        return False
+    overlap = len(words1 & words2)
+    return overlap >= min(len(words1), len(words2)) * 0.6
+
+
+def get_patterns_by_category(category: str = None) -> list:
+    """Get learned patterns, optionally filtered by category."""
+    memory = load_memory()
+    patterns = memory.get("learned_patterns", [])
+
+    if category:
+        patterns = [p for p in patterns if p.get("category") == category]
+
+    # Sort by confidence
+    patterns.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+    return patterns
+
+
+def get_high_confidence_patterns(min_confidence: float = 0.7) -> list:
+    """Get patterns above a confidence threshold."""
+    memory = load_memory()
+    patterns = memory.get("learned_patterns", [])
+    return [p for p in patterns if p.get("confidence", 0) >= min_confidence]
 
 
 def update_user_preference(key: str, value: str) -> None:
@@ -313,3 +409,179 @@ def clear_memory() -> None:
     if MEMORY_FILE.exists():
         MEMORY_FILE.unlink()
     _ensure_memory_file()
+
+
+# ============ Unified Agent Memory Interface ============
+
+def get_unified_memory_state() -> dict:
+    """Get the complete state of agent memory across all components.
+
+    Returns a comprehensive view of:
+    - Conversation memories
+    - Learned patterns (by category)
+    - User preferences
+    - Project context
+    - Statistics
+
+    This is the primary interface for understanding what the agent "knows".
+    """
+    memory = load_memory()
+
+    # Group patterns by category
+    patterns_by_category = {}
+    for p in memory.get("learned_patterns", []):
+        cat = p.get("category", "general")
+        if cat not in patterns_by_category:
+            patterns_by_category[cat] = []
+        patterns_by_category[cat].append(p)
+
+    # Sort each category by confidence
+    for cat in patterns_by_category:
+        patterns_by_category[cat].sort(
+            key=lambda x: x.get("confidence", 0),
+            reverse=True
+        )
+
+    # Get high confidence patterns
+    high_confidence = [
+        p for p in memory.get("learned_patterns", [])
+        if p.get("confidence", 0) >= 0.7
+    ]
+
+    # Calculate memory health metrics
+    conversations = memory.get("conversation_memories", [])
+    patterns = memory.get("learned_patterns", [])
+
+    return {
+        "summary": {
+            "conversation_count": len(conversations),
+            "pattern_count": len(patterns),
+            "high_confidence_patterns": len(high_confidence),
+            "preference_count": len(memory.get("user_preferences", {})),
+            "created": memory.get("created"),
+            "last_updated": memory.get("last_updated")
+        },
+        "patterns_by_category": patterns_by_category,
+        "high_confidence_patterns": high_confidence,
+        "user_preferences": memory.get("user_preferences", {}),
+        "project_context": memory.get("project_context", {}),
+        "recent_conversations": conversations[-10:] if conversations else [],
+        "stats": get_memory_stats()
+    }
+
+
+def export_agent_knowledge() -> dict:
+    """Export all agent knowledge for backup or transfer.
+
+    Returns a portable format that can be imported into another instance.
+    """
+    memory = load_memory()
+
+    return {
+        "export_version": "1.0",
+        "exported_at": datetime.now().isoformat(),
+        "data": {
+            "learned_patterns": memory.get("learned_patterns", []),
+            "user_preferences": memory.get("user_preferences", {}),
+            "project_context": memory.get("project_context", {}),
+            "key_insights": memory.get("project_context", {}).get("key_insights", [])
+        }
+    }
+
+
+def import_agent_knowledge(knowledge: dict) -> dict:
+    """Import agent knowledge from an export.
+
+    Merges with existing knowledge, increasing confidence for matching patterns.
+
+    Args:
+        knowledge: Export dict from export_agent_knowledge()
+
+    Returns:
+        Summary of what was imported
+    """
+    if knowledge.get("export_version") != "1.0":
+        return {"success": False, "error": "Incompatible export version"}
+
+    data = knowledge.get("data", {})
+    imported = {"patterns": 0, "preferences": 0, "insights": 0}
+
+    # Import patterns
+    for p in data.get("learned_patterns", []):
+        add_learned_pattern(
+            pattern=p.get("pattern", ""),
+            category=p.get("category", "general"),
+            source=p.get("source", "imported"),
+            confidence=p.get("confidence", 0.5),
+            evidence=f"Imported from export {knowledge.get('exported_at', 'unknown')}"
+        )
+        imported["patterns"] += 1
+
+    # Import preferences
+    for key, value in data.get("user_preferences", {}).items():
+        update_user_preference(key, value.get("value", str(value)))
+        imported["preferences"] += 1
+
+    # Import key insights
+    memory = load_memory()
+    existing_insights = memory.get("project_context", {}).get("key_insights", [])
+    new_insights = data.get("key_insights", [])
+    for insight in new_insights:
+        if insight not in existing_insights:
+            existing_insights.append(insight)
+            imported["insights"] += 1
+    memory.setdefault("project_context", {})["key_insights"] = existing_insights[-20:]
+    save_memory(memory)
+
+    return {
+        "success": True,
+        "imported": imported,
+        "message": f"Imported {imported['patterns']} patterns, {imported['preferences']} preferences, {imported['insights']} insights"
+    }
+
+
+def add_key_insight(insight: str) -> None:
+    """Add a key insight about the project.
+
+    Key insights are high-value observations that should persist.
+    """
+    memory = load_memory()
+    insights = memory.get("project_context", {}).get("key_insights", [])
+
+    if insight not in insights:
+        insights.append(insight)
+        # Keep last 20 key insights
+        memory.setdefault("project_context", {})["key_insights"] = insights[-20:]
+        save_memory(memory)
+
+
+def get_agent_context_summary() -> str:
+    """Get a concise summary of agent knowledge for LLM context.
+
+    Returns a formatted string suitable for injection into prompts.
+    Focuses on high-confidence patterns and recent context.
+    """
+    state = get_unified_memory_state()
+
+    lines = ["## Agent Memory Summary"]
+
+    # High confidence patterns
+    if state["high_confidence_patterns"]:
+        lines.append("\n### Key Patterns (High Confidence)")
+        for p in state["high_confidence_patterns"][:5]:
+            lines.append(f"- [{p.get('category')}] {p.get('pattern')} ({p.get('confidence', 0):.0%})")
+
+    # User preferences
+    if state["user_preferences"]:
+        lines.append("\n### User Preferences")
+        for key, val in list(state["user_preferences"].items())[:5]:
+            lines.append(f"- {key}: {val.get('value', val)}")
+
+    # Key project insights
+    insights = state.get("project_context", {}).get("key_insights", [])
+    if insights:
+        lines.append("\n### Key Insights")
+        for insight in insights[-5:]:
+            lines.append(f"- {insight}")
+
+    return "\n".join(lines) if len(lines) > 1 else ""

@@ -15,9 +15,30 @@ from api.database import get_all_events
 from api.services.memory import (
     get_memory_context,
     parse_and_save_memory_summary,
-    get_memory_stats
+    get_memory_stats,
+    add_learned_pattern,
+    get_patterns_by_category,
+    get_high_confidence_patterns,
+    get_unified_memory_state,
+    export_agent_knowledge,
+    import_agent_knowledge,
+    add_key_insight
 )
 from api.services.usage import track_usage, get_usage_summary, get_daily_usage
+from api.services.langsmith_tracing import (
+    trace_llm_call, get_session_stats, start_session,
+    get_session_history, get_langsmith_status
+)
+from api.services.skill_discovery import (
+    search_skills, suggest_skill_for_task, install_skill,
+    get_installed_skill_content, get_skill_discovery_commands
+)
+from api.services.insights import (
+    find_event_by_description, format_event_for_analysis,
+    generate_insight_prompt, find_related_events,
+    filter_events_by_criteria, get_reflection_context,
+    get_cached_insight, cache_insight
+)
 import json
 import re
 import time
@@ -44,6 +65,8 @@ class ChatResponse(BaseModel):
     research_query: str | None = None
     search_executed: bool = False
     search_query: str | None = None
+    skill_suggestion: dict | None = None  # Suggested skill if relevant
+    skill_used: str | None = None  # Skill that was loaded
 
 
 PORTFOLIO_CHAT_SYSTEM_PROMPT = """You are an AI assistant for a personal financial portfolio management system. Your role is to help the user understand their portfolio, analyze their trading history, and provide insights on their investment strategy.
@@ -101,6 +124,71 @@ The system will execute the research and provide results. Use this for:
 - Getting current financial metrics
 - Comparing stocks to their competitors
 - Deep-diving into specific financial aspects
+
+## Skill Discovery System
+You have access to specialized skills from Anthropic's skills library that can enhance your capabilities.
+When encountering tasks that might benefit from specialized skills, use these commands:
+
+### [SKILL_SEARCH: query]
+Search for relevant skills. Example: [SKILL_SEARCH: frontend design]
+
+### [SKILL_INSTALL: skill_id]
+Install a skill from Anthropic's repo. Example: [SKILL_INSTALL: frontend-design]
+
+### [SKILL_USE: skill_id]
+Load an installed skill's instructions for the current task.
+
+## Insight Generation Commands
+Generate deep analysis and insights about events in the portfolio:
+
+### [ANALYZE_EVENT: event_id or description]
+Generate comprehensive analysis of a specific event or recent event matching description.
+Example: [ANALYZE_EVENT: 45] or [ANALYZE_EVENT: last TSLA trade]
+
+This generates:
+- **Reasoning**: Why this decision makes sense given portfolio context
+- **Future Advice**: Actionable advice for similar future situations
+- **Past Reflection**: Connection to previous similar events
+
+### [GENERATE_INSIGHTS: ticker or date range]
+Batch generate insights for multiple events.
+Example: [GENERATE_INSIGHTS: TSLA] or [GENERATE_INSIGHTS: 2026-01]
+
+### [REFLECT: topic]
+Generate reflection on patterns and learnings around a topic.
+Example: [REFLECT: options strategy] or [REFLECT: risk management]
+
+## Pattern Learning Commands
+Learn and remember patterns about the user's trading behavior and preferences:
+
+### [LEARN_PATTERN: category] pattern description
+Save a learned pattern with confidence tracking.
+Categories: trading_style, risk_tolerance, position_sizing, timing_preference, ticker_affinity, strategy_preference, goal_alignment
+
+Examples:
+- [LEARN_PATTERN: strategy_preference] Only sells puts on stocks acceptable for long-term ownership
+- [LEARN_PATTERN: risk_tolerance] Prefers strikes >10% OTM for put selling
+- [LEARN_PATTERN: ticker_affinity] Frequently trades TSLA and tech stocks
+
+Patterns are automatically consolidated - similar patterns increase confidence rather than duplicating.
+Use this when:
+1. User explicitly states a preference
+2. You observe a recurring behavior in their trading history
+3. You infer a pattern from multiple events
+
+Available skills include:
+- **frontend-design**: Create distinctive, production-grade web interfaces
+- **webapp-testing**: Automated browser testing for web applications
+- **mcp-builder**: Build Model Context Protocol servers and tools
+- **pdf/docx/pptx/xlsx**: Document processing capabilities
+- **canvas-design**: Visual designs using HTML canvas
+- **theme-factory**: Generate design themes and color palettes
+
+When to use skills:
+- Frontend/UI work: Use "frontend-design" for web interfaces
+- Testing: Use "webapp-testing" for browser automation
+- Documents: Use document skills for processing files
+- Building tools: Use "mcp-builder" for MCP development
 
 ## Guidelines
 - **ALWAYS search the event log** when answering questions about history, specific tickers, or past decisions
@@ -441,6 +529,14 @@ async def chat(request: ChatRequest):
                 endpoint="chat",
                 duration_ms=duration_ms
             )
+            # Live session tracing
+            trace_llm_call(
+                model=model_used,
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+                latency_ms=duration_ms,
+                endpoint="chat"
+            )
 
         else:  # local
             import httpx
@@ -467,12 +563,22 @@ async def chat(request: ChatRequest):
             # Track local LLM usage
             duration_ms = int((time.time() - start_time) * 1000)
             usage_data = result.get("usage", {})
+            prompt_tokens = usage_data.get("prompt_tokens", 0)
+            completion_tokens = usage_data.get("completion_tokens", 0)
             track_usage(
                 model=model_used,
-                prompt_tokens=usage_data.get("prompt_tokens", 0),
-                completion_tokens=usage_data.get("completion_tokens", 0),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 endpoint="chat",
                 duration_ms=duration_ms
+            )
+            # Live session tracing
+            trace_llm_call(
+                model=model_used,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                latency_ms=duration_ms,
+                endpoint="chat"
             )
 
         # Check if the response contains a search log query
@@ -613,6 +719,193 @@ async def chat(request: ChatRequest):
             except Exception as research_error:
                 response_text += f"\n\n(Note: Could not execute research: {str(research_error)})"
 
+        # Check for skill commands
+        skill_search_executed = False
+        skill_install_executed = False
+        skill_used = None
+
+        # SKILL_SEARCH: query - search for relevant skills
+        skill_search_match = re.search(r'\[SKILL_SEARCH:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if skill_search_match:
+            search_query = skill_search_match.group(1).strip()
+            search_results = search_skills(search_query)
+            skill_search_executed = True
+
+            # Format results
+            if search_results:
+                results_text = f"\n\n[SKILL SEARCH RESULTS for '{search_query}']\n"
+                for skill in search_results[:5]:
+                    installed = "✓ installed" if skill.get("installed") else "available"
+                    results_text += f"- **{skill['id']}** ({installed}): {skill['description']}\n"
+                results_text += "\nUse [SKILL_INSTALL: skill_id] to install, or [SKILL_USE: skill_id] if already installed.\n[END SKILL SEARCH]"
+                response_text += results_text
+            else:
+                response_text += f"\n\n(No skills found matching '{search_query}')"
+
+        # SKILL_INSTALL: skill_id - install a skill from Anthropic repo
+        skill_install_match = re.search(r'\[SKILL_INSTALL:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if skill_install_match:
+            skill_id = skill_install_match.group(1).strip().lower()
+            install_result = await install_skill(skill_id)
+            skill_install_executed = True
+
+            if install_result["success"]:
+                if install_result.get("already_installed"):
+                    response_text += f"\n\n(Skill '{skill_id}' is already installed and ready to use)"
+                else:
+                    response_text += f"\n\n(Skill '{skill_id}' installed successfully! Use [SKILL_USE: {skill_id}] to load it.)"
+            else:
+                response_text += f"\n\n(Failed to install skill '{skill_id}': {install_result['message']})"
+
+        # SKILL_USE: skill_id - load and use an installed skill
+        skill_use_match = re.search(r'\[SKILL_USE:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if skill_use_match:
+            skill_id = skill_use_match.group(1).strip().lower()
+            skill_content = get_installed_skill_content(skill_id)
+
+            if skill_content:
+                skill_used = skill_id
+                # Add skill instructions to the conversation for follow-up
+                skill_context = f"\n\n[SKILL LOADED: {skill_id}]\nFollow these specialized instructions:\n\n{skill_content[:3000]}\n[END SKILL]"
+                response_text += skill_context
+            else:
+                # Try to auto-install if not found
+                install_result = await install_skill(skill_id)
+                if install_result["success"]:
+                    skill_content = get_installed_skill_content(skill_id)
+                    if skill_content:
+                        skill_used = skill_id
+                        skill_context = f"\n\n[SKILL LOADED: {skill_id}]\nFollow these specialized instructions:\n\n{skill_content[:3000]}\n[END SKILL]"
+                        response_text += skill_context
+                    else:
+                        response_text += f"\n\n(Skill '{skill_id}' installed but could not be loaded)"
+                else:
+                    response_text += f"\n\n(Skill '{skill_id}' not found. Use [SKILL_SEARCH: keyword] to find available skills.)"
+
+        # Check for insight generation commands
+        insight_generated = False
+
+        # ANALYZE_EVENT: event_id or description
+        analyze_match = re.search(r'\[ANALYZE_EVENT:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if analyze_match:
+            event_query = analyze_match.group(1).strip()
+            all_events = get_all_events(limit=500)
+
+            # Find the event
+            if event_query.isdigit():
+                target_event = None
+                for e in all_events:
+                    if e.get('event_id') == int(event_query):
+                        target_event = e
+                        break
+            else:
+                target_event = find_event_by_description(event_query, all_events)
+
+            if target_event:
+                # Check cache first
+                cached = get_cached_insight(target_event['event_id'])
+                if cached:
+                    insight_str = f"\n\n[CACHED INSIGHT for Event #{target_event['event_id']}]\n"
+                    insight_str += f"**Reasoning**: {cached.get('reasoning', 'N/A')}\n\n"
+                    insight_str += f"**Future Advice**: {cached.get('future_advice', 'N/A')}\n\n"
+                    insight_str += f"**Past Reflection**: {cached.get('past_reflection', 'N/A')}\n"
+                    insight_str += f"(Generated: {cached.get('cached_at', 'unknown')[:10]})\n[END INSIGHT]"
+                    response_text += insight_str
+                    insight_generated = True
+                else:
+                    # Format event for context
+                    event_context = format_event_for_analysis(target_event)
+                    related = find_related_events(target_event, all_events)
+                    insight_prompt = generate_insight_prompt(target_event, template_state, related)
+
+                    response_text += f"\n\n[ANALYZING Event #{target_event['event_id']}]\n"
+                    response_text += f"```\n{event_context}\n```\n"
+                    response_text += f"Use this context to generate insights. Related events: {len(related)}\n"
+                    response_text += f"[END ANALYSIS CONTEXT]"
+                    insight_generated = True
+            else:
+                response_text += f"\n\n(Could not find event matching '{event_query}'. Try [SEARCH_LOG: ...] first.)"
+
+        # GENERATE_INSIGHTS: ticker or date range
+        batch_match = re.search(r'\[GENERATE_INSIGHTS:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if batch_match:
+            query = batch_match.group(1).strip()
+            all_events = get_all_events(limit=500)
+
+            # Determine if ticker or date
+            if re.match(r'\d{4}-\d{2}', query):
+                # Date prefix
+                filtered = filter_events_by_criteria(all_events, date_prefix=query)
+                filter_type = f"date: {query}"
+            else:
+                # Ticker
+                filtered = filter_events_by_criteria(all_events, ticker=query.upper())
+                filter_type = f"ticker: {query.upper()}"
+
+            if filtered:
+                response_text += f"\n\n[BATCH INSIGHT CONTEXT: {filter_type}]\n"
+                response_text += f"Found {len(filtered)} events. Analyze these for patterns:\n\n"
+
+                for e in filtered[:10]:  # Limit to 10 events
+                    response_text += format_event_for_analysis(e) + "\n---\n"
+
+                response_text += f"\nGenerate insights covering patterns, what worked, and lessons learned.\n"
+                response_text += f"[END BATCH CONTEXT]"
+            else:
+                response_text += f"\n\n(No events found for {filter_type})"
+
+        # REFLECT: topic
+        reflect_match = re.search(r'\[REFLECT:\s*(.+?)\]', response_text, re.IGNORECASE)
+        if reflect_match:
+            topic = reflect_match.group(1).strip()
+            all_events = get_all_events(limit=500)
+            reflection_context = get_reflection_context(topic, all_events, template_state)
+
+            response_text += f"\n\n[REFLECTION CONTEXT: {topic}]\n"
+            response_text += reflection_context
+            response_text += f"\n[END REFLECTION CONTEXT]"
+
+        # LEARN_PATTERN: category] pattern description
+        # Pattern: [LEARN_PATTERN: category] description text
+        pattern_matches = re.findall(
+            r'\[LEARN_PATTERN:\s*(\w+)\]\s*([^\[\n]+)',
+            response_text,
+            re.IGNORECASE
+        )
+
+        patterns_learned = []
+        for category, pattern_text in pattern_matches:
+            category = category.lower().strip()
+            pattern_text = pattern_text.strip()
+
+            if pattern_text and len(pattern_text) > 5:
+                # Determine source based on context
+                # If user explicitly stated something, it's "stated"
+                source = "stated" if "I " in request.message or "i " in request.message else "observed"
+
+                result = add_learned_pattern(
+                    pattern=pattern_text,
+                    category=category,
+                    source=source,
+                    confidence=0.7 if source == "stated" else 0.5,
+                    evidence=request.message[:200]
+                )
+
+                patterns_learned.append({
+                    "category": category,
+                    "pattern": pattern_text,
+                    "confidence": result.get("confidence", 0.5),
+                    "is_new": result.get("evidence_count", 1) == 1
+                })
+
+        # Add acknowledgment for learned patterns
+        if patterns_learned:
+            ack_str = "\n\n**Patterns Learned:**\n"
+            for p in patterns_learned:
+                status = "NEW" if p["is_new"] else f"UPDATED (conf: {p['confidence']:.0%})"
+                ack_str += f"- [{p['category']}] {p['pattern']} ({status})\n"
+            response_text += ack_str
+
         # Extract and save memory summary from response
         user_visible_response = response_text
 
@@ -639,6 +932,19 @@ async def chat(request: ChatRequest):
             except Exception as mem_error:
                 pass  # Don't fail the request if memory save fails
 
+        # Proactively suggest skills if relevant to user's message
+        # This helps when LLM doesn't output the command format (especially local LLMs)
+        skill_suggestion = None
+        if not skill_used and not skill_search_executed:
+            suggested = suggest_skill_for_task(request.message)
+            if suggested:
+                skill_suggestion = {
+                    "id": suggested["id"],
+                    "name": suggested["name"],
+                    "description": suggested["description"],
+                    "relevance_score": suggested["relevance_score"]
+                }
+
         return ChatResponse(
             response=user_visible_response,
             model=model_used,
@@ -646,7 +952,9 @@ async def chat(request: ChatRequest):
             research_executed=research_executed,
             research_query=research_query,
             search_executed=search_executed,
-            search_query=search_query
+            search_query=search_query,
+            skill_suggestion=skill_suggestion,
+            skill_used=skill_used
         )
 
     except Exception as e:
@@ -679,3 +987,96 @@ async def get_token_usage():
 async def get_daily_token_usage(days: int = 30):
     """Get daily token usage for the last N days."""
     return get_daily_usage(days)
+
+
+@router.get("/session")
+async def get_live_session():
+    """Get live session token usage and traces."""
+    return get_session_stats()
+
+
+@router.post("/session/new")
+async def start_new_session():
+    """Start a new tracing session."""
+    session = start_session()
+    return {
+        "success": True,
+        "session_id": session.session_id,
+        "message": "New session started"
+    }
+
+
+@router.get("/session/history")
+async def get_sessions_history():
+    """Get history of previous sessions."""
+    return {
+        "sessions": get_session_history(),
+        "current": get_session_stats()
+    }
+
+
+@router.get("/langsmith/status")
+async def langsmith_status():
+    """Get LangSmith configuration status."""
+    return get_langsmith_status()
+
+
+@router.get("/patterns")
+async def get_learned_patterns(category: str = None, min_confidence: float = None):
+    """Get learned patterns, optionally filtered.
+
+    Args:
+        category: Filter by category (trading_style, risk_tolerance, etc.)
+        min_confidence: Filter by minimum confidence (0.0-1.0)
+    """
+    if min_confidence is not None:
+        patterns = get_high_confidence_patterns(min_confidence)
+        if category:
+            patterns = [p for p in patterns if p.get("category") == category]
+    else:
+        patterns = get_patterns_by_category(category)
+
+    return {
+        "patterns": patterns,
+        "count": len(patterns),
+        "categories": list(set(p.get("category") for p in patterns))
+    }
+
+
+# ============ Unified Agent Memory Endpoints ============
+
+@router.get("/memory/unified")
+async def get_agent_memory():
+    """Get the complete unified view of agent memory.
+
+    Returns all memory components:
+    - Patterns by category
+    - High confidence patterns
+    - User preferences
+    - Project context
+    - Recent conversations
+    - Statistics
+    """
+    return get_unified_memory_state()
+
+
+@router.get("/memory/export")
+async def export_memory():
+    """Export agent knowledge for backup or transfer to another project."""
+    return export_agent_knowledge()
+
+
+@router.post("/memory/import")
+async def import_memory(knowledge: dict):
+    """Import agent knowledge from an export.
+
+    Merges with existing knowledge, increasing confidence for matching patterns.
+    """
+    return import_agent_knowledge(knowledge)
+
+
+@router.post("/memory/insight")
+async def add_insight(insight: str):
+    """Add a key insight about the project."""
+    add_key_insight(insight)
+    return {"success": True, "message": f"Added insight: {insight[:50]}..."}

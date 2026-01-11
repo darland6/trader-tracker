@@ -325,3 +325,94 @@ async def project_history_future(history_id: str, years: int = 3, use_llm: bool 
         raise HTTPException(status_code=404, detail=projection["error"])
 
     return projection
+
+
+@router.get("/{history_id}/playback")
+async def get_history_playback(
+    history_id: str,
+    use_agent: bool = False,
+    use_interpolation: bool = True
+):
+    """Get prepared playback data for an alternate history.
+
+    Generates daily frames with historical prices for smooth timeline animation.
+    Uses multi-layer data sourcing:
+    1. yfinance for real market data
+    2. Agent/Dexter for missing data (if use_agent=True)
+    3. Interpolation to fill remaining gaps
+
+    Args:
+        history_id: Alternate history ID (or "reality" for main timeline)
+        use_agent: Whether to use agent for missing prices (slower but more accurate)
+        use_interpolation: Whether to interpolate remaining gaps (default: True)
+
+    Returns:
+        {
+            frames: Daily portfolio snapshots with prices,
+            events: Original portfolio events,
+            data_quality: Stats about data sources used,
+            total_frames: Number of daily frames,
+            history_id: The requested history ID
+        }
+    """
+    from api.services.historical_prices import (
+        prepare_full_playback,
+        prepare_alt_history_playback
+    )
+    from api.database import get_all_events
+    import json
+
+    try:
+        if history_id == "reality":
+            # Use main event log
+            events = get_all_events(limit=500)
+
+            # Format events
+            formatted_events = []
+            for event in reversed(events):  # Oldest first
+                event_type = event.get('event_type', '')
+                if event_type == 'PRICE_UPDATE':
+                    continue
+
+                data_json = event.get('data_json', '{}')
+                if isinstance(data_json, str):
+                    data = json.loads(data_json)
+                else:
+                    data = data_json
+
+                formatted_events.append({
+                    'event_id': event['event_id'],
+                    'timestamp': event['timestamp'],
+                    'event_type': event_type,
+                    'data': data,
+                    'summary': f"{event_type}",
+                    'cash_delta': event.get('cash_delta', 0)
+                })
+
+            result = prepare_full_playback(
+                formatted_events,
+                use_agent=use_agent,
+                use_interpolation=use_interpolation,
+                history_id="reality"
+            )
+        else:
+            # Use alternate history
+            result = prepare_alt_history_playback(
+                history_id,
+                use_agent=use_agent,
+                use_interpolation=use_interpolation
+            )
+
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+
+        # Remove large prices_by_date from response
+        if 'prices_by_date' in result:
+            del result['prices_by_date']
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

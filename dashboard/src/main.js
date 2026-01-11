@@ -5443,6 +5443,56 @@ function handleChatKeypress(event) {
 }
 window.handleChatKeypress = handleChatKeypress;
 
+// Handle keydown for textarea (supports Shift+Enter for newlines)
+function handleChatKeydown(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+    }
+    // Shift+Enter allows newlines naturally in textarea
+}
+window.handleChatKeydown = handleChatKeydown;
+
+// Simple markdown to HTML converter for chat
+function renderMarkdown(text) {
+    // Escape HTML first
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // Code blocks (```lang\ncode```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+        return `<pre class="code-block${lang ? ' lang-' + lang : ''}"><code>${code.trim()}</code></pre>`;
+    });
+
+    // Inline code (`code`)
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+    // Bold (**text** or __text__)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+    // Italic (*text* or _text_)
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+    // Headers (## Header)
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+    // Lists (- item or * item)
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+    // Line breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+
+    return `<p>${html}</p>`;
+}
+
 async function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send');
@@ -5496,10 +5546,10 @@ async function sendChatMessage() {
                 conversationHistory = conversationHistory.slice(-20);
             }
 
-            // Add assistant response to UI
+            // Add assistant response to UI with markdown rendering
             const assistantMsgEl = document.createElement('div');
             assistantMsgEl.className = 'chat-message assistant';
-            assistantMsgEl.textContent = data.response;
+            assistantMsgEl.innerHTML = renderMarkdown(data.response);
             messagesContainer.appendChild(assistantMsgEl);
         } else {
             // Show error
@@ -5521,8 +5571,63 @@ async function sendChatMessage() {
     // Re-enable send and scroll
     sendBtn.disabled = false;
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Update session stats if visible
+    if (document.getElementById('session-stats')?.classList.contains('visible')) {
+        updateSessionStats();
+    }
 }
 window.sendChatMessage = sendChatMessage;
+
+// ==================== SESSION STATS ====================
+
+let sessionStatsVisible = false;
+let sessionStatsInterval = null;
+
+function toggleSessionStats() {
+    const statsPanel = document.getElementById('session-stats');
+    const toggleBtn = document.getElementById('stats-toggle');
+
+    sessionStatsVisible = !sessionStatsVisible;
+
+    if (sessionStatsVisible) {
+        statsPanel.classList.add('visible');
+        toggleBtn.classList.add('active');
+        updateSessionStats();
+        // Auto-refresh every 5 seconds while visible
+        sessionStatsInterval = setInterval(updateSessionStats, 5000);
+    } else {
+        statsPanel.classList.remove('visible');
+        toggleBtn.classList.remove('active');
+        if (sessionStatsInterval) {
+            clearInterval(sessionStatsInterval);
+            sessionStatsInterval = null;
+        }
+    }
+}
+window.toggleSessionStats = toggleSessionStats;
+
+async function updateSessionStats() {
+    try {
+        const response = await fetch('/api/chat/session');
+        const data = await response.json();
+
+        if (!data.active) {
+            document.getElementById('session-id').textContent = 'No session';
+            return;
+        }
+
+        document.getElementById('session-id').textContent = `#${data.session_id}`;
+        document.getElementById('stat-calls').textContent = data.call_count || 0;
+        document.getElementById('stat-tokens').textContent = formatNumber(data.total_tokens || 0);
+        document.getElementById('stat-prompt').textContent = formatNumber(data.total_prompt_tokens || 0);
+        document.getElementById('stat-completion').textContent = formatNumber(data.total_completion_tokens || 0);
+        document.getElementById('stat-latency').textContent = `${data.avg_latency_ms || 0}ms`;
+        document.getElementById('stat-cost').textContent = `$${(data.total_cost || 0).toFixed(4)}`;
+    } catch (error) {
+        console.error('Failed to fetch session stats:', error);
+    }
+}
 
 // ==================== LLM SETTINGS ====================
 
@@ -6213,6 +6318,125 @@ function updateStatusIndicator(elementId, isOnline, tooltip) {
 
 // Periodically refresh AI status (every 30 seconds)
 setInterval(checkAIStatus, 30000);
+
+// ==================== PANEL DRAG & RESIZE ====================
+
+function initPanelDragResize() {
+    const panels = document.querySelectorAll('.control-panel');
+    let highestZ = 100;
+
+    panels.forEach(panel => {
+        // Add resize handle if not present
+        if (!panel.querySelector('.resize-handle')) {
+            const handle = document.createElement('div');
+            handle.className = 'resize-handle';
+            panel.appendChild(handle);
+        }
+
+        // Drag functionality
+        const header = panel.querySelector('.panel-header');
+        if (header) {
+            let isDragging = false;
+            let startX, startY, startLeft, startTop;
+
+            header.addEventListener('mousedown', (e) => {
+                // Don't drag if clicking on buttons or interactive elements
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+
+                isDragging = true;
+                panel.classList.add('dragging');
+                highestZ++;
+                panel.style.zIndex = highestZ;
+
+                startX = e.clientX;
+                startY = e.clientY;
+                startLeft = panel.offsetLeft;
+                startTop = panel.offsetTop;
+
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+
+                let newLeft = startLeft + dx;
+                let newTop = startTop + dy;
+
+                // Keep within viewport
+                newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - panel.offsetWidth));
+                newTop = Math.max(0, Math.min(newTop, window.innerHeight - panel.offsetHeight));
+
+                panel.style.left = newLeft + 'px';
+                panel.style.top = newTop + 'px';
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    panel.classList.remove('dragging');
+                }
+            });
+        }
+
+        // Resize functionality
+        const resizeHandle = panel.querySelector('.resize-handle');
+        if (resizeHandle) {
+            let isResizing = false;
+            let startWidth, startHeight, startX, startY;
+
+            resizeHandle.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                panel.classList.add('resizing');
+                highestZ++;
+                panel.style.zIndex = highestZ;
+
+                startX = e.clientX;
+                startY = e.clientY;
+                startWidth = panel.offsetWidth;
+                startHeight = panel.offsetHeight;
+
+                e.preventDefault();
+                e.stopPropagation();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+
+                const newWidth = Math.max(200, startWidth + dx);
+                const newHeight = Math.max(100, startHeight + dy);
+
+                panel.style.width = newWidth + 'px';
+                panel.style.height = newHeight + 'px';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    panel.classList.remove('resizing');
+                }
+            });
+        }
+
+        // Bring to front on click
+        panel.addEventListener('mousedown', () => {
+            highestZ++;
+            panel.style.zIndex = highestZ;
+        });
+    });
+}
+
+// Initialize drag/resize after DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initPanelDragResize, 100);
+});
 
 // Start
 main();

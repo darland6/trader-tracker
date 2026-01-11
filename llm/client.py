@@ -273,6 +273,73 @@ def generate_event_insights(event_type: str, event_data: dict,
     )
 
 
+def get_llm_response(prompt: str, max_tokens: int = 500, system_prompt: str = None) -> str:
+    """Simple function to get an LLM response for a prompt.
+
+    Used by scanner and other services that need direct LLM access.
+
+    Args:
+        prompt: The user prompt/question
+        max_tokens: Maximum tokens in response (default 500)
+        system_prompt: Optional system prompt (default is a helpful assistant)
+
+    Returns:
+        The LLM response text, or error message on failure
+    """
+    config = get_llm_config()
+
+    if not config.enabled:
+        return "LLM is disabled in configuration"
+
+    if system_prompt is None:
+        system_prompt = "You are a helpful financial analysis assistant. Be concise and actionable."
+
+    try:
+        import httpx
+
+        if config.provider == "claude":
+            # Use Claude API
+            import anthropic
+            if not config.anthropic_api_key:
+                return "Claude API key not configured"
+
+            client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+            message = client.messages.create(
+                model=config.claude_model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text
+        else:
+            # Use local OpenAI-compatible API
+            url = f"{config.local_url.rstrip('/')}/chat/completions"
+
+            payload = {
+                "model": config.local_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": max_tokens,
+                "temperature": 0.7
+            }
+
+            with httpx.Client(timeout=config.timeout) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+
+    except httpx.ConnectError:
+        return f"Cannot connect to LLM at {config.local_url}. Is the server running?"
+    except httpx.TimeoutException:
+        return f"LLM request timed out after {config.timeout}s"
+    except Exception as e:
+        return f"LLM error: {str(e)}"
+
+
 def test_connection() -> tuple[bool, str]:
     """Test LLM connection with current configuration.
 

@@ -111,7 +111,19 @@
             border: 2px solid #0088ff;
             border-radius: 4px;
             pointer-events: auto;
-            overflow: hidden;
+            overflow: visible;
+            min-width: 200px;
+            min-height: 100px;
+        }
+
+        .control-panel.dragging {
+            opacity: 0.9;
+            z-index: 1000 !important;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+        }
+
+        .control-panel.resizing {
+            z-index: 1000 !important;
         }
 
         .control-panel::before {
@@ -124,6 +136,32 @@
             background: linear-gradient(90deg, transparent, #00ffff, transparent);
         }
 
+        /* Resize handle */
+        .resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            z-index: 10;
+        }
+
+        .resize-handle::before {
+            content: '';
+            position: absolute;
+            bottom: 3px;
+            right: 3px;
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid rgba(0, 255, 255, 0.5);
+            border-bottom: 2px solid rgba(0, 255, 255, 0.5);
+        }
+
+        .resize-handle:hover::before {
+            border-color: #00ffff;
+        }
+
         .panel-header {
             background: linear-gradient(90deg, rgba(0, 136, 255, 0.3), rgba(0, 255, 255, 0.1));
             padding: 8px 12px;
@@ -131,6 +169,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: move;
+            user-select: none;
+        }
+
+        .panel-header:active {
+            cursor: grabbing;
         }
 
         .panel-title {
@@ -159,6 +203,8 @@
 
         .panel-body {
             padding: 12px;
+            overflow: auto;
+            max-height: calc(100% - 45px);
         }
 
         /* ==================== LEFT CONSOLE - STATUS ==================== */
@@ -649,11 +695,76 @@
             margin-right: 20px;
         }
 
+        .chat-message.assistant p {
+            margin: 0 0 8px 0;
+        }
+
+        .chat-message.assistant p:last-child {
+            margin-bottom: 0;
+        }
+
+        .chat-message.assistant h2,
+        .chat-message.assistant h3,
+        .chat-message.assistant h4 {
+            color: #00ffff;
+            margin: 12px 0 8px 0;
+            font-size: 13px;
+        }
+
+        .chat-message.assistant ul {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+
+        .chat-message.assistant li {
+            margin: 4px 0;
+        }
+
+        .chat-message.assistant .code-block {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .chat-message.assistant .code-block code {
+            color: #00ff88;
+        }
+
+        .chat-message.assistant .inline-code {
+            background: rgba(0, 0, 0, 0.4);
+            color: #00ffff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+        }
+
+        .chat-message.assistant strong {
+            color: #fff;
+        }
+
+        .chat-message.assistant em {
+            color: #aaa;
+        }
+
         .chat-input-row {
             display: flex;
             gap: 8px;
             padding: 8px;
             border-top: 1px solid rgba(0, 255, 255, 0.2);
+            flex-direction: column;
+        }
+
+        .chat-input-controls {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
         }
 
         .chat-input {
@@ -665,12 +776,90 @@
             color: #fff;
             font-family: 'Share Tech Mono', monospace;
             font-size: 12px;
+            min-height: 36px;
+            max-height: 150px;
+            resize: vertical;
         }
 
         .chat-input:focus {
             outline: none;
             border-color: #00ffff;
             box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        /* Session Stats Panel */
+        .session-stats {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 8px;
+            margin: 8px;
+            font-size: 10px;
+            display: none;
+        }
+
+        .session-stats.visible {
+            display: block;
+        }
+
+        .session-stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .session-stats-title {
+            color: #00ffff;
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        .session-stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 12px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #00ff88;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        .stat-value.cost {
+            color: #ffcc00;
+        }
+
+        .stats-toggle {
+            background: transparent;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 3px;
+            color: #666;
+            padding: 2px 6px;
+            font-size: 9px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: 8px;
+        }
+
+        .stats-toggle:hover, .stats-toggle.active {
+            color: #00ffff;
+            border-color: #00ffff;
+        }
+
+        .stats-toggle.active {
+            background: rgba(0, 255, 255, 0.1);
         }
 
         .chat-send {
@@ -2454,17 +2643,53 @@
             <div id="chat-console" class="control-panel minimized">
                 <div class="panel-header" onclick="toggleChat()" style="cursor: pointer;">
                     <span class="panel-title">AI Assistant</span>
+                    <button class="stats-toggle" id="stats-toggle" onclick="event.stopPropagation(); toggleSessionStats();" title="Show session usage">Stats</button>
                     <span id="chat-toggle-icon" style="color: #00ffff;">+</span>
                 </div>
                 <div class="panel-body" id="chat-body">
+                    <!-- Session Stats Panel -->
+                    <div class="session-stats" id="session-stats">
+                        <div class="session-stats-header">
+                            <span class="session-stats-title">Session Usage</span>
+                            <span id="session-id" style="color: #666;">--</span>
+                        </div>
+                        <div class="session-stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Calls:</span>
+                                <span class="stat-value" id="stat-calls">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Tokens:</span>
+                                <span class="stat-value" id="stat-tokens">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Prompt:</span>
+                                <span class="stat-value" id="stat-prompt">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Completion:</span>
+                                <span class="stat-value" id="stat-completion">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg Latency:</span>
+                                <span class="stat-value" id="stat-latency">0ms</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Est. Cost:</span>
+                                <span class="stat-value cost" id="stat-cost">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="chat-messages" id="chat-messages">
                         <div class="chat-message assistant">
                             Hello! I'm your portfolio assistant. Ask me anything about your portfolio.
                         </div>
                     </div>
                     <div class="chat-input-row">
-                        <input type="text" class="chat-input" id="chat-input" placeholder="Ask about your portfolio..." onkeypress="handleChatKeypress(event)">
-                        <button class="chat-send" id="chat-send" onclick="sendChatMessage()">Send</button>
+                        <textarea class="chat-input" id="chat-input" placeholder="Ask about your portfolio..." onkeydown="handleChatKeydown(event)" rows="1"></textarea>
+                        <div class="chat-input-controls">
+                            <button class="chat-send" id="chat-send" onclick="sendChatMessage()">Send</button>
+                        </div>
                     </div>
                 </div>
             </div>

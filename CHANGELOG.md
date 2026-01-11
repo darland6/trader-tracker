@@ -4,6 +4,84 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Agentic Chat Package (2026-01-11)
+
+Comprehensive agent capabilities with skills discovery, insight generation, pattern learning, and unified memory:
+
+#### Skill Discovery System (`api/services/skill_discovery.py`)
+- **Anthropic Skills Integration** - Access 16+ skills from https://github.com/anthropics/skills
+- **Search & Suggest** - Find relevant skills based on task description
+- **Auto-Install** - Install skills on-demand from Anthropic's repo
+- **Local Skills** - Support for custom local skills
+- **Chat Commands**:
+  - `[SKILL_SEARCH: query]` - Search for relevant skills
+  - `[SKILL_INSTALL: skill_id]` - Install a skill
+  - `[SKILL_USE: skill_id]` - Load skill instructions
+
+#### Insight Generation (`api/services/insights.py`)
+- **Event Analysis** - Deep analysis of portfolio events with reasoning, advice, and reflection
+- **Batch Insights** - Generate insights for multiple events by ticker or date
+- **Topic Reflection** - Reflect on patterns around topics (options, risk, income, trading)
+- **Insight Caching** - Cache generated insights to avoid regeneration
+- **Chat Commands**:
+  - `[ANALYZE_EVENT: id or description]` - Analyze specific event
+  - `[GENERATE_INSIGHTS: ticker or date]` - Batch generate insights
+  - `[REFLECT: topic]` - Generate reflection on topic
+
+#### Pattern Learning (Enhanced `api/services/memory.py`)
+- **Confidence Tracking** - Patterns have confidence scores that increase with evidence
+- **Category System** - trading_style, risk_tolerance, position_sizing, timing_preference, ticker_affinity, strategy_preference, goal_alignment
+- **Source Tracking** - Distinguishes stated vs observed vs inferred patterns
+- **Pattern Merging** - Similar patterns consolidated with increased confidence
+- **Chat Command**: `[LEARN_PATTERN: category] pattern description`
+
+#### Unified Agent Memory
+- **Unified State API** - Single endpoint for all memory components
+- **Export/Import** - Backup and transfer agent knowledge between projects
+- **Key Insights** - Store high-value observations that persist
+- **Context Summary** - Concise summary for LLM prompt injection
+- **API Endpoints**:
+  - `GET /api/chat/memory/unified` - Complete memory state
+  - `GET /api/chat/memory/export` - Export knowledge for backup
+  - `POST /api/chat/memory/import` - Import knowledge from export
+  - `POST /api/chat/memory/insight` - Add key insight
+  - `GET /api/chat/patterns` - Get learned patterns
+
+#### Skill Management API (`/api/skills`)
+```
+GET  /api/skills              - List all available skills
+GET  /api/skills/search?q=    - Search skills by keyword
+GET  /api/skills/suggest?task=- Suggest skill for task
+POST /api/skills/install/{id} - Install skill from Anthropic
+DELETE /api/skills/{id}       - Uninstall a skill
+GET  /api/skills/{id}         - Get skill details/content
+```
+
+### Added - Timeline Playback with Daily Frames (2026-01-11)
+
+Enhanced timeline playback with smooth daily interpolation:
+
+#### Historical Prices Service (`api/services/historical_prices.py`)
+- **Multi-Layer Data Sourcing**:
+  1. yfinance for real market data
+  2. Agent/Dexter fallback for missing data
+  3. Linear interpolation to fill remaining gaps
+- **Daily Frame Generation** - Creates frames for every day between events
+- **Data Quality Tracking** - Reports which data source was used for each price
+
+#### Playback API
+```
+GET /api/alt-history/{history_id}/playback
+    ?use_agent=false        # Use agent for missing prices (slower but accurate)
+    ?use_interpolation=true # Interpolate remaining gaps
+```
+
+Returns:
+- `frames[]` - Daily portfolio snapshots with prices
+- `events[]` - Original portfolio events
+- `data_quality` - Stats about data sources used
+- `total_frames` - Number of daily frames
+
 ### Added - Token Usage Tracking (2026-01-10)
 
 Track and display LLM token usage across sessions:
