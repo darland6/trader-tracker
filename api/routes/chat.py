@@ -129,7 +129,7 @@ When the user asks about:
 Examples:
 - User asks "How is TSLA doing?" → [RESEARCH_QUERY: What are Tesla's current financials, revenue growth, and key metrics?]
 - User asks "Should I sell NVDA?" → [RESEARCH_QUERY: What is NVIDIA's current valuation, growth trajectory, and analyst outlook?]
-- User asks about any stock → [RESEARCH_QUERY: Analyze {ticker}'s financial health, recent performance, and outlook]
+- User asks about any stock → [RESEARCH_QUERY: Analyze <ticker>'s financial health, recent performance, and outlook]
 
 **DO NOT ask the user if they want to use Dexter. Just use it automatically for all financial queries.**
 
