@@ -83,7 +83,29 @@ class DexterResult:
 # MCP Server Configuration
 MCP_SERVER_NAME = "dexter-mcp"
 MCP_SERVER_PORT = int(os.getenv('DEXTER_MCP_PORT', '3001'))
-MCP_SERVER_HOST = os.getenv('DEXTER_MCP_HOST', 'localhost')
+
+def get_mcp_host() -> str:
+    """Get MCP host - from env, or infer from LLM config if using local LLM."""
+    explicit_host = os.getenv('DEXTER_MCP_HOST')
+    if explicit_host:
+        return explicit_host
+
+    # Try to infer from LLM config - if using local LLM, MCP is likely on same host
+    try:
+        from llm.config import get_llm_config
+        config = get_llm_config()
+        if config.provider == "local" and config.local_url:
+            # Extract host from URL like "http://192.168.50.10:1234/v1"
+            from urllib.parse import urlparse
+            parsed = urlparse(config.local_url)
+            if parsed.hostname and parsed.hostname != 'localhost':
+                return parsed.hostname
+    except Exception:
+        pass
+
+    return 'localhost'
+
+MCP_SERVER_HOST = get_mcp_host()
 
 
 def is_mcp_available() -> bool:
@@ -91,10 +113,23 @@ def is_mcp_available() -> bool:
     import socket
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
+        sock.settimeout(2)
         result = sock.connect_ex((MCP_SERVER_HOST, MCP_SERVER_PORT))
         sock.close()
-        return result == 0
+        if result == 0:
+            return True
+        # Also try SSE endpoint path
+        try:
+            import httpx
+            response = httpx.get(
+                f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/sse",
+                timeout=2.0,
+                headers={"Accept": "text/event-stream"}
+            )
+            return response.status_code in [200, 204]
+        except Exception:
+            pass
+        return False
     except Exception:
         return False
 
@@ -339,3 +374,190 @@ EXAMPLE_QUERIES = [
 def format_research_query(template: str, ticker: str) -> str:
     """Format a research query template with a ticker."""
     return template.format(ticker=ticker.upper())
+
+
+async def query_dexter_mcp(question: str, timeout: int = 120) -> DexterResult:
+    """
+    Query Dexter via MCP server using JSON-RPC over SSE.
+
+    MCP SSE protocol requires maintaining the SSE connection open while
+    sending messages to the /messages endpoint.
+
+    Args:
+        question: The financial research question to ask
+        timeout: Maximum seconds to wait for response
+
+    Returns:
+        DexterResult with the research findings
+    """
+    import httpx
+    import uuid
+    import re
+
+    if not is_mcp_available():
+        return DexterResult(
+            success=False,
+            query=question,
+            answer="",
+            error=f"Dexter MCP server not reachable at {MCP_SERVER_HOST}:{MCP_SERVER_PORT}. Check firewall settings."
+        )
+
+    base_url = f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}"
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            # Step 1: Connect to SSE endpoint to get session
+            async with client.stream(
+                "GET",
+                f"{base_url}/sse",
+                headers={"Accept": "text/event-stream"}
+            ) as sse_response:
+                # Read the first event to get the session endpoint
+                session_id = None
+                messages_endpoint = None
+
+                async for line in sse_response.aiter_lines():
+                    if line.startswith("data:"):
+                        data = line[5:].strip()
+                        # Parse the endpoint URL to get session ID
+                        if "sessionId=" in data:
+                            match = re.search(r'sessionId=([a-f0-9-]+)', data)
+                            if match:
+                                session_id = match.group(1)
+                                messages_endpoint = data
+                                break
+
+                if not session_id:
+                    return DexterResult(
+                        success=False,
+                        query=question,
+                        answer="",
+                        error="Could not establish MCP session"
+                    )
+
+                # Step 2: First list available tools
+                list_request = {
+                    "jsonrpc": "2.0",
+                    "id": "list-1",
+                    "method": "tools/list",
+                    "params": {}
+                }
+
+                list_response = await client.post(
+                    f"{base_url}{messages_endpoint}",
+                    json=list_request,
+                    headers={"Content-Type": "application/json"}
+                )
+
+                available_tools = []
+                if list_response.status_code == 200:
+                    try:
+                        list_result = list_response.json()
+                        if "result" in list_result and "tools" in list_result["result"]:
+                            available_tools = [t["name"] for t in list_result["result"]["tools"]]
+                    except Exception:
+                        pass
+
+                # Step 3: Call the appropriate tool
+                # Try common tool names for research
+                tool_names_to_try = ["research", "query", "ask", "analyze"]
+                if available_tools:
+                    tool_names_to_try = available_tools + tool_names_to_try
+
+                for tool_name in tool_names_to_try:
+                    call_request = {
+                        "jsonrpc": "2.0",
+                        "id": str(uuid.uuid4()),
+                        "method": "tools/call",
+                        "params": {
+                            "name": tool_name,
+                            "arguments": {"query": question}
+                        }
+                    }
+
+                    try:
+                        call_response = await client.post(
+                            f"{base_url}{messages_endpoint}",
+                            json=call_request,
+                            headers={"Content-Type": "application/json"}
+                        )
+
+                        if call_response.status_code == 200:
+                            result = call_response.json()
+                            if "result" in result:
+                                content = result["result"]
+                                if isinstance(content, dict) and "content" in content:
+                                    content_list = content["content"]
+                                    if content_list and isinstance(content_list, list):
+                                        answer = content_list[0].get("text", str(content_list))
+                                    else:
+                                        answer = str(content)
+                                else:
+                                    answer = str(content)
+
+                                return DexterResult(
+                                    success=True,
+                                    query=question,
+                                    answer=answer,
+                                    raw_output=str(result)
+                                )
+                            elif "error" in result:
+                                # Tool not found, try next
+                                continue
+                    except Exception:
+                        continue
+
+                return DexterResult(
+                    success=False,
+                    query=question,
+                    answer="",
+                    error=f"MCP server has tools {available_tools} but none responded to research query"
+                )
+
+    except httpx.TimeoutException:
+        return DexterResult(
+            success=False,
+            query=question,
+            answer="",
+            error=f"MCP query timed out after {timeout} seconds"
+        )
+    except Exception as e:
+        return DexterResult(
+            success=False,
+            query=question,
+            answer="",
+            error=f"MCP query failed: {str(e)}"
+        )
+
+
+async def query_dexter_auto(question: str, timeout: int = 120) -> DexterResult:
+    """
+    Query Dexter using the best available method.
+
+    Tries MCP server first, then falls back to local installation.
+
+    Args:
+        question: The financial research question to ask
+        timeout: Maximum seconds to wait for response
+
+    Returns:
+        DexterResult with the research findings
+    """
+    # Try MCP first (faster, already running)
+    if is_mcp_available():
+        result = await query_dexter_mcp(question, timeout)
+        if result.success:
+            return result
+        # MCP failed, try local if available
+
+    # Fall back to local installation
+    if is_dexter_available():
+        return await query_dexter(question, timeout)
+
+    # Neither available
+    return DexterResult(
+        success=False,
+        query=question,
+        answer="",
+        error="Dexter is not available. Start the MCP server or install Dexter locally."
+    )

@@ -90,12 +90,30 @@ async def get_state():
     cash = state.get('cash', 0)
     total_value = portfolio_value + cash
 
-    # Income breakdown
+    # Calculate unrealized gains/losses from holdings
+    total_unrealized_gain = 0
+    total_unrealized_loss = 0
+    for h in holdings:
+        if h["unrealized_gain"] >= 0:
+            total_unrealized_gain += h["unrealized_gain"]
+        else:
+            total_unrealized_loss += abs(h["unrealized_gain"])
+
+    # Income breakdown with realized/unrealized separation
     ytd_income = state.get('ytd_income', 0)
     income = {
-        "trading_gains": state.get('ytd_trading_gains', 0),
+        # Realized (closed positions)
+        "realized_gains": state.get('ytd_realized_gains', 0),
+        "realized_losses": state.get('ytd_realized_losses', 0),
+        "trading_gains_net": state.get('ytd_trading_gains', 0),  # Net of gains - losses
+        # Unrealized (open positions)
+        "unrealized_gains": total_unrealized_gain,
+        "unrealized_losses": total_unrealized_loss,
+        "unrealized_net": total_unrealized_gain - total_unrealized_loss,
+        # Other income
         "option_income": state.get('ytd_option_income', 0),
         "dividends": state.get('ytd_dividends', 0),
+        # Totals
         "total": ytd_income,
         "goal": 30000,
         "progress_pct": round((ytd_income / 30000) * 100, 1) if ytd_income else 0

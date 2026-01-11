@@ -61,10 +61,13 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
         'holdings': {},  # ticker -> shares
         'cost_basis': {},  # ticker -> {total_cost, shares, avg_price}
         'active_options': [],
-        'ytd_income': 0.0,
-        'ytd_trading_gains': 0.0,
+        # Realized gains/losses (from closed positions - YTD)
+        'ytd_realized_gains': 0.0,  # Positive gains only
+        'ytd_realized_losses': 0.0,  # Negative gains (stored as positive for clarity)
+        'ytd_trading_gains': 0.0,  # Net (gains - losses) for backwards compat
         'ytd_option_income': 0.0,
         'ytd_dividends': 0.0,
+        'ytd_income': 0.0,  # Total net income
         'withdrawals': 0.0,
         'notes': [],
         'goals': [],
@@ -126,7 +129,22 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
             elif action == 'SELL':
                 # Remove from holdings
                 state['holdings'][ticker] = state['holdings'].get(ticker, 0) - shares
-                
+
+                # Calculate gain from cost basis if not provided
+                gain = data.get('gain_loss', 0)
+                if gain == 0 and shares > 0 and ticker in state['cost_basis']:
+                    cost_basis = state['cost_basis'][ticker]
+                    avg_cost = cost_basis.get('avg_price', 0)
+                    sell_price = data.get('price', 0)
+                    sale_total = data.get('total', 0)
+
+                    # Calculate gain: sale proceeds - cost of shares sold
+                    cost_of_shares_sold = shares * avg_cost
+                    if sale_total > 0:
+                        gain = sale_total - cost_of_shares_sold
+                    elif sell_price > 0:
+                        gain = (shares * sell_price) - cost_of_shares_sold
+
                 # Update cost basis (reduce proportionally)
                 if ticker in state['cost_basis'] and shares > 0:
                     cost_basis = state['cost_basis'][ticker]
@@ -135,11 +153,17 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
                     cost_basis['shares'] -= shares
                     if cost_basis['shares'] > 0:
                         cost_basis['avg_price'] = cost_basis['total_cost'] / cost_basis['shares']
-                
-                # Track gains
-                gain = data.get('gain_loss', 0)
-                state['ytd_trading_gains'] += gain
-                state['ytd_income'] += gain
+
+                # Track gains - only count YTD (current year)
+                event_year = event['timestamp'].year if hasattr(event['timestamp'], 'year') else pd.to_datetime(event['timestamp']).year
+                current_year = datetime.now().year
+                if event_year == current_year:
+                    if gain >= 0:
+                        state['ytd_realized_gains'] += gain
+                    else:
+                        state['ytd_realized_losses'] += abs(gain)
+                    state['ytd_trading_gains'] += gain  # Net for backwards compat
+                    state['ytd_income'] += gain
             
             # Update cash
             state['cash'] += event['cash_delta']
@@ -297,7 +321,8 @@ def print_state(state):
     
     print(f"\n🎯 ACTIVE OPTIONS: {len(state['active_options'])}")
     for opt in state['active_options']:
-        print(f"   {opt['ticker']} {opt['strategy']} ${opt['strike']:.2f} exp {opt['expiration']} - ${opt['premium']:,.2f}")
+        premium = opt.get('total_premium', opt.get('premium', 0))
+        print(f"   {opt['ticker']} {opt['strategy']} ${opt['strike']:.2f} exp {opt['expiration']} - ${premium:,.2f}")
     
     print(f"\n💸 INCOME (YTD):")
     print(f"   Total Income:     ${state['ytd_income']:>12,.2f}")

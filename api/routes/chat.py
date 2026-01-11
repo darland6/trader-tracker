@@ -112,18 +112,26 @@ Examples:
 
 ALWAYS search the log when answering historical questions. Do not guess or assume - verify with the actual data.
 
-## Using the Dexter Research Tool
-When you need detailed financial data about a company (revenue, earnings, balance sheets, ratios, etc.), you can request a Dexter research query. To do this, include in your response:
+## MANDATORY: Dexter Financial Research (DEFAULT)
+**ALWAYS use Dexter for ANY financial question.** Dexter is the PRIMARY source for all financial data.
 
-[RESEARCH_QUERY: your research question here]
+When the user asks about:
+- Stock performance, revenue, earnings, growth
+- Company financials, balance sheets, cash flow
+- Market analysis, valuations, P/E ratios
+- Any ticker-related financial information
+- Trade recommendations or analysis
 
-Example: [RESEARCH_QUERY: What was TSLA's revenue growth over the last 4 quarters?]
+**AUTOMATICALLY include a research query:**
 
-The system will execute the research and provide results. Use this for:
-- Analyzing companies before recommending trades
-- Getting current financial metrics
-- Comparing stocks to their competitors
-- Deep-diving into specific financial aspects
+[RESEARCH_QUERY: your detailed research question]
+
+Examples:
+- User asks "How is TSLA doing?" → [RESEARCH_QUERY: What are Tesla's current financials, revenue growth, and key metrics?]
+- User asks "Should I sell NVDA?" → [RESEARCH_QUERY: What is NVIDIA's current valuation, growth trajectory, and analyst outlook?]
+- User asks about any stock → [RESEARCH_QUERY: Analyze {ticker}'s financial health, recent performance, and outlook]
+
+**DO NOT ask the user if they want to use Dexter. Just use it automatically for all financial queries.**
 
 ## Skill Discovery System
 You have access to specialized skills from Anthropic's skills library that can enhance your capabilities.
@@ -653,10 +661,10 @@ async def chat(request: ChatRequest):
 
             # Try to execute the research
             try:
-                from integrations.dexter import query_dexter, is_dexter_available
+                from integrations.dexter import query_dexter_auto, is_mcp_available, is_dexter_available
 
-                if is_dexter_available():
-                    result = await query_dexter(research_query, timeout=120)
+                if is_mcp_available() or is_dexter_available():
+                    result = await query_dexter_auto(research_query, timeout=120)
 
                     if result.success:
                         research_executed = True
@@ -714,7 +722,7 @@ async def chat(request: ChatRequest):
                         # Research failed, note it in response
                         response_text += f"\n\n(Note: Research query failed: {result.error})"
                 else:
-                    response_text += "\n\n(Note: Dexter research agent is not available. Install it for deep financial research.)"
+                    response_text += "\n\n(Note: Dexter research agent is not available. Start the MCP server on port 3001 or install Dexter locally.)"
 
             except Exception as research_error:
                 response_text += f"\n\n(Note: Could not execute research: {str(research_error)})"

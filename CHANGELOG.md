@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - MCP Integration & Income Tracking (2026-01-11)
+
+#### Dexter MCP Integration (`integrations/dexter.py`)
+- **Auto-detect MCP Host** - Infers MCP host from LLM config when using local LLM
+- **SSE Transport Support** - Proper MCP JSON-RPC over Server-Sent Events
+- **Session Management** - Maintains SSE connection for MCP session
+- **Configurable via .env**:
+  - `DEXTER_MCP_HOST` - Override MCP server host (auto-detected from LLM URL)
+  - `DEXTER_MCP_PORT` - MCP server port (default: 3000)
+- **Mandatory Dexter** - Chat system automatically uses Dexter for all financial queries
+
+#### Realized/Unrealized Gains Tracking
+- **Realized Gains/Losses** - Calculated from cost basis when gain_loss is 0 in imported data
+- **YTD Filtering** - Only counts current year transactions for YTD totals
+- **Separated Tracking**:
+  - `ytd_realized_gains` - Positive gains from closed positions
+  - `ytd_realized_losses` - Losses from closed positions (stored positive)
+  - `ytd_trading_gains` - Net trading gains (gains - losses)
+- **Unrealized Tracking** - Calculated from open holdings vs cost basis
+
+#### Income API Enhancement (`api/routes/state.py`)
+- **Full Income Breakdown**:
+  - `realized_gains` - Gains from closed trading positions
+  - `realized_losses` - Losses from closed positions
+  - `trading_gains_net` - Net realized trading P&L
+  - `unrealized_gains` - Open position paper gains
+  - `unrealized_losses` - Open position paper losses
+  - `unrealized_net` - Net unrealized P&L
+  - `option_income` - Premium income from options
+  - `dividends` - Dividend income
+
+#### Chat Fullscreen Mode
+- Added fullscreen expansion button `[ ]` to chat panel
+- Press Escape to exit fullscreen
+- Auto-focus input when entering fullscreen
+
+#### MCP Network Expert Skill
+- Created `/Users/cory/.claude/skills/mcp-network-expert/skill.md`
+- Expert guidance for MCP server development
+- Network troubleshooting and firewall configuration
+- Cross-platform (Windows, macOS, Linux) support
+
 ### Added - Agentic Chat Package (2026-01-11)
 
 Comprehensive agent capabilities with skills discovery, insight generation, pattern learning, and unified memory:
