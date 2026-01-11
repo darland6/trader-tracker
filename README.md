@@ -39,8 +39,8 @@ data/event_log_enhanced.csv  <-- Source of truth (event log)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/portfolio-dashboard.git
-cd portfolio-dashboard
+git clone https://github.com/darland6/trader-tracker.git
+cd trader-tracker
 
 # Create virtual environment
 python -m venv venv
@@ -49,23 +49,41 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install Python dependencies
 pip install -r requirements.txt
 
-# (Optional) Install dashboard dependencies for development
+# Build the dashboard (required for 3D view)
 cd dashboard
 npm install
+npm run build
 cd ..
 ```
 
 ### Running the Application
 
 ```bash
-# Start the API server
-uvicorn api.main:app --reload --port 8000
+# Activate virtual environment (if not already)
+source venv/bin/activate
 
-# Access the application:
-# - Web UI: http://localhost:8000/manage
-# - 3D Dashboard: http://localhost:8000/dashboard (after building)
-# - API Docs: http://localhost:8000/docs
+# Start the server (localhost only)
+python -m uvicorn api.main:app --port 8000
+
+# OR start with network access (for mobile/other devices)
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
+
+**Access Points:**
+| URL | Description |
+|-----|-------------|
+| http://localhost:8000/ | Web Management UI |
+| http://localhost:8000/dashboard | 3D Solar System Dashboard |
+| http://localhost:8000/docs | API Documentation |
+
+### Mobile Access (PWA)
+
+The dashboard works as a Progressive Web App on mobile:
+
+1. Start server with network access: `--host 0.0.0.0`
+2. Find your IP: `ipconfig getifaddr en0` (Mac) or `hostname -I` (Linux)
+3. On phone, open: `http://<your-ip>:8000/dashboard`
+4. Add to home screen for app-like experience
 
 ### First-Time Setup
 
@@ -79,35 +97,55 @@ When you first run the application with no data:
 
 ### LLM Setup
 
-The AI assistant supports two providers:
+The AI assistant supports two providers. Model configuration lives in `llm_config.json` (single source of truth).
 
-**Claude (Anthropic)**
-```bash
-# Set your API key in .env
-ANTHROPIC_API_KEY=sk-ant-...
+**llm_config.json** (create or edit):
+```json
+{
+  "provider": "local",
+  "enabled": true,
+  "local_url": "http://192.168.50.10:1234/v1",
+  "local_model": "meta/llama-3.3-70b",
+  "claude_model": "claude-sonnet-4-20250514",
+  "timeout": 180,
+  "max_history_events": 10
+}
 ```
 
-**Local LLM (OpenAI-compatible)**
-```bash
-# Configure in .env or via the UI
-LOCAL_LLM_URL=http://192.168.50.10:1234/v1
-LOCAL_LLM_MODEL=nvidia/nemotron-3-nano
-```
+**Claude (Anthropic)**: Set `"provider": "claude"` and add API key to `.env`
+
+**Local LLM**: Set `"provider": "local"` with your OpenAI-compatible server URL
 
 ### Environment Variables
 
-Create a `.env` file:
+Create a `.env` file for secrets only:
 
 ```env
-# LLM Configuration
-LLM_PROVIDER=local  # or "claude"
+# API Keys (secrets only - model config in llm_config.json)
 ANTHROPIC_API_KEY=sk-ant-...
-LOCAL_LLM_URL=http://192.168.50.10:1234/v1
-LOCAL_LLM_MODEL=nvidia/nemotron-3-nano
 
-# Optional
-LLM_ENABLED=true
+# Local LLM URL (can also be in llm_config.json)
+LOCAL_LLM_URL=http://192.168.50.10:1234/v1
 ```
+
+### Token Usage Tracking
+
+LLM usage is automatically tracked in `data/llm_usage.json`:
+- View in dashboard: Click "TOKENS" in status bar
+- API endpoint: `GET /api/chat/usage`
+
+### AI Memory System
+
+The AI assistant remembers context across sessions:
+- Summaries saved to `data/llm_memory.json`
+- Auto-injects relevant memories into new chats
+- 1GB cap with automatic pruning
+
+### Dexter Research Integration
+
+For deep financial research, connect the Dexter MCP server:
+- Status shown in dashboard (DEXTER indicator)
+- Enables queries like "What was TSLA's revenue growth?"
 
 ## Usage
 
