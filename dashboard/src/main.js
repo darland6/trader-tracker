@@ -4372,7 +4372,7 @@ window.closeIncomeModal = closeIncomeModal;
 
 async function fetchTokenUsage() {
     try {
-        const response = await fetch(`${API_BASE}/api/chat/usage`);
+        const response = await fetch('/api/chat/usage');
         if (response.ok) {
             const data = await response.json();
             // Update today's token count in status bar
