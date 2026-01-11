@@ -1,119 +1,271 @@
-# Portfolio Dashboard
+# Portfolio Tracker
 
-A personal financial portfolio management system with event sourcing, 3D visualization, and AI-powered insights.
+A personal financial portfolio management system with event sourcing, 3D visualization, AI-powered insights, and intelligent agent capabilities.
 
 ## Features
 
-- **Event-Sourced Architecture**: All portfolio changes are stored as immutable events in a CSV log (the single source of truth)
-- **3D Solar System Visualization**: Interactive Three.js dashboard showing your portfolio as a planetary system
-- **AI-Powered Insights**: LLM integration (Claude or local) for trade analysis and portfolio chat
-- **History Playback**: Replay your portfolio evolution over time
-- **Options Tracking**: Track cash-secured puts and covered calls with profit/loss calculations
-- **Web Management UI**: Full-featured web interface for logging trades, options, and cash events
-
-## Architecture
-
-```
-data/event_log_enhanced.csv  <-- Source of truth (event log)
-        |
-        v
-   portfolio.db              <-- SQLite cache (synced from CSV on startup)
-        |
-        v
-    FastAPI Backend          <-- REST API + WebSocket
-        |
-    +---+---+
-    |       |
-    v       v
- Web UI   Three.js Dashboard
-```
+- **Event-Sourced Architecture**: All portfolio changes stored as immutable events in CSV (single source of truth)
+- **3D Solar System Visualization**: Interactive Three.js dashboard showing your portfolio as planets
+- **AI-Powered Chat**: LLM integration (Claude or local) with memory, patterns, and insights
+- **Skill Discovery**: Access 16+ skills from Anthropic's library for specialized tasks
+- **Pattern Learning**: Agent learns your trading style and preferences over time
+- **Alternate History**: "What-if" scenarios with timeline playback
+- **Options Tracking**: Track puts and calls with profit/loss calculations
+- **Web Management UI**: Full-featured interface for all operations
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.10+
-- Node.js 18+ (for dashboard development)
-
-### Installation
-
 ```bash
-# Clone the repository
+# Clone and setup
 git clone https://github.com/darland6/trader-tracker.git
 cd trader-tracker
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install Python dependencies
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# Build the dashboard (required for 3D view)
-cd dashboard
-npm install
-npm run build
-cd ..
+# Build dashboard
+cd dashboard && npm install && npm run build && cd ..
+
+# Start server
+python -m uvicorn api.main:app --reload --port 8000
+
+# Open http://localhost:8000/dashboard
 ```
 
-### Running the Application
+## Architecture Overview
 
-**Quick Start (HTTPS - recommended):**
-```bash
-./start.sh
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACES                         │
+├──────────────────┬─────────────────────┬───────────────────────┤
+│   Web UI (/manage)│  3D Dashboard       │   CLI (portfolio.py)  │
+│   - Trade entry   │  - Solar system     │   - Quick commands    │
+│   - Event history │  - AI chat panel    │   - Price updates     │
+│   - Settings      │  - Timeline playback│   - Status checks     │
+└────────┬─────────┴──────────┬──────────┴───────────┬───────────┘
+         │                    │                      │
+         ▼                    ▼                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     FastAPI Backend                             │
+│   /api/state     - Portfolio state reconstruction               │
+│   /api/events    - Event history and search                     │
+│   /api/chat      - AI chat with memory and skills               │
+│   /api/skills    - Skill discovery and management               │
+│   /api/alt-history - Alternate timeline scenarios               │
+│   /api/scanner   - Options opportunity scanner                  │
+└────────┬────────────────────┬───────────────────────────────────┘
+         │                    │
+         ▼                    ▼
+┌─────────────────┐  ┌────────────────────────────────────────────┐
+│  Event Log CSV  │  │           Agent Services                   │
+│  (Source of     │  │  ┌──────────────────────────────────────┐  │
+│   Truth)        │  │  │  Memory (memory.py)                  │  │
+│                 │  │  │  - Conversation summaries            │  │
+│  portfolio.db   │  │  │  - Learned patterns with confidence  │  │
+│  (SQLite Cache) │  │  │  - User preferences                  │  │
+└─────────────────┘  │  │  - Export/import knowledge           │  │
+                     │  └──────────────────────────────────────┘  │
+                     │  ┌──────────────────────────────────────┐  │
+                     │  │  Insights (insights.py)              │  │
+                     │  │  - Event analysis                    │  │
+                     │  │  - Batch insight generation          │  │
+                     │  │  - Topic reflection                  │  │
+                     │  └──────────────────────────────────────┘  │
+                     │  ┌──────────────────────────────────────┐  │
+                     │  │  Skills (skill_discovery.py)         │  │
+                     │  │  - Anthropic skills integration      │  │
+                     │  │  - Search and auto-install           │  │
+                     │  │  - Local skill support               │  │
+                     │  └──────────────────────────────────────┘  │
+                     └────────────────────────────────────────────┘
 ```
 
-This automatically:
-- Generates SSL certificates (first run)
-- Starts server with HTTPS on all interfaces
-- Shows your network URL for mobile access
+## Agent Chat System
 
-**Manual Start:**
-```bash
-source venv/bin/activate
+The chat system is the core of the AI capabilities. It supports multiple commands:
 
-# HTTPS (recommended for mobile/PWA)
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 \
-    --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
-
-# HTTP only
-./start.sh --http
+### Event Search
+```
+[SEARCH_LOG: ticker:TSLA type:TRADE]     # Find TSLA trades
+[SEARCH_LOG: date:2026-01]               # Find January events
+[SEARCH_LOG: income]                      # Free text search
 ```
 
-**Access Points:**
-| URL | Description |
-|-----|-------------|
-| https://localhost:8000/ | Web Management UI |
-| https://localhost:8000/dashboard | 3D Solar System Dashboard |
-| https://localhost:8000/docs | API Documentation |
+### Financial Research
+```
+[RESEARCH_QUERY: What was TSLA's revenue growth?]
+```
+Requires Dexter MCP server for deep financial analysis.
 
-> **Browser Warning:** Self-signed cert will show a warning. Click "Advanced" → "Proceed" to continue.
+### Skill Discovery
+```
+[SKILL_SEARCH: frontend design]          # Search for skills
+[SKILL_INSTALL: frontend-design]         # Install from Anthropic
+[SKILL_USE: frontend-design]             # Load skill instructions
+```
 
-### Mobile Access (PWA)
+Available skills include: frontend-design, webapp-testing, mcp-builder, pdf, docx, pptx, xlsx, canvas-design, theme-factory, and more.
 
-The dashboard works as a Progressive Web App on mobile:
+### Insight Generation
+```
+[ANALYZE_EVENT: 45]                      # Analyze event by ID
+[ANALYZE_EVENT: last TSLA trade]         # By description
+[GENERATE_INSIGHTS: TSLA]                # Batch for ticker
+[REFLECT: options strategy]              # Topic reflection
+```
 
-1. Run `./start.sh` (uses HTTPS automatically)
-2. Note the network URL shown (e.g., `https://192.168.50.127:8000`)
-3. On phone, open that URL
-4. Accept the certificate warning
-5. Add to home screen for app-like experience
+### Pattern Learning
+```
+[LEARN_PATTERN: strategy_preference] Only sells puts on stocks willing to own
+[LEARN_PATTERN: risk_tolerance] Prefers >10% OTM strikes
+[LEARN_PATTERN: ticker_affinity] Frequently trades tech stocks
+```
 
-### First-Time Setup
+Categories: trading_style, risk_tolerance, position_sizing, timing_preference, ticker_affinity, strategy_preference, goal_alignment
 
-When you first run the application with no data:
+## API Endpoints
 
-1. **Demo Mode**: Try with 6 months of sample trading data
-2. **Start Fresh**: Begin with an empty portfolio and starting cash
-3. **Import CSV**: Upload an existing event log to restore a portfolio
+### Core Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/state` | Current portfolio state |
+| GET | `/api/events` | Event history |
+| POST | `/api/trades` | Log a trade |
+| POST | `/api/options/open` | Open option position |
+| POST | `/api/cash/deposit` | Deposit cash |
+
+### Chat & AI Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/chat/` | Chat with AI assistant |
+| GET | `/api/chat/memory/unified` | Complete memory state |
+| GET | `/api/chat/memory/export` | Export agent knowledge |
+| POST | `/api/chat/memory/import` | Import knowledge |
+| GET | `/api/chat/patterns` | Learned patterns |
+| GET | `/api/chat/usage` | Token usage stats |
+
+### Skills Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/skills` | List all skills |
+| GET | `/api/skills/search?q=` | Search skills |
+| POST | `/api/skills/install/{id}` | Install skill |
+| GET | `/api/skills/{id}` | Get skill details |
+
+### Alternate History Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/alt-history` | List alternate histories |
+| POST | `/api/alt-history` | Create what-if scenario |
+| GET | `/api/alt-history/{id}/playback` | Timeline playback data |
+| POST | `/api/alt-history/what-if/never-bought?ticker=TSLA` | Quick what-if |
+
+## Data Flow
+
+### Event Creation Flow
+```
+User Action (Web UI / CLI / API)
+         │
+         ▼
+┌─────────────────────┐
+│  Validate Event     │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Generate AI        │ (optional)
+│  Insights           │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Append to CSV      │ ← Source of Truth
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Sync to SQLite     │ ← Query Cache
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Broadcast via      │
+│  WebSocket          │
+└─────────────────────┘
+```
+
+### State Reconstruction Flow
+```
+Request for Portfolio State
+         │
+         ▼
+┌─────────────────────┐
+│  Load starting_     │
+│  state.json         │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Replay all events  │ ← Chronologically
+│  from event log     │
+└──────────┬──────────┘
+           │
+           ├─── TRADE: Update holdings & cost basis
+           ├─── OPTION_*: Track active options
+           ├─── DEPOSIT/WITHDRAWAL: Update cash
+           ├─── DIVIDEND: Add to income
+           │
+           ▼
+┌─────────────────────┐
+│  Computed State     │
+│  - holdings{}       │
+│  - cash             │
+│  - cost_basis{}     │
+│  - active_options[] │
+│  - ytd_income       │
+└─────────────────────┘
+```
+
+### Chat Knowledge Flow
+```
+User Message
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Build Context                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │ Portfolio   │  │ Recent      │  │ Memory Context           │  │
+│  │ State       │  │ Events      │  │ - Past conversations     │  │
+│  │ (live)      │  │ (50)        │  │ - Learned patterns       │  │
+│  └─────────────┘  └─────────────┘  │ - User preferences       │  │
+│                                    └─────────────────────────┘  │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      LLM Call                                    │
+│  System Prompt + Context + User Message → Response              │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Process Commands                                │
+│  [SEARCH_LOG: ...]      → Search events, add results            │
+│  [RESEARCH_QUERY: ...]  → Call Dexter, add results              │
+│  [SKILL_SEARCH: ...]    → Search skills, show options           │
+│  [SKILL_INSTALL: ...]   → Install skill from Anthropic          │
+│  [SKILL_USE: ...]       → Load skill instructions               │
+│  [ANALYZE_EVENT: ...]   → Generate insight context              │
+│  [LEARN_PATTERN: ...]   → Save to memory with confidence        │
+│  [MEMORY_SUMMARY]       → Parse and save to memory              │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+                         ▼
+                   Return Response
+```
 
 ## Configuration
 
-### LLM Setup
-
-The AI assistant supports two providers. Model configuration lives in `llm_config.json` (single source of truth).
-
-**llm_config.json** (create or edit):
+### LLM Configuration (`llm_config.json`)
 ```json
 {
   "provider": "local",
@@ -126,208 +278,108 @@ The AI assistant supports two providers. Model configuration lives in `llm_confi
 }
 ```
 
-**Claude (Anthropic)**: Set `"provider": "claude"` and add API key to `.env`
-
-**Local LLM**: Set `"provider": "local"` with your OpenAI-compatible server URL
-
-### Environment Variables
-
-Create a `.env` file for secrets only:
-
+### Environment Variables (`.env`)
 ```env
-# API Keys (secrets only - model config in llm_config.json)
 ANTHROPIC_API_KEY=sk-ant-...
-
-# Local LLM URL (can also be in llm_config.json)
 LOCAL_LLM_URL=http://192.168.50.10:1234/v1
 ```
 
-### Token Usage Tracking
-
-LLM usage is automatically tracked in `data/llm_usage.json`:
-- View in dashboard: Click "TOKENS" in status bar
-- API endpoint: `GET /api/chat/usage`
-
-### AI Memory System
-
-The AI assistant remembers context across sessions:
-- Summaries saved to `data/llm_memory.json`
-- Auto-injects relevant memories into new chats
-- 1GB cap with automatic pruning
-
-### Dexter Research Integration
-
-For deep financial research, connect the Dexter MCP server:
-- Status shown in dashboard (DEXTER indicator)
-- Enables queries like "What was TSLA's revenue growth?"
-
-## Usage
-
-### CLI Commands
-
-```bash
-# Log a trade
-python portfolio.py trade buy TSLA 10 --price 250 --reason "Bullish on AI"
-
-# Log an option
-python portfolio.py option TSLA 240 2024-02-16 --premium 500 --strategy "Secured Put"
-
-# Log cash movement
-python portfolio.py deposit 5000 --reason "Monthly contribution"
-
-# View portfolio state
-python portfolio.py status
-
-# Update prices
-python portfolio.py prices
-```
-
-### Web UI
-
-Navigate to `http://localhost:8000/manage` to:
-- View current portfolio state
-- Log trades, options, and cash events
-- Browse event history
-- Manage backups
-
-### 3D Dashboard
-
-Navigate to `http://localhost:8000/dashboard` for:
-- Interactive solar system visualization of your portfolio
-- Chat with AI assistant about your portfolio
-- History playback mode
-- Real-time price updates
-
-## 3D Visualization Legend
-
-| Element | Meaning |
-|---------|---------|
-| **Sun** | Total portfolio value |
-| **Planet Distance** | Portfolio allocation (closer = larger position) |
-| **Planet Size** | Market value of the position |
-| **Green Glow** | Position in profit |
-| **Red Glow** | Position at a loss |
-| **Rings** | High momentum (+/- 20% gain/loss) |
-| **Particles** | Momentum intensity |
-
-## Data Format
-
-The event log CSV is the source of truth with these columns:
-
-```csv
-event_id,timestamp,event_type,data_json,reason_json,notes,tags_json,affects_cash,cash_delta
-```
-
-Event types:
-- `TRADE` - Buy/sell stock transactions
-- `OPTION_OPEN` - Open option position (sell put/call)
-- `OPTION_CLOSE` - Close option early
-- `OPTION_EXPIRE` - Option expired worthless
-- `OPTION_ASSIGN` - Option assignment
-- `DEPOSIT` - Cash deposit
-- `WITHDRAWAL` - Cash withdrawal
-- `DIVIDEND` - Dividend received
-- `PRICE_UPDATE` - Price snapshot
-- `NOTE` - General notes
-
-## Development
-
-### Dashboard Development
-
-```bash
-cd dashboard
-npm run dev  # Starts Vite dev server on :5173
-
-# Build for production
-npm run build  # Output to dashboard/dist/
-```
-
-### API Development
-
-```bash
-uvicorn api.main:app --reload --port 8000
-```
-
-### Project Structure
+## Project Structure
 
 ```
 trader-tracker/
-├── api/                    # FastAPI backend
-│   ├── routes/            # API endpoints
-│   ├── database.py        # SQLite operations
-│   └── main.py            # App entry point
-├── cli/                    # CLI tools
-│   └── events.py          # Event creation
-├── dashboard/              # Three.js frontend
-│   ├── src/main.js        # 3D visualization
-│   └── index.html         # Dashboard UI
-├── data/                   # Data files
-│   ├── event_log_enhanced.csv  # Source of truth
-│   ├── starting_state.json     # Initial portfolio state
-│   └── *.json             # Config and context files
-├── docs/                   # Documentation
-│   └── *.md               # Architecture and system docs
-├── scripts/                # Utility scripts
-│   ├── prepare_for_agent.py
-│   └── update_prices_*.py
-├── assets/                 # Images, PDFs, Excel files
-├── integrations/           # External tool integrations
-│   └── dexter.py          # Dexter financial research agent
-├── llm/                    # LLM integration
-│   ├── client.py          # LLM client
-│   ├── config.py          # Configuration
-│   └── prompts.py         # System prompts
-├── skills/                 # Claude Code skills
-├── tests/                  # Test suite
-│   └── test_e2e_workflow.py
-├── web/                    # Web management UI
-│   └── templates/         # Jinja2 templates
-├── examples/               # Example files
-│   └── event_log_template.csv
-├── portfolio.py           # CLI entry point
-├── reconstruct_state.py   # State reconstruction module
-└── requirements.txt       # Python dependencies
+├── api/
+│   ├── routes/
+│   │   ├── chat.py           # AI chat with all commands
+│   │   ├── alt_history.py    # Alternate timeline scenarios
+│   │   ├── scanner.py        # Options opportunity scanner
+│   │   └── ...               # Other route modules
+│   ├── services/
+│   │   ├── memory.py         # Unified agent memory
+│   │   ├── insights.py       # Insight generation
+│   │   ├── skill_discovery.py# Anthropic skills integration
+│   │   ├── historical_prices.py # Timeline playback
+│   │   └── ...
+│   └── main.py
+├── dashboard/
+│   ├── src/main.js           # 3D visualization + chat UI
+│   └── index.html            # Dashboard entry point
+├── data/
+│   ├── event_log_enhanced.csv # Source of truth
+│   ├── llm_memory.json       # Agent memory
+│   └── llm_usage.json        # Token tracking
+├── docs/
+│   ├── AGENTIC_CHAT_DESIGN.md # Agent architecture design
+│   └── ...
+├── llm/
+│   ├── client.py             # LLM API client
+│   ├── config.py             # Configuration loader
+│   └── prompts.py            # System prompts
+├── tests/
+│   └── test_e2e_workflow.py  # 43 e2e tests
+├── reconstruct_state.py      # State reconstruction
+├── portfolio.py              # CLI entry point
+├── CHANGELOG.md              # Change history
+├── CLAUDE.md                 # Claude Code instructions
+└── requirements.txt
 ```
 
-### Running Tests
+## Testing
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Run all tests (43 tests)
+./venv/bin/python -m pytest tests/ -v
 
-# Run all tests
-python -m pytest tests/ -v
-
-# Run with coverage (requires pytest-cov)
-python -m pytest tests/ --cov=. --cov-report=html
+# Tests cover:
+# - Event log loading and parsing
+# - State reconstruction accuracy
+# - Agent context preparation
+# - Options scanner functionality
+# - Session tracking
 ```
 
-## Backup & Restore
+## Memory System
 
-The event log CSV is portable:
+The agent memory persists across sessions:
 
+### Memory Components
+- **Conversation Summaries**: What was discussed, intent, key facts
+- **Learned Patterns**: Trading behaviors with confidence scores
+- **User Preferences**: Explicit settings
+- **Key Insights**: High-value observations
+
+### Memory File (`data/llm_memory.json`)
+```json
+{
+  "conversation_memories": [
+    {"timestamp": "...", "summary": "...", "intent": "...", "key_facts": []}
+  ],
+  "learned_patterns": [
+    {"pattern": "...", "category": "...", "confidence": 0.8, "evidence_count": 3}
+  ],
+  "user_preferences": {},
+  "project_context": {"key_insights": []}
+}
+```
+
+### Export/Import Knowledge
 ```bash
-# Backup
-cp data/event_log_enhanced.csv ~/backups/portfolio_$(date +%Y%m%d).csv
+# Export for backup or transfer
+curl http://localhost:8000/api/chat/memory/export > agent_knowledge.json
 
-# Restore (via UI or copy)
-cp ~/backups/portfolio_20240115.csv data/event_log_enhanced.csv
-# Restart the server to sync
+# Import to another instance
+curl -X POST http://localhost:8000/api/chat/memory/import \
+  -H "Content-Type: application/json" \
+  -d @agent_knowledge.json
 ```
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) file.
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
 ## Acknowledgments
 
 - Three.js for 3D visualization
 - FastAPI for the backend
-- Anthropic Claude for AI insights
+- Anthropic Claude for AI capabilities
+- Anthropic Skills library for specialized agents
