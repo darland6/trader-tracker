@@ -231,15 +231,17 @@ def delete_history(history_id: str) -> bool:
     return True
 
 
-def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
+def compare_histories(history_id_1: str, history_id_2: str = "reality", include_projections: bool = True) -> dict:
     """Compare two histories (or one against reality).
 
     Args:
         history_id_1: First history ID
         history_id_2: Second history ID or "reality" for the real event log
+        include_projections: Whether to generate and compare future projections
 
     Returns:
-        Comparison data including portfolio values, holdings differences, etc.
+        Comparison data including portfolio values, holdings differences,
+        historical divergence points, and future projections.
     """
     import sys
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -249,19 +251,23 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
     if history_id_1 == "reality":
         events1 = load_event_log(str(DATA_DIR / "event_log_enhanced.csv"))
         name1 = "Reality"
+        desc1 = "Actual portfolio history"
     else:
         events1 = get_history_events(history_id_1)
         h1 = get_history(history_id_1)
         name1 = h1["name"] if h1 else history_id_1
+        desc1 = h1.get("description", "") if h1 else ""
 
     # Load second history
     if history_id_2 == "reality":
         events2 = load_event_log(str(DATA_DIR / "event_log_enhanced.csv"))
         name2 = "Reality"
+        desc2 = "Actual portfolio history"
     else:
         events2 = get_history_events(history_id_2)
         h2 = get_history(history_id_2)
         name2 = h2["name"] if h2 else history_id_2
+        desc2 = h2.get("description", "") if h2 else ""
 
     if events1 is None or events2 is None:
         return {"error": "History not found"}
@@ -270,7 +276,7 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
     state1 = reconstruct_state(events1)
     state2 = reconstruct_state(events2)
 
-    # Calculate differences
+    # Calculate current holdings differences
     holdings_diff = {}
     all_tickers = set(state1.get('holdings', {}).keys()) | set(state2.get('holdings', {}).keys())
 
@@ -278,6 +284,8 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
         shares1 = state1.get('holdings', {}).get(ticker, 0)
         shares2 = state2.get('holdings', {}).get(ticker, 0)
         price = state1.get('latest_prices', {}).get(ticker, 0)
+        if price == 0:
+            price = state2.get('latest_prices', {}).get(ticker, 0)
 
         if shares1 > 0.01 or shares2 > 0.01:
             holdings_diff[ticker] = {
@@ -289,10 +297,17 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
                 "value_diff": (shares2 - shares1) * price
             }
 
-    return {
+    # Find historical divergence points
+    divergence_points = find_divergence_points(events1, events2)
+
+    # Build historical timeline showing how values diverged over time
+    historical_timeline = build_historical_timeline(events1, events2, name1, name2)
+
+    result = {
         "history_1": {
             "id": history_id_1,
             "name": name1,
+            "description": desc1,
             "total_value": state1.get('total_value', 0),
             "cash": state1.get('cash', 0),
             "portfolio_value": state1.get('portfolio_value', 0),
@@ -302,6 +317,7 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
         "history_2": {
             "id": history_id_2,
             "name": name2,
+            "description": desc2,
             "total_value": state2.get('total_value', 0),
             "cash": state2.get('cash', 0),
             "portfolio_value": state2.get('portfolio_value', 0),
@@ -314,5 +330,228 @@ def compare_histories(history_id_1: str, history_id_2: str = "reality") -> dict:
             "portfolio_diff": state2.get('portfolio_value', 0) - state1.get('portfolio_value', 0),
             "income_diff": state2.get('ytd_income', 0) - state1.get('ytd_income', 0),
             "holdings_diff": holdings_diff
-        }
+        },
+        "divergence": {
+            "points": divergence_points,
+            "first_divergence": divergence_points[0] if divergence_points else None,
+            "total_divergent_events": len(divergence_points)
+        },
+        "historical_timeline": historical_timeline
     }
+
+    # Generate and compare future projections
+    if include_projections:
+        from api.services.future_projection import generate_projection
+
+        # Generate projections for both histories (use statistical for speed)
+        proj1 = generate_projection(history_id_1, years=3, use_llm=False)
+        proj2 = generate_projection(history_id_2, years=3, use_llm=False)
+
+        if "error" not in proj1 and "error" not in proj2:
+            # Extract key projection data
+            frames1 = proj1.get("frames", [])
+            frames2 = proj2.get("frames", [])
+
+            # Build projection comparison timeline
+            projection_timeline = []
+            for i in range(min(len(frames1), len(frames2))):
+                f1 = frames1[i]
+                f2 = frames2[i]
+                projection_timeline.append({
+                    "date": f1.get("date"),
+                    "month": f1.get("month"),
+                    "year": f1.get("year"),
+                    "value_1": f1.get("total_value", 0),
+                    "value_2": f2.get("total_value", 0),
+                    "diff": f2.get("total_value", 0) - f1.get("total_value", 0),
+                    "diff_pct": ((f2.get("total_value", 0) - f1.get("total_value", 0)) /
+                                f1.get("total_value", 1) * 100) if f1.get("total_value", 0) > 0 else 0
+                })
+
+            # Get end state projections
+            end_state_1 = frames1[-1] if frames1 else {}
+            end_state_2 = frames2[-1] if frames2 else {}
+
+            result["projections"] = {
+                "years": 3,
+                "history_1_projection": {
+                    "end_date": end_state_1.get("date"),
+                    "projected_value": end_state_1.get("total_value", 0),
+                    "growth_from_current": ((end_state_1.get("total_value", 0) - state1.get('total_value', 0)) /
+                                           state1.get('total_value', 1) * 100) if state1.get('total_value', 0) > 0 else 0
+                },
+                "history_2_projection": {
+                    "end_date": end_state_2.get("date"),
+                    "projected_value": end_state_2.get("total_value", 0),
+                    "growth_from_current": ((end_state_2.get("total_value", 0) - state2.get('total_value', 0)) /
+                                           state2.get('total_value', 1) * 100) if state2.get('total_value', 0) > 0 else 0
+                },
+                "projected_diff": end_state_2.get("total_value", 0) - end_state_1.get("total_value", 0),
+                "timeline": projection_timeline
+            }
+
+    return result
+
+
+def find_divergence_points(events1: pd.DataFrame, events2: pd.DataFrame) -> list:
+    """Find events that differ between two histories.
+
+    Returns list of divergence points showing what's different.
+    """
+    divergences = []
+
+    # Get event IDs from both
+    ids1 = set(events1['event_id'].tolist()) if 'event_id' in events1.columns else set()
+    ids2 = set(events2['event_id'].tolist()) if 'event_id' in events2.columns else set()
+
+    # Events only in history 1
+    only_in_1 = ids1 - ids2
+    # Events only in history 2
+    only_in_2 = ids2 - ids1
+
+    # Process events only in history 1 (removed in history 2)
+    for event_id in sorted(only_in_1):
+        event_row = events1[events1['event_id'] == event_id]
+        if len(event_row) > 0:
+            row = event_row.iloc[0]
+            data = row.get('data', {}) if 'data' in row else {}
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except:
+                    data = {}
+
+            divergences.append({
+                "event_id": event_id,
+                "timestamp": str(row.get('timestamp', '')),
+                "type": row.get('event_type', ''),
+                "in_history": "history_1_only",
+                "description": f"Event #{event_id}: {row.get('event_type', '')} - {data.get('ticker', data.get('action', ''))}",
+                "data": data
+            })
+
+    # Process events only in history 2 (added in history 2)
+    for event_id in sorted(only_in_2):
+        event_row = events2[events2['event_id'] == event_id]
+        if len(event_row) > 0:
+            row = event_row.iloc[0]
+            data = row.get('data', {}) if 'data' in row else {}
+            if isinstance(data, str):
+                try:
+                    data = json.loads(data)
+                except:
+                    data = {}
+
+            divergences.append({
+                "event_id": event_id,
+                "timestamp": str(row.get('timestamp', '')),
+                "type": row.get('event_type', ''),
+                "in_history": "history_2_only",
+                "description": f"Event #{event_id}: {row.get('event_type', '')} - {data.get('ticker', data.get('action', ''))}",
+                "data": data
+            })
+
+    # Check for events with same ID but different data
+    common_ids = ids1 & ids2
+    for event_id in sorted(common_ids):
+        row1 = events1[events1['event_id'] == event_id].iloc[0]
+        row2 = events2[events2['event_id'] == event_id].iloc[0]
+
+        # Compare data_json if it exists
+        data1 = row1.get('data', {})
+        data2 = row2.get('data', {})
+
+        if isinstance(data1, str):
+            try:
+                data1 = json.loads(data1)
+            except:
+                data1 = {}
+        if isinstance(data2, str):
+            try:
+                data2 = json.loads(data2)
+            except:
+                data2 = {}
+
+        # Check for differences
+        if data1 != data2:
+            divergences.append({
+                "event_id": event_id,
+                "timestamp": str(row1.get('timestamp', '')),
+                "type": row1.get('event_type', ''),
+                "in_history": "modified",
+                "description": f"Event #{event_id} modified: {row1.get('event_type', '')}",
+                "data_1": data1,
+                "data_2": data2,
+                "changes": {k: {"from": data1.get(k), "to": data2.get(k)}
+                           for k in set(data1.keys()) | set(data2.keys())
+                           if data1.get(k) != data2.get(k)}
+            })
+
+    # Sort by timestamp
+    divergences.sort(key=lambda x: x.get('timestamp', ''))
+
+    return divergences
+
+
+def build_historical_timeline(events1: pd.DataFrame, events2: pd.DataFrame,
+                             name1: str, name2: str) -> list:
+    """Build a timeline showing how portfolio values evolved differently.
+
+    Reconstructs state at key points to show divergence over time.
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from reconstruct_state import reconstruct_state
+
+    timeline = []
+
+    # Get all unique dates from both event logs
+    dates1 = pd.to_datetime(events1['timestamp']).dt.date.unique()
+    dates2 = pd.to_datetime(events2['timestamp']).dt.date.unique()
+    all_dates = sorted(set(dates1) | set(dates2))
+
+    # Sample dates (monthly or every N events to avoid too many points)
+    if len(all_dates) > 24:
+        # Sample monthly
+        sampled_dates = all_dates[::max(1, len(all_dates) // 24)]
+        # Always include first and last
+        if all_dates[0] not in sampled_dates:
+            sampled_dates = [all_dates[0]] + list(sampled_dates)
+        if all_dates[-1] not in sampled_dates:
+            sampled_dates = list(sampled_dates) + [all_dates[-1]]
+    else:
+        sampled_dates = all_dates
+
+    for date in sampled_dates:
+        # Filter events up to this date
+        mask1 = pd.to_datetime(events1['timestamp']).dt.date <= date
+        mask2 = pd.to_datetime(events2['timestamp']).dt.date <= date
+
+        events1_to_date = events1[mask1]
+        events2_to_date = events2[mask2]
+
+        if len(events1_to_date) == 0 and len(events2_to_date) == 0:
+            continue
+
+        # Reconstruct states
+        state1 = reconstruct_state(events1_to_date) if len(events1_to_date) > 0 else {'total_value': 0, 'cash': 0}
+        state2 = reconstruct_state(events2_to_date) if len(events2_to_date) > 0 else {'total_value': 0, 'cash': 0}
+
+        timeline.append({
+            "date": str(date),
+            "history_1": {
+                "name": name1,
+                "total_value": state1.get('total_value', 0),
+                "cash": state1.get('cash', 0),
+                "event_count": len(events1_to_date)
+            },
+            "history_2": {
+                "name": name2,
+                "total_value": state2.get('total_value', 0),
+                "cash": state2.get('cash', 0),
+                "event_count": len(events2_to_date)
+            },
+            "diff": state2.get('total_value', 0) - state1.get('total_value', 0)
+        })
+
+    return timeline

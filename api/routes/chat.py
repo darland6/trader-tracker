@@ -17,8 +17,10 @@ from api.services.memory import (
     parse_and_save_memory_summary,
     get_memory_stats
 )
+from api.services.usage import track_usage, get_usage_summary, get_daily_usage
 import json
 import re
+import time
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -414,6 +416,7 @@ async def chat(request: ChatRequest):
 
         # Call LLM
         client = LLMClient(config)
+        start_time = time.time()
 
         if config.provider == "claude":
             import anthropic
@@ -429,6 +432,16 @@ async def chat(request: ChatRequest):
             response_text = response.content[0].text
             model_used = config.claude_model
 
+            # Track Claude usage
+            duration_ms = int((time.time() - start_time) * 1000)
+            track_usage(
+                model=model_used,
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+                endpoint="chat",
+                duration_ms=duration_ms
+            )
+
         else:  # local
             import httpx
 
@@ -443,13 +456,24 @@ async def chat(request: ChatRequest):
                     "max_tokens": 1024,
                     "temperature": 0.7
                 },
-                timeout=60.0
+                timeout=config.timeout
             )
             api_response.raise_for_status()
             result = api_response.json()
 
             response_text = result["choices"][0]["message"]["content"]
             model_used = config.local_model
+
+            # Track local LLM usage
+            duration_ms = int((time.time() - start_time) * 1000)
+            usage_data = result.get("usage", {})
+            track_usage(
+                model=model_used,
+                prompt_tokens=usage_data.get("prompt_tokens", 0),
+                completion_tokens=usage_data.get("completion_tokens", 0),
+                endpoint="chat",
+                duration_ms=duration_ms
+            )
 
         # Check if the response contains a search log query
         search_executed = False
@@ -471,6 +495,7 @@ async def chat(request: ChatRequest):
             messages.append({"role": "user", "content": f"Here are the event log search results you requested:{search_context}\n\nPlease analyze these results and provide your insights."})
 
             # Get follow-up response with search results
+            follow_start = time.time()
             if config.provider == "claude":
                 follow_up = api_client.messages.create(
                     model=config.claude_model,
@@ -479,6 +504,14 @@ async def chat(request: ChatRequest):
                     messages=messages
                 )
                 response_text = response_text + search_context + "\n\n" + follow_up.content[0].text
+                # Track follow-up usage
+                track_usage(
+                    model=config.claude_model,
+                    prompt_tokens=follow_up.usage.input_tokens,
+                    completion_tokens=follow_up.usage.output_tokens,
+                    endpoint="chat-search",
+                    duration_ms=int((time.time() - follow_start) * 1000)
+                )
             else:
                 local_messages = [{"role": "system", "content": system_prompt}] + messages
                 follow_up_response = httpx.post(
@@ -489,11 +522,20 @@ async def chat(request: ChatRequest):
                         "max_tokens": 1024,
                         "temperature": 0.7
                     },
-                    timeout=60.0
+                    timeout=config.timeout
                 )
                 follow_up_response.raise_for_status()
                 follow_up_result = follow_up_response.json()
                 response_text = response_text + search_context + "\n\n" + follow_up_result["choices"][0]["message"]["content"]
+                # Track follow-up usage
+                usage_data = follow_up_result.get("usage", {})
+                track_usage(
+                    model=config.local_model,
+                    prompt_tokens=usage_data.get("prompt_tokens", 0),
+                    completion_tokens=usage_data.get("completion_tokens", 0),
+                    endpoint="chat-search",
+                    duration_ms=int((time.time() - follow_start) * 1000)
+                )
 
         # Check if the response contains a research query
         research_executed = False
@@ -521,6 +563,7 @@ async def chat(request: ChatRequest):
                         messages.append({"role": "user", "content": f"Here are the research results you requested:{research_context}\n\nPlease continue your analysis with this data."})
 
                         # Get follow-up response
+                        research_start = time.time()
                         if config.provider == "claude":
                             follow_up = api_client.messages.create(
                                 model=config.claude_model,
@@ -529,6 +572,14 @@ async def chat(request: ChatRequest):
                                 messages=messages
                             )
                             response_text = response_text + research_context + "\n\n" + follow_up.content[0].text
+                            # Track research follow-up usage
+                            track_usage(
+                                model=config.claude_model,
+                                prompt_tokens=follow_up.usage.input_tokens,
+                                completion_tokens=follow_up.usage.output_tokens,
+                                endpoint="chat-research",
+                                duration_ms=int((time.time() - research_start) * 1000)
+                            )
                         else:
                             local_messages = [{"role": "system", "content": system_prompt}] + messages
                             follow_up_response = httpx.post(
@@ -539,11 +590,20 @@ async def chat(request: ChatRequest):
                                     "max_tokens": 1024,
                                     "temperature": 0.7
                                 },
-                                timeout=60.0
+                                timeout=config.timeout
                             )
                             follow_up_response.raise_for_status()
                             follow_up_result = follow_up_response.json()
                             response_text = response_text + research_context + "\n\n" + follow_up_result["choices"][0]["message"]["content"]
+                            # Track research follow-up usage
+                            usage_data = follow_up_result.get("usage", {})
+                            track_usage(
+                                model=config.local_model,
+                                prompt_tokens=usage_data.get("prompt_tokens", 0),
+                                completion_tokens=usage_data.get("completion_tokens", 0),
+                                endpoint="chat-research",
+                                duration_ms=int((time.time() - research_start) * 1000)
+                            )
                     else:
                         # Research failed, note it in response
                         response_text += f"\n\n(Note: Research query failed: {result.error})"
@@ -563,12 +623,16 @@ async def chat(request: ChatRequest):
         if '</think>' in user_visible_response:
             user_visible_response = user_visible_response.split('</think>')[-1].strip()
 
-        # Look for memory summary (handles both [MEMORY_SUMMARY]: and [MEMORY_SUMMARY: formats)
-        memory_match = re.search(r'\[MEMORY_SUMMARY[:\]]\s*(\{[\s\S]*?\})\]?', user_visible_response)
+        # Look for memory summary - handles various formats from different models
+        # Pattern matches [MEMORY_SUMMARY]: {json} or [MEMORY_SUMMARY: {json}] etc.
+        memory_match = re.search(r'\[MEMORY_SUMMARY\][:\s]*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', user_visible_response, re.DOTALL)
+        if not memory_match:
+            # Try alternate format with colon inside brackets
+            memory_match = re.search(r'\[MEMORY_SUMMARY:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*\]?', user_visible_response, re.DOTALL)
         if memory_match:
             memory_json = memory_match.group(1)
             # Remove memory summary from user-visible response
-            user_visible_response = re.sub(r'\s*\[MEMORY_SUMMARY[:\]]?\s*\{[\s\S]*?\}\]?', '', user_visible_response).strip()
+            user_visible_response = re.sub(r'\s*\[MEMORY_SUMMARY\]?[:\s]*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\]?', '', user_visible_response, flags=re.DOTALL).strip()
             # Save to persistent memory
             try:
                 parse_and_save_memory_summary(request.message, user_visible_response, memory_json)
@@ -603,3 +667,15 @@ async def get_memory_context_preview():
         "context": context,
         "stats": get_memory_stats()
     }
+
+
+@router.get("/usage")
+async def get_token_usage():
+    """Get token usage summary."""
+    return get_usage_summary()
+
+
+@router.get("/usage/daily")
+async def get_daily_token_usage(days: int = 30):
+    """Get daily token usage for the last N days."""
+    return get_daily_usage(days)

@@ -1,0 +1,18 @@
+{
+  "name": "Portfolio Command Deck",
+  "short_name": "Portfolio",
+  "description": "3D portfolio visualization and trading dashboard",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#050510",
+  "theme_color": "#00ffff",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

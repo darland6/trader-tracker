@@ -1,0 +1,56 @@
+{
+  "created": "2026-01-10T19:51:55.073682",
+  "total": {
+    "prompt_tokens": 2810,
+    "completion_tokens": 190,
+    "total_tokens": 3000,
+    "requests": 2
+  },
+  "by_day": {
+    "2026-01-10": {
+      "prompt_tokens": 2810,
+      "completion_tokens": 190,
+      "total_tokens": 3000,
+      "requests": 2
+    }
+  },
+  "by_model": {
+    "meta/llama-3.3-70b": {
+      "prompt_tokens": 2810,
+      "completion_tokens": 190,
+      "total_tokens": 3000,
+      "requests": 2
+    }
+  },
+  "by_endpoint": {
+    "chat": {
+      "prompt_tokens": 2810,
+      "completion_tokens": 190,
+      "total_tokens": 3000,
+      "requests": 2
+    }
+  },
+  "recent_calls": [
+    {
+      "timestamp": "2026-01-10T19:52:45.989338",
+      "model": "meta/llama-3.3-70b",
+      "endpoint": "chat",
+      "prompt_tokens": 1403,
+      "completion_tokens": 69,
+      "total_tokens": 1472,
+      "duration_ms": 45276,
+      "tokens_per_sec": 1.5
+    },
+    {
+      "timestamp": "2026-01-10T19:55:09.955215",
+      "model": "meta/llama-3.3-70b",
+      "endpoint": "chat",
+      "prompt_tokens": 1407,
+      "completion_tokens": 121,
+      "total_tokens": 1528,
+      "duration_ms": 65541,
+      "tokens_per_sec": 1.8
+    }
+  ],
+  "last_updated": "2026-01-10T19:55:09.955292"
+}

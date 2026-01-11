@@ -4368,6 +4368,158 @@ function closeIncomeModal() {
 }
 window.closeIncomeModal = closeIncomeModal;
 
+// ==================== TOKEN USAGE TRACKING ====================
+
+async function fetchTokenUsage() {
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/usage`);
+        if (response.ok) {
+            const data = await response.json();
+            // Update today's token count in status bar
+            const todayTokens = data.today?.total_tokens || 0;
+            const todayEl = document.getElementById('today-tokens');
+            if (todayEl) {
+                todayEl.textContent = formatNumber(todayTokens);
+            }
+            return data;
+        }
+    } catch (error) {
+        console.error('Failed to fetch token usage:', error);
+    }
+    return null;
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num.toString();
+}
+
+async function showUsagePanel() {
+    const modal = document.getElementById('usage-modal');
+    const content = document.getElementById('usage-content');
+    modal.style.display = 'flex';
+    content.innerHTML = '<div class="usage-loading">Loading usage data...</div>';
+
+    try {
+        const data = await fetchTokenUsage();
+        if (!data) {
+            content.innerHTML = '<p style="color: #ff6b6b;">Failed to load usage data</p>';
+            return;
+        }
+
+        const total = data.total || {};
+        const today = data.today || {};
+        const byModel = data.by_model || {};
+        const byEndpoint = data.by_endpoint || {};
+        const recentCalls = data.recent_calls || [];
+
+        let html = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div style="background: rgba(0, 136, 255, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 136, 255, 0.3);">
+                    <h3 style="color: #00ffff; margin: 0 0 10px 0; font-size: 14px;">TODAY</h3>
+                    <div style="font-size: 24px; color: #fff;">${formatNumber(today.total_tokens || 0)}</div>
+                    <div style="font-size: 12px; color: #888;">tokens (${today.requests || 0} requests)</div>
+                </div>
+                <div style="background: rgba(0, 136, 255, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 136, 255, 0.3);">
+                    <h3 style="color: #00ffff; margin: 0 0 10px 0; font-size: 14px;">ALL TIME</h3>
+                    <div style="font-size: 24px; color: #fff;">${formatNumber(total.total_tokens || 0)}</div>
+                    <div style="font-size: 12px; color: #888;">tokens (${total.requests || 0} requests)</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="color: #00ffff; margin: 0 0 10px 0; font-size: 14px;">BY MODEL</h3>
+                <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 4px;">
+        `;
+
+        for (const [model, stats] of Object.entries(byModel)) {
+            html += `
+                <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span style="color: #ccc; font-size: 12px;">${model}</span>
+                    <span style="color: #fff; font-size: 12px;">${formatNumber(stats.total_tokens)} tokens</span>
+                </div>
+            `;
+        }
+        if (Object.keys(byModel).length === 0) {
+            html += '<div style="color: #666; font-size: 12px;">No usage data yet</div>';
+        }
+
+        html += `
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="color: #00ffff; margin: 0 0 10px 0; font-size: 14px;">BY ENDPOINT</h3>
+                <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 4px;">
+        `;
+
+        for (const [endpoint, stats] of Object.entries(byEndpoint)) {
+            html += `
+                <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span style="color: #ccc; font-size: 12px;">${endpoint}</span>
+                    <span style="color: #fff; font-size: 12px;">${formatNumber(stats.total_tokens)} tokens (${stats.requests} calls)</span>
+                </div>
+            `;
+        }
+        if (Object.keys(byEndpoint).length === 0) {
+            html += '<div style="color: #666; font-size: 12px;">No usage data yet</div>';
+        }
+
+        html += `
+                </div>
+            </div>
+        `;
+
+        // Recent calls
+        if (recentCalls.length > 0) {
+            html += `
+                <div>
+                    <h3 style="color: #00ffff; margin: 0 0 10px 0; font-size: 14px;">RECENT CALLS</h3>
+                    <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 4px; max-height: 150px; overflow-y: auto;">
+            `;
+
+            for (const call of recentCalls.slice(-10).reverse()) {
+                const time = new Date(call.timestamp).toLocaleTimeString();
+                const speed = call.tokens_per_sec ? ` (${call.tokens_per_sec} tok/s)` : '';
+                html += `
+                    <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 11px;">
+                        <span style="color: #888;">${time}</span>
+                        <span style="color: #ccc;">${call.endpoint}</span>
+                        <span style="color: #fff;">${call.total_tokens} tokens${speed}</span>
+                    </div>
+                `;
+            }
+
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
+        // Average speed
+        if (data.avg_tokens_per_sec > 0) {
+            html += `
+                <div style="margin-top: 15px; text-align: center; color: #888; font-size: 12px;">
+                    Average speed: ${data.avg_tokens_per_sec} tokens/sec
+                </div>
+            `;
+        }
+
+        content.innerHTML = html;
+
+    } catch (error) {
+        console.error('Error showing usage panel:', error);
+        content.innerHTML = '<p style="color: #ff6b6b;">Error loading usage data</p>';
+    }
+}
+window.showUsagePanel = showUsagePanel;
+
+function closeUsageModal() {
+    document.getElementById('usage-modal').style.display = 'none';
+}
+window.closeUsageModal = closeUsageModal;
+
 // ==================== PLAYBACK FUNCTIONALITY ====================
 
 // Playback state
@@ -5996,8 +6148,14 @@ async function main() {
         // Auto-fit camera to show all planets
         setTimeout(() => autoFitSystem(true), 500);
 
-        // Fetch AI insights in background (non-blocking)
-        fetchInsights();
+        // AI insights are now manually triggered via the refresh button
+        // (removed auto-fetch to avoid slow page loads with large models)
+
+        // Check AI/MCP status
+        checkAIStatus();
+
+        // Fetch token usage for status bar
+        fetchTokenUsage();
     } else {
         document.getElementById('loading').innerHTML = `
             <p style="color: #ff4444;">Failed to load portfolio data.</p>
@@ -6006,6 +6164,55 @@ async function main() {
         `;
     }
 }
+
+// ==================== AI/MCP STATUS CHECK ====================
+async function checkAIStatus() {
+    // Check LLM status
+    try {
+        const llmResponse = await fetch('/api/config/llm');
+        if (llmResponse.ok) {
+            const llmData = await llmResponse.json();
+            updateStatusIndicator('llm-status', llmData.enabled, llmData.provider + ': ' + (llmData.local_model || llmData.claude_model));
+        }
+    } catch (e) {
+        updateStatusIndicator('llm-status', false, 'LLM unavailable');
+    }
+
+    // Check Dexter/MCP status
+    try {
+        const dexterResponse = await fetch('/api/research/status');
+        if (dexterResponse.ok) {
+            const dexterData = await dexterResponse.json();
+            const mcpAvailable = dexterData.status?.mcp_available || false;
+            const mcpName = dexterData.status?.mcp?.name || 'dexter-mcp';
+            updateStatusIndicator('mcp-status', mcpAvailable, mcpAvailable ? `${mcpName} connected` : 'MCP offline');
+        }
+    } catch (e) {
+        updateStatusIndicator('mcp-status', false, 'Dexter unavailable');
+    }
+}
+
+function updateStatusIndicator(elementId, isOnline, tooltip) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    const dot = el.querySelector('.status-dot');
+    if (dot) {
+        dot.classList.remove('online', 'offline', 'error');
+        dot.classList.add(isOnline ? 'online' : 'offline');
+    }
+
+    if (isOnline) {
+        el.classList.add('active');
+    } else {
+        el.classList.remove('active');
+    }
+
+    el.title = tooltip || (isOnline ? 'Connected' : 'Offline');
+}
+
+// Periodically refresh AI status (every 30 seconds)
+setInterval(checkAIStatus, 30000);
 
 // Start
 main();

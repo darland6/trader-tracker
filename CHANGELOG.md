@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Token Usage Tracking (2026-01-10)
+
+Track and display LLM token usage across sessions:
+
+#### Usage Service (`api/services/usage.py`)
+- **Real-time Tracking** - Captures prompt/completion tokens for every LLM call
+- **Aggregation** - Tracks usage by day, model, and endpoint (chat, chat-search, chat-research)
+- **Recent Calls** - Keeps last 100 calls with timing and speed metrics
+- **Speed Metrics** - Calculates tokens/second for performance monitoring
+
+#### API Endpoints
+```
+GET /api/chat/usage       - Full usage summary with aggregations
+GET /api/chat/usage/daily - Daily breakdown for last N days
+```
+
+#### Dashboard Integration
+- **Status Bar** - Shows today's token count (click for details)
+- **Usage Modal** - Displays today/all-time totals, by-model breakdown, recent calls
+- **Speed Display** - Shows average tokens/second generation speed
+
+### Fixed - Memory Summary Stripping (2026-01-10)
+- Improved regex pattern for extracting LLM memory summaries
+- Now handles various model output formats (multiline JSON, different bracket styles)
+- User responses no longer include raw `[MEMORY_SUMMARY]` blocks
+
 ### Added - Persistent LLM Memory System (2026-01-10)
 
 AI assistant now remembers context across sessions:

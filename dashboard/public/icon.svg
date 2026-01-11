@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#050510"/>
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#00ffff" stroke-width="8" opacity="0.3"/>
+  <circle cx="256" cy="256" r="80" fill="none" stroke="#00ffff" stroke-width="6" opacity="0.5"/>
+  <circle cx="256" cy="256" r="40" fill="#00ffff" opacity="0.8"/>
+  <circle cx="256" cy="256" r="20" fill="#fff"/>
+  <!-- Orbiting planets -->
+  <circle cx="376" cy="256" r="16" fill="#00ff88"/>
+  <circle cx="256" cy="136" r="12" fill="#0088ff"/>
+  <circle cx="180" cy="340" r="14" fill="#ff8800"/>
+  <!-- Dollar sign -->
+  <text x="256" y="270" text-anchor="middle" fill="#050510" font-family="Arial" font-size="32" font-weight="bold">$</text>
+</svg>

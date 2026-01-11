@@ -191,6 +191,23 @@ dashboard_dist = SCRIPT_DIR / "dashboard" / "dist"
 if dashboard_dist.exists():
     app.mount("/dashboard", StaticFiles(directory=str(dashboard_dist), html=True), name="dashboard")
 
+    # Serve PWA files at root level for the dashboard
+    @app.get("/manifest.json")
+    async def get_manifest():
+        from fastapi.responses import FileResponse
+        manifest_path = dashboard_dist / "manifest.json"
+        if manifest_path.exists():
+            return FileResponse(manifest_path, media_type="application/manifest+json")
+        return {"error": "manifest not found"}
+
+    @app.get("/icon.svg")
+    async def get_icon():
+        from fastapi.responses import FileResponse
+        icon_path = dashboard_dist / "icon.svg"
+        if icon_path.exists():
+            return FileResponse(icon_path, media_type="image/svg+xml")
+        return {"error": "icon not found"}
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -203,12 +203,28 @@ async def modify_alternate_history(history_id: str, request: ModificationRequest
 
 
 @router.get("/{history_id}/compare/{other_id}")
-async def compare_alternate_histories(history_id: str, other_id: str = "reality"):
+async def compare_alternate_histories(
+    history_id: str,
+    other_id: str = "reality",
+    include_projections: bool = True
+):
     """Compare two histories or compare against reality.
 
     Use "reality" as other_id to compare against the real portfolio.
+
+    Args:
+        history_id: First history to compare
+        other_id: Second history or "reality"
+        include_projections: Include 3-year future projections comparison (default: True)
+
+    Returns:
+        Comprehensive comparison including:
+        - Current portfolio state differences
+        - Historical divergence points (where timelines differ)
+        - Historical timeline (how values evolved over time)
+        - Future projections (3-year forecast for both histories)
     """
-    comparison = compare_histories(history_id, other_id)
+    comparison = compare_histories(history_id, other_id, include_projections)
 
     if "error" in comparison:
         raise HTTPException(status_code=404, detail=comparison["error"])

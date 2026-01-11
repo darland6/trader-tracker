@@ -80,6 +80,53 @@ class DexterResult:
     raw_output: Optional[str] = None
 
 
+# MCP Server Configuration
+MCP_SERVER_NAME = "dexter-mcp"
+MCP_SERVER_PORT = int(os.getenv('DEXTER_MCP_PORT', '3001'))
+MCP_SERVER_HOST = os.getenv('DEXTER_MCP_HOST', 'localhost')
+
+
+def is_mcp_available() -> bool:
+    """Check if the dexter-mcp server is running and accessible."""
+    import socket
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((MCP_SERVER_HOST, MCP_SERVER_PORT))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
+
+def get_mcp_status() -> dict:
+    """Get MCP server status for dexter-mcp."""
+    available = is_mcp_available()
+
+    status = {
+        "name": MCP_SERVER_NAME,
+        "host": MCP_SERVER_HOST,
+        "port": MCP_SERVER_PORT,
+        "available": available,
+        "url": f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}" if available else None
+    }
+
+    # Try to get more info if available
+    if available:
+        try:
+            import httpx
+            response = httpx.get(
+                f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/health",
+                timeout=2.0
+            )
+            if response.status_code == 200:
+                status["health"] = response.json() if response.headers.get('content-type', '').startswith('application/json') else "ok"
+        except Exception:
+            status["health"] = "connected"  # Port is open but no health endpoint
+
+    return status
+
+
 def is_dexter_available() -> bool:
     """Check if Dexter is installed and configured."""
     dexter_dir = Path(DEXTER_PATH)
@@ -91,8 +138,11 @@ def is_dexter_available() -> bool:
 
 
 def get_dexter_status() -> dict:
-    """Get Dexter installation status."""
+    """Get Dexter installation status including MCP server status."""
     dexter_dir = Path(DEXTER_PATH)
+
+    # Get MCP status first
+    mcp_status = get_mcp_status()
 
     status = {
         "installed": False,
@@ -103,7 +153,10 @@ def get_dexter_status() -> dict:
         "ready": False,
         "llm_provider": None,
         "llm_model": None,
-        "llm_url": None
+        "llm_url": None,
+        # MCP server status
+        "mcp": mcp_status,
+        "mcp_available": mcp_status["available"]
     }
 
     if dexter_dir.exists():
