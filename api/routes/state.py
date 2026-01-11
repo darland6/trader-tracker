@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from reconstruct_state import load_event_log, reconstruct_state
-from api.models import PortfolioState, Holding, ActiveOption, IncomeBreakdown
 from api.database import get_cached_prices
 
 router = APIRouter(prefix="/api", tags=["state"])

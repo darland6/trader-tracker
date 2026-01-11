@@ -1,5 +1,7 @@
 """Prompts for LLM-generated event insights."""
 
+import json
+
 INSIGHT_SYSTEM_PROMPT = """You are a financial analysis assistant helping track investment decisions for a portfolio focused on generating $30,000/year income through options trading and strategic stock positions.
 
 Given an event and recent portfolio history, generate three structured insights in JSON format:
@@ -112,7 +114,6 @@ def format_recent_events(events: list) -> str:
 
         data = event.get('data', {})
         if isinstance(data, str):
-            import json
             try:
                 data = json.loads(data)
             except:
@@ -120,7 +121,6 @@ def format_recent_events(events: list) -> str:
 
         reason = event.get('reason', {})
         if isinstance(reason, str):
-            import json
             try:
                 reason = json.loads(reason)
             except:

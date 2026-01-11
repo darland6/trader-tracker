@@ -12,6 +12,11 @@ from llm.config import get_llm_config
 from llm.client import LLMClient
 from api.routes.state import build_portfolio_state
 from api.database import get_all_events
+from api.services.memory import (
+    get_memory_context,
+    parse_and_save_memory_summary,
+    get_memory_stats
+)
 import json
 import re
 
@@ -110,7 +115,13 @@ The system will execute the research and provide results. Use this for:
 ## Recent Event History (last {event_count} events - use SEARCH_LOG for full history)
 {event_history}
 
-Now respond to the user's question based on this context. Remember: Use [SEARCH_LOG: ...] for historical questions!"""
+{memory_context}
+
+Now respond to the user's question based on this context. Remember: Use [SEARCH_LOG: ...] for historical questions!
+
+After your response, ALWAYS generate a memory summary on a new line starting with [MEMORY_SUMMARY]:
+The summary should be a JSON object with: summary, intent, key_facts (array), learned_patterns (array), tags (array).
+Keep it concise - this helps you remember this conversation in future sessions."""
 
 
 def search_event_log(query: str, limit: int = 100) -> list[dict]:
@@ -384,11 +395,15 @@ async def chat(request: ChatRequest):
             if line:
                 event_lines.append(line)
 
+        # Get memory context from previous sessions
+        memory_context = get_memory_context(max_entries=15)
+
         # Build system prompt
         system_prompt = PORTFOLIO_CHAT_SYSTEM_PROMPT.format(
             portfolio_state=format_portfolio_state(template_state),
             event_count=len(event_lines),
-            event_history="\n".join(event_lines) if event_lines else "(No recent events)"
+            event_history="\n".join(event_lines) if event_lines else "(No recent events)",
+            memory_context=memory_context if memory_context else ""
         )
 
         # Build messages array with conversation history
@@ -538,8 +553,30 @@ async def chat(request: ChatRequest):
             except Exception as research_error:
                 response_text += f"\n\n(Note: Could not execute research: {str(research_error)})"
 
+        # Extract and save memory summary from response
+        user_visible_response = response_text
+
+        # Strip any thinking/reasoning blocks from local LLM responses
+        if '</think>' in user_visible_response:
+            user_visible_response = re.sub(r'<think>[\s\S]*?</think>\s*', '', user_visible_response)
+        # Also strip any text before </think> if opening tag is missing
+        if '</think>' in user_visible_response:
+            user_visible_response = user_visible_response.split('</think>')[-1].strip()
+
+        # Look for memory summary (handles both [MEMORY_SUMMARY]: and [MEMORY_SUMMARY: formats)
+        memory_match = re.search(r'\[MEMORY_SUMMARY[:\]]\s*(\{[\s\S]*?\})\]?', user_visible_response)
+        if memory_match:
+            memory_json = memory_match.group(1)
+            # Remove memory summary from user-visible response
+            user_visible_response = re.sub(r'\s*\[MEMORY_SUMMARY[:\]]?\s*\{[\s\S]*?\}\]?', '', user_visible_response).strip()
+            # Save to persistent memory
+            try:
+                parse_and_save_memory_summary(request.message, user_visible_response, memory_json)
+            except Exception as mem_error:
+                pass  # Don't fail the request if memory save fails
+
         return ChatResponse(
-            response=response_text,
+            response=user_visible_response,
             model=model_used,
             context_events=len(event_lines),
             research_executed=research_executed,
@@ -550,3 +587,19 @@ async def chat(request: ChatRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+@router.get("/memory/stats")
+async def get_memory_statistics():
+    """Get statistics about the LLM memory file."""
+    return get_memory_stats()
+
+
+@router.get("/memory/context")
+async def get_memory_context_preview():
+    """Preview the memory context that would be injected into prompts."""
+    context = get_memory_context(max_entries=20)
+    return {
+        "context": context,
+        "stats": get_memory_stats()
+    }

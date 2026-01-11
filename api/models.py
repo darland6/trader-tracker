@@ -98,18 +98,6 @@ class PortfolioState(BaseModel):
     events_processed: int = 0
 
 
-class EventResponse(BaseModel):
-    event_id: int
-    timestamp: str
-    event_type: str
-    data: Dict[str, Any]
-    reason: Dict[str, Any]
-    notes: str
-    tags: List[str]
-    affects_cash: bool
-    cash_delta: float
-
-
 class ApiResponse(BaseModel):
     success: bool
     message: str = ""

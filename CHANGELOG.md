@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Persistent LLM Memory System (2026-01-10)
+
+AI assistant now remembers context across sessions:
+
+#### Memory Service (`api/services/memory.py`)
+- **Conversation Summaries** - After each chat, LLM generates a summary with intent, key facts, and patterns
+- **Context Injection** - Previous memories automatically included in system prompts
+- **1GB File Cap** - Auto-prunes oldest 25% of entries when limit approached
+- **Key Fact Extraction** - Important information preserved for future reference
+- **Pattern Learning** - Tracks user trading patterns and preferences
+
+#### API Endpoints
+```
+GET /api/chat/memory/stats   - Memory file statistics (size, count, usage %)
+GET /api/chat/memory/context - Preview injected memory context
+```
+
+#### Memory Entry Structure
+```json
+{
+  "summary": "User asked for a list of owned stocks...",
+  "intent": "informational",
+  "key_facts": ["BMNR, TSLA owned", "total holdings $819K"],
+  "learned_patterns": ["prefers detailed breakdowns"],
+  "tags": ["portfolio", "holdings"]
+}
+```
+
+### Improved - Timeline Playback Animation (2026-01-10)
+
+Smooth, time-based timeline animation for alternate reality comparisons:
+
+#### Time-Based Playback
+- **requestAnimationFrame** - 60fps smooth animation instead of interval-based
+- **Real Date Interpolation** - Animates through actual calendar dates, not just data points
+- **Interpolated Date Display** - Shows "Jan 15, 2025" between monthly data points
+
+#### Speed Control
+- **Adjustable Playback Speed** - ◀/▶ buttons to control speed
+- **Presets**: 1 week/sec, 2 weeks/sec, 1 month/sec (default), 2-3-6 months/sec, 1 year/sec
+- **Human-Readable Display** - Shows "1 mo/sec" or "2 wk/sec"
+
+### Changed - LLM Configuration Single Source of Truth (2026-01-10)
+
+Consolidated model configuration to prevent confusion:
+
+- **Single Source**: Model names now ONLY come from `llm_config.json`
+- **Removed Env Override**: `LOCAL_LLM_MODEL` no longer read from `.env`
+- **Clearer Separation**: `.env` for URLs/secrets, `llm_config.json` for model settings
+
 ### Added - Options Income Scanner (2026-01-10)
 
 New floating action button and scanner system for finding premium-selling opportunities:

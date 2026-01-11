@@ -965,8 +965,13 @@ async function loadAlternateHistories() {
     }
 }
 
+// Track current alternate view state
+let currentAltViewHistoryId = null;
+
 async function viewAlternateHistory(historyId) {
     try {
+        currentAltViewHistoryId = historyId;
+
         const response = await fetch(`/api/alt-history/${historyId}`);
         const data = await response.json();
 
@@ -974,11 +979,78 @@ async function viewAlternateHistory(historyId) {
         const comparison = await fetch(`/api/alt-history/${historyId}/compare/reality`).then(r => r.json());
         showComparisonResults(comparison);
         showAltTab('compare');
+
+        // Enter alternate view mode
+        enterAltViewMode(data.name || historyId);
     } catch (error) {
         console.error('Failed to view history:', error);
     }
 }
 window.viewAlternateHistory = viewAlternateHistory;
+
+// ==================== ALTERNATE VIEW MODE ====================
+function enterAltViewMode(historyName = 'Alternate Reality') {
+    document.body.classList.add('alt-view-mode');
+
+    // Update the status display
+    const statusEl = document.getElementById('system-status');
+    if (statusEl) {
+        statusEl.innerHTML = `<span style="color: #627eea;">VIEWING: ${historyName.toUpperCase()}</span>`;
+    }
+
+    // Close the alt reality modal
+    closeAltRealityModal();
+
+    // Auto-fit the view
+    setTimeout(() => autoFitSystem(true), 300);
+}
+window.enterAltViewMode = enterAltViewMode;
+
+function exitAltViewMode() {
+    document.body.classList.remove('alt-view-mode');
+    currentAltViewHistoryId = null;
+
+    // Clear the status display
+    const statusEl = document.getElementById('system-status');
+    if (statusEl) {
+        statusEl.textContent = '';
+    }
+
+    // Reset camera to default
+    gsap.to(camera.position, {
+        x: DEFAULT_CAMERA_POS.x,
+        y: DEFAULT_CAMERA_POS.y,
+        z: DEFAULT_CAMERA_POS.z,
+        duration: 1,
+        ease: "power2.inOut"
+    });
+    gsap.to(controls.target, {
+        x: DEFAULT_TARGET.x,
+        y: DEFAULT_TARGET.y,
+        z: DEFAULT_TARGET.z,
+        duration: 1,
+        ease: "power2.inOut"
+    });
+}
+window.exitAltViewMode = exitAltViewMode;
+
+function toggleProjectionOverlay() {
+    const btn = document.getElementById('btn-proj-overlay');
+    if (!currentAltViewHistoryId) {
+        alert('No alternate history selected');
+        return;
+    }
+
+    // Toggle overlay showing projection on the 3D view
+    btn.classList.toggle('active');
+    if (btn.classList.contains('active')) {
+        btn.textContent = 'Hide Projections';
+        // Could add 3D projection visualization here
+    } else {
+        btn.textContent = 'Show Projections';
+    }
+}
+window.toggleProjectionOverlay = toggleProjectionOverlay;
 
 async function deleteAlternateHistory(historyId) {
     if (!confirm('Delete this alternate reality? This cannot be undone.')) return;
@@ -1045,55 +1117,583 @@ function showComparisonResults(data) {
     const diff = data.comparison;
     const h1 = data.history_1;
     const h2 = data.history_2;
+    const divergence = data.divergence || {};
+    const projections = data.projections || null;
+    const historicalTimeline = data.historical_timeline || [];
 
     const formatMoney = n => '$' + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const formatMoneyWithSign = n => (n >= 0 ? '+$' : '-$') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
     const diffClass = n => n >= 0 ? 'positive' : 'negative';
-    const diffSign = n => n >= 0 ? '+' : '-';
+    const formatPct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
-    container.innerHTML = `
-        <div class="compare-card">
-            <h3>Portfolio Value</h3>
-            <div class="compare-row">
-                <span>${h1.name}</span>
-                <span>${formatMoney(h1.total_value)}</span>
-            </div>
-            <div class="compare-row">
-                <span>${h2.name}</span>
-                <span>${formatMoney(h2.total_value)}</span>
-            </div>
-            <div class="compare-row">
-                <span>Difference</span>
-                <span class="compare-diff ${diffClass(diff.total_value_diff)}">${diffSign(diff.total_value_diff)}${formatMoney(diff.total_value_diff)}</span>
-            </div>
-        </div>
-
-        <div class="compare-card">
-            <h3>YTD Income</h3>
-            <div class="compare-row">
-                <span>${h1.name}</span>
-                <span>${formatMoney(h1.ytd_income)}</span>
-            </div>
-            <div class="compare-row">
-                <span>${h2.name}</span>
-                <span>${formatMoney(h2.ytd_income)}</span>
-            </div>
-            <div class="compare-row">
-                <span>Difference</span>
-                <span class="compare-diff ${diffClass(diff.income_diff)}">${diffSign(diff.income_diff)}${formatMoney(diff.income_diff)}</span>
-            </div>
-        </div>
-
-        <div class="compare-card">
-            <h3>Holdings Differences</h3>
-            ${Object.entries(diff.holdings_diff).map(([ticker, d]) => `
-                <div class="compare-row">
-                    <span>${ticker}</span>
-                    <span class="compare-diff ${diffClass(d.value_diff)}">${diffSign(d.value_diff)}${formatMoney(d.value_diff)} (${d.diff > 0 ? '+' : ''}${d.diff.toFixed(1)} shares)</span>
+    // Current State Comparison
+    let html = `
+        <div class="compare-section">
+            <h3 class="section-header">CURRENT STATE</h3>
+            <div class="compare-grid">
+                <div class="compare-card">
+                    <h4>Portfolio Value</h4>
+                    <div class="compare-row">
+                        <span>${h1.name}</span>
+                        <span>${formatMoney(h1.total_value)}</span>
+                    </div>
+                    <div class="compare-row">
+                        <span>${h2.name}</span>
+                        <span>${formatMoney(h2.total_value)}</span>
+                    </div>
+                    <div class="compare-row highlight">
+                        <span>Difference</span>
+                        <span class="compare-diff ${diffClass(diff.total_value_diff)}">${formatMoneyWithSign(diff.total_value_diff)}</span>
+                    </div>
                 </div>
-            `).join('')}
-        </div>
-    `;
+
+                <div class="compare-card">
+                    <h4>YTD Income</h4>
+                    <div class="compare-row">
+                        <span>${h1.name}</span>
+                        <span>${formatMoney(h1.ytd_income)}</span>
+                    </div>
+                    <div class="compare-row">
+                        <span>${h2.name}</span>
+                        <span>${formatMoney(h2.ytd_income)}</span>
+                    </div>
+                    <div class="compare-row highlight">
+                        <span>Difference</span>
+                        <span class="compare-diff ${diffClass(diff.income_diff)}">${formatMoneyWithSign(diff.income_diff)}</span>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    // Divergence Points
+    if (divergence.points && divergence.points.length > 0) {
+        html += `
+        <div class="compare-section">
+            <h3 class="section-header">TIMELINE DIVERGENCE [${divergence.total_divergent_events} EVENTS]</h3>
+            <div class="divergence-list">
+                ${divergence.points.slice(0, 10).map(p => `
+                    <div class="divergence-item ${p.in_history === 'modified' ? 'modified' : p.in_history === 'history_1_only' ? 'removed' : 'added'}">
+                        <div class="divergence-badge">${p.in_history === 'history_1_only' ? 'REMOVED' : p.in_history === 'history_2_only' ? 'ADDED' : 'MODIFIED'}</div>
+                        <div class="divergence-content">
+                            <span class="divergence-type">${p.type}</span>
+                            <span class="divergence-desc">${p.description}</span>
+                            <span class="divergence-date">${new Date(p.timestamp).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                `).join('')}
+                ${divergence.points.length > 10 ? `<p class="more-items">...and ${divergence.points.length - 10} more divergent events</p>` : ''}
+            </div>
+        </div>`;
+    } else {
+        html += `
+        <div class="compare-section">
+            <h3 class="section-header">TIMELINE DIVERGENCE</h3>
+            <p class="no-divergence">No divergence detected - these histories are identical</p>
+        </div>`;
+    }
+
+    // Historical Timeline Chart with reduced exaggeration and interpolation
+    if (historicalTimeline.length > 0) {
+        // Calculate scale with reduced exaggeration (minimum 60% baseline)
+        const allValues = historicalTimeline.flatMap(x => [x.history_1.total_value, x.history_2.total_value]).filter(v => v > 0);
+        const maxVal = Math.max(...allValues);
+        const minVal = Math.min(...allValues);
+        // Scale so minimum is 60% and max is 100% - reduces visual exaggeration
+        const scaleValue = (v) => {
+            if (maxVal === minVal) return 80;
+            return 60 + ((v - minVal) / (maxVal - minVal)) * 40;
+        };
+
+        // Prepare timeline data for interpolation
+        const timelineData = historicalTimeline.map(t => ({
+            h1: scaleValue(t.history_1.total_value),
+            h2: scaleValue(t.history_2.total_value),
+            date: t.date,
+            v1: t.history_1.total_value,
+            v2: t.history_2.total_value,
+            diff: t.diff
+        }));
+
+        html += `
+        <div class="compare-section">
+            <h3 class="section-header">HISTORICAL VALUE DIVERGENCE</h3>
+            <div class="timeline-speed-control">
+                <button class="speed-btn" onclick="adjustPlaybackSpeed(-1)">◀</button>
+                <span class="speed-display" id="playback-speed-display">1 mo/sec</span>
+                <button class="speed-btn" onclick="adjustPlaybackSpeed(1)">▶</button>
+            </div>
+            <div class="timeline-chart" id="historical-timeline-chart">
+                <div class="timeline-playback">
+                    <button class="timeline-play-btn" id="hist-play-btn" onclick="toggleHistoricalPlayback()">▶</button>
+                    <input type="range" class="timeline-scrubber" id="hist-scrubber"
+                           min="0" max="${timelineData.length - 1}" value="${timelineData.length - 1}" step="0.01"
+                           oninput="scrubHistoricalTimeline(this.value)">
+                    <span class="timeline-date" id="hist-date">${timelineData[timelineData.length - 1]?.date || 'Now'}</span>
+                </div>
+                <div class="timeline-values">
+                    <div class="timeline-value-display">
+                        <span class="value-label">${h1.name}:</span>
+                        <span class="value-amount" id="hist-value-1">${formatMoney(timelineData[timelineData.length - 1]?.v1 || 0)}</span>
+                    </div>
+                    <div class="timeline-value-display">
+                        <span class="value-label">${h2.name}:</span>
+                        <span class="value-amount" id="hist-value-2">${formatMoney(timelineData[timelineData.length - 1]?.v2 || 0)}</span>
+                    </div>
+                    <div class="timeline-value-display diff">
+                        <span class="value-label">Diff:</span>
+                        <span class="value-amount" id="hist-diff">${formatMoneyWithSign(timelineData[timelineData.length - 1]?.diff || 0)}</span>
+                    </div>
+                </div>
+                <div class="timeline-bars-container">
+                    <div class="timeline-bar-single history-1" id="hist-bar-1" style="height: ${timelineData[timelineData.length - 1]?.h1 || 80}%"></div>
+                    <div class="timeline-bar-single history-2" id="hist-bar-2" style="height: ${timelineData[timelineData.length - 1]?.h2 || 80}%"></div>
+                </div>
+                <div class="timeline-legend">
+                    <span class="legend-item"><span class="legend-color history-1"></span>${h1.name}</span>
+                    <span class="legend-item"><span class="legend-color history-2"></span>${h2.name}</span>
+                </div>
+            </div>
+        </div>`;
+
+        // Store timeline data for scrubbing
+        window.historicalTimelineData = timelineData;
+        window.historicalTimelineNames = { h1: h1.name, h2: h2.name };
+    }
+
+    // Future Projections
+    if (projections) {
+        const proj1 = projections.history_1_projection;
+        const proj2 = projections.history_2_projection;
+        const projTimeline = projections.timeline || [];
+
+        html += `
+        <div class="compare-section">
+            <h3 class="section-header">${projections.years}-YEAR FUTURE PROJECTION</h3>
+            <div class="compare-grid">
+                <div class="compare-card projection-card">
+                    <h4>${h1.name}</h4>
+                    <div class="projection-value">${formatMoney(proj1.projected_value)}</div>
+                    <div class="projection-growth ${diffClass(proj1.growth_from_current)}">${formatPct(proj1.growth_from_current)} projected growth</div>
+                    <div class="projection-date">by ${proj1.end_date}</div>
+                </div>
+                <div class="compare-card projection-card">
+                    <h4>${h2.name}</h4>
+                    <div class="projection-value">${formatMoney(proj2.projected_value)}</div>
+                    <div class="projection-growth ${diffClass(proj2.growth_from_current)}">${formatPct(proj2.growth_from_current)} projected growth</div>
+                    <div class="projection-date">by ${proj2.end_date}</div>
+                </div>
+            </div>
+            <div class="projection-diff-summary">
+                <span>Projected Difference in ${projections.years} Years:</span>
+                <span class="compare-diff ${diffClass(projections.projected_diff)}">${formatMoneyWithSign(projections.projected_diff)}</span>
+            </div>
+            ${projTimeline.length > 0 ? (() => {
+                // Reduced exaggeration for projection chart too
+                const projValues = projTimeline.flatMap(x => [x.value_1, x.value_2]).filter(v => v > 0);
+                const projMax = Math.max(...projValues);
+                const projMin = Math.min(...projValues);
+                const scaleProjValue = (v) => {
+                    if (projMax === projMin) return 80;
+                    return 60 + ((v - projMin) / (projMax - projMin)) * 40;
+                };
+
+                // Prepare projection data for interpolation
+                const projData = projTimeline.map(t => ({
+                    h1: scaleProjValue(t.value_1),
+                    h2: scaleProjValue(t.value_2),
+                    date: t.date,
+                    v1: t.value_1,
+                    v2: t.value_2,
+                    diff: t.diff
+                }));
+
+                // Store for scrubbing
+                window.projectionTimelineData = projData;
+
+                return `
+            <div class="projection-timeline-chart">
+                <div class="timeline-playback">
+                    <button class="timeline-play-btn" id="proj-play-btn" onclick="toggleProjectionPlayback()">▶</button>
+                    <input type="range" class="timeline-scrubber" id="proj-scrubber"
+                           min="0" max="${projData.length - 1}" value="0" step="0.01"
+                           oninput="scrubProjectionTimeline(this.value)">
+                    <span class="timeline-date" id="proj-date">${projData[0]?.date || 'Now'}</span>
+                </div>
+                <div class="timeline-values">
+                    <div class="timeline-value-display">
+                        <span class="value-label">${h1.name}:</span>
+                        <span class="value-amount" id="proj-value-1">${formatMoney(projData[0]?.v1 || 0)}</span>
+                    </div>
+                    <div class="timeline-value-display">
+                        <span class="value-label">${h2.name}:</span>
+                        <span class="value-amount" id="proj-value-2">${formatMoney(projData[0]?.v2 || 0)}</span>
+                    </div>
+                    <div class="timeline-value-display diff">
+                        <span class="value-label">Diff:</span>
+                        <span class="value-amount" id="proj-diff">${formatMoneyWithSign(projData[0]?.diff || 0)}</span>
+                    </div>
+                </div>
+                <div class="timeline-bars-container">
+                    <div class="timeline-bar-single history-1" id="proj-bar-1" style="height: ${projData[0]?.h1 || 80}%"></div>
+                    <div class="timeline-bar-single history-2" id="proj-bar-2" style="height: ${projData[0]?.h2 || 80}%"></div>
+                </div>
+                <div class="timeline-labels">
+                    <span>Now</span>
+                    <span>Year 1</span>
+                    <span>Year 2</span>
+                    <span>Year 3</span>
+                </div>
+            </div>`;
+            })() : ''}
+        </div>`;
+    }
+
+    // Holdings Differences
+    const holdingsDiff = Object.entries(diff.holdings_diff);
+    if (holdingsDiff.length > 0) {
+        html += `
+        <div class="compare-section">
+            <h3 class="section-header">HOLDINGS DIFFERENCES</h3>
+            <div class="holdings-diff-list">
+                ${holdingsDiff.map(([ticker, d]) => `
+                    <div class="holdings-diff-item">
+                        <span class="ticker">${ticker}</span>
+                        <span class="shares">${d.shares_1.toFixed(1)} → ${d.shares_2.toFixed(1)} shares</span>
+                        <span class="value-diff compare-diff ${diffClass(d.value_diff)}">${formatMoneyWithSign(d.value_diff)}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
 }
+
+// ==================== TIMELINE SCRUBBING & PLAYBACK ====================
+let historicalPlaybackActive = false;
+let historicalPlaybackRAF = null;
+let historicalPlaybackStartTime = null;
+let historicalPlaybackStartPosition = 0;
+
+let projectionPlaybackActive = false;
+let projectionPlaybackRAF = null;
+let projectionPlaybackStartTime = null;
+let projectionPlaybackStartPosition = 0;
+
+// Playback speed: days of timeline per second of real time
+// Default: 30 days per second (1 month per second)
+let timelinePlaybackSpeed = 30;
+
+// Linear interpolation helper
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+// Parse date string to timestamp
+function parseTimelineDate(dateStr) {
+    // Handle various date formats
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? Date.now() : d.getTime();
+}
+
+// Calculate timeline span in days
+function getTimelineSpanDays(data) {
+    if (!data || data.length < 2) return 1;
+    const firstDate = parseTimelineDate(data[0].date);
+    const lastDate = parseTimelineDate(data[data.length - 1].date);
+    return Math.max(1, (lastDate - firstDate) / (1000 * 60 * 60 * 24));
+}
+
+// Find position in timeline based on interpolated date
+function findTimelinePosition(data, targetTime) {
+    if (!data || data.length === 0) return 0;
+    if (data.length === 1) return 0;
+
+    const firstTime = parseTimelineDate(data[0].date);
+    const lastTime = parseTimelineDate(data[data.length - 1].date);
+
+    if (targetTime <= firstTime) return 0;
+    if (targetTime >= lastTime) return data.length - 1;
+
+    // Find which segment we're in and interpolate
+    for (let i = 0; i < data.length - 1; i++) {
+        const t1 = parseTimelineDate(data[i].date);
+        const t2 = parseTimelineDate(data[i + 1].date);
+
+        if (targetTime >= t1 && targetTime <= t2) {
+            const segmentProgress = (targetTime - t1) / (t2 - t1);
+            return i + segmentProgress;
+        }
+    }
+
+    return data.length - 1;
+}
+
+// Interpolate date string between two dates
+function interpolateDate(date1Str, date2Str, t) {
+    const d1 = parseTimelineDate(date1Str);
+    const d2 = parseTimelineDate(date2Str);
+    const interpolatedTime = d1 + (d2 - d1) * t;
+    const d = new Date(interpolatedTime);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Format money for display
+function formatMoneyDisplay(n) {
+    return '$' + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+function formatMoneyWithSignDisplay(n) {
+    return (n >= 0 ? '+$' : '-$') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+// Update playback speed display
+function updateSpeedDisplay() {
+    const speedEl = document.getElementById('playback-speed-display');
+    if (speedEl) {
+        if (timelinePlaybackSpeed >= 30) {
+            speedEl.textContent = `${Math.round(timelinePlaybackSpeed / 30)} mo/sec`;
+        } else if (timelinePlaybackSpeed >= 7) {
+            speedEl.textContent = `${Math.round(timelinePlaybackSpeed / 7)} wk/sec`;
+        } else {
+            speedEl.textContent = `${timelinePlaybackSpeed} days/sec`;
+        }
+    }
+}
+
+// Adjust playback speed
+function adjustPlaybackSpeed(delta) {
+    const speeds = [7, 14, 30, 60, 90, 180, 365]; // 1wk, 2wk, 1mo, 2mo, 3mo, 6mo, 1yr per second
+    const currentIndex = speeds.findIndex(s => s >= timelinePlaybackSpeed);
+    const newIndex = Math.max(0, Math.min(speeds.length - 1, currentIndex + delta));
+    timelinePlaybackSpeed = speeds[newIndex];
+    updateSpeedDisplay();
+}
+window.adjustPlaybackSpeed = adjustPlaybackSpeed;
+
+// Scrub through historical timeline with interpolation
+function scrubHistoricalTimeline(value) {
+    const data = window.historicalTimelineData;
+    if (!data || data.length === 0) return;
+
+    const floatIndex = parseFloat(value);
+    const lowerIndex = Math.max(0, Math.floor(floatIndex));
+    const upperIndex = Math.min(lowerIndex + 1, data.length - 1);
+    const t = floatIndex - lowerIndex; // Interpolation factor 0-1
+
+    // Interpolate between frames
+    const lower = data[lowerIndex];
+    const upper = data[upperIndex];
+
+    const h1 = lerp(lower.h1, upper.h1, t);
+    const h2 = lerp(lower.h2, upper.h2, t);
+    const v1 = lerp(lower.v1, upper.v1, t);
+    const v2 = lerp(lower.v2, upper.v2, t);
+    const diff = lerp(lower.diff, upper.diff, t);
+
+    // Update bars with smooth transition
+    const bar1 = document.getElementById('hist-bar-1');
+    const bar2 = document.getElementById('hist-bar-2');
+    if (bar1) bar1.style.height = h1 + '%';
+    if (bar2) bar2.style.height = h2 + '%';
+
+    // Update values with interpolated date
+    const dateEl = document.getElementById('hist-date');
+    const v1El = document.getElementById('hist-value-1');
+    const v2El = document.getElementById('hist-value-2');
+    const diffEl = document.getElementById('hist-diff');
+
+    if (dateEl) dateEl.textContent = interpolateDate(lower.date, upper.date, t);
+    if (v1El) v1El.textContent = formatMoneyDisplay(v1);
+    if (v2El) v2El.textContent = formatMoneyDisplay(v2);
+    if (diffEl) {
+        diffEl.textContent = formatMoneyWithSignDisplay(diff);
+        diffEl.className = 'value-amount ' + (diff >= 0 ? 'positive' : 'negative');
+    }
+}
+window.scrubHistoricalTimeline = scrubHistoricalTimeline;
+
+function animateHistoricalPlayback(timestamp) {
+    if (!historicalPlaybackActive) return;
+
+    const data = window.historicalTimelineData;
+    const scrubber = document.getElementById('hist-scrubber');
+    if (!data || data.length === 0 || !scrubber) return;
+
+    // Initialize start time on first frame
+    if (!historicalPlaybackStartTime) {
+        historicalPlaybackStartTime = timestamp;
+    }
+
+    // Calculate elapsed real time in seconds
+    const elapsedSeconds = (timestamp - historicalPlaybackStartTime) / 1000;
+
+    // Calculate how many days of timeline have passed
+    const daysPassed = elapsedSeconds * timelinePlaybackSpeed;
+
+    // Get the starting date and calculate target date
+    const startPosition = historicalPlaybackStartPosition;
+    const startDateIndex = Math.floor(startPosition);
+    const startDate = parseTimelineDate(data[startDateIndex].date);
+    const targetDate = startDate + (daysPassed * 24 * 60 * 60 * 1000);
+
+    // Find position in timeline for this date
+    const position = findTimelinePosition(data, targetDate);
+
+    if (position >= data.length - 1) {
+        // Reached the end
+        scrubber.value = data.length - 1;
+        scrubHistoricalTimeline(data.length - 1);
+        toggleHistoricalPlayback();
+        return;
+    }
+
+    scrubber.value = position;
+    scrubHistoricalTimeline(position);
+
+    // Continue animation
+    historicalPlaybackRAF = requestAnimationFrame(animateHistoricalPlayback);
+}
+
+function toggleHistoricalPlayback() {
+    const btn = document.getElementById('hist-play-btn');
+    const scrubber = document.getElementById('hist-scrubber');
+    const data = window.historicalTimelineData;
+
+    if (!data || data.length === 0) return;
+
+    if (historicalPlaybackActive) {
+        // Stop playback
+        historicalPlaybackActive = false;
+        if (historicalPlaybackRAF) {
+            cancelAnimationFrame(historicalPlaybackRAF);
+            historicalPlaybackRAF = null;
+        }
+        btn.textContent = '▶';
+    } else {
+        // Start playback
+        historicalPlaybackActive = true;
+        btn.textContent = '⏸';
+
+        // Reset to start if at end
+        if (parseFloat(scrubber.value) >= data.length - 1) {
+            scrubber.value = 0;
+        }
+
+        // Store starting position and reset timing
+        historicalPlaybackStartPosition = parseFloat(scrubber.value);
+        historicalPlaybackStartTime = null;
+
+        // Start animation loop
+        historicalPlaybackRAF = requestAnimationFrame(animateHistoricalPlayback);
+    }
+}
+window.toggleHistoricalPlayback = toggleHistoricalPlayback;
+
+// Scrub through projection timeline with interpolation
+function scrubProjectionTimeline(value) {
+    const data = window.projectionTimelineData;
+    if (!data || data.length === 0) return;
+
+    const floatIndex = parseFloat(value);
+    const lowerIndex = Math.max(0, Math.floor(floatIndex));
+    const upperIndex = Math.min(lowerIndex + 1, data.length - 1);
+    const t = floatIndex - lowerIndex;
+
+    const lower = data[lowerIndex];
+    const upper = data[upperIndex];
+
+    const h1 = lerp(lower.h1, upper.h1, t);
+    const h2 = lerp(lower.h2, upper.h2, t);
+    const v1 = lerp(lower.v1, upper.v1, t);
+    const v2 = lerp(lower.v2, upper.v2, t);
+    const diff = lerp(lower.diff, upper.diff, t);
+
+    // Update bars
+    const bar1 = document.getElementById('proj-bar-1');
+    const bar2 = document.getElementById('proj-bar-2');
+    if (bar1) bar1.style.height = h1 + '%';
+    if (bar2) bar2.style.height = h2 + '%';
+
+    // Update values with interpolated date
+    const dateEl = document.getElementById('proj-date');
+    const v1El = document.getElementById('proj-value-1');
+    const v2El = document.getElementById('proj-value-2');
+    const diffEl = document.getElementById('proj-diff');
+
+    if (dateEl) dateEl.textContent = interpolateDate(lower.date, upper.date, t);
+    if (v1El) v1El.textContent = formatMoneyDisplay(v1);
+    if (v2El) v2El.textContent = formatMoneyDisplay(v2);
+    if (diffEl) {
+        diffEl.textContent = formatMoneyWithSignDisplay(diff);
+        diffEl.className = 'value-amount ' + (diff >= 0 ? 'positive' : 'negative');
+    }
+}
+window.scrubProjectionTimeline = scrubProjectionTimeline;
+
+function animateProjectionPlayback(timestamp) {
+    if (!projectionPlaybackActive) return;
+
+    const data = window.projectionTimelineData;
+    const scrubber = document.getElementById('proj-scrubber');
+    if (!data || data.length === 0 || !scrubber) return;
+
+    if (!projectionPlaybackStartTime) {
+        projectionPlaybackStartTime = timestamp;
+    }
+
+    const elapsedSeconds = (timestamp - projectionPlaybackStartTime) / 1000;
+    const daysPassed = elapsedSeconds * timelinePlaybackSpeed;
+
+    const startPosition = projectionPlaybackStartPosition;
+    const startDateIndex = Math.floor(startPosition);
+    const startDate = parseTimelineDate(data[startDateIndex].date);
+    const targetDate = startDate + (daysPassed * 24 * 60 * 60 * 1000);
+
+    const position = findTimelinePosition(data, targetDate);
+
+    if (position >= data.length - 1) {
+        scrubber.value = data.length - 1;
+        scrubProjectionTimeline(data.length - 1);
+        toggleProjectionPlayback();
+        return;
+    }
+
+    scrubber.value = position;
+    scrubProjectionTimeline(position);
+
+    projectionPlaybackRAF = requestAnimationFrame(animateProjectionPlayback);
+}
+
+function toggleProjectionPlayback() {
+    const btn = document.getElementById('proj-play-btn');
+    const scrubber = document.getElementById('proj-scrubber');
+    const data = window.projectionTimelineData;
+
+    if (!data || data.length === 0) return;
+
+    if (projectionPlaybackActive) {
+        projectionPlaybackActive = false;
+        if (projectionPlaybackRAF) {
+            cancelAnimationFrame(projectionPlaybackRAF);
+            projectionPlaybackRAF = null;
+        }
+        btn.textContent = '▶';
+    } else {
+        projectionPlaybackActive = true;
+        btn.textContent = '⏸';
+
+        if (parseFloat(scrubber.value) >= data.length - 1) {
+            scrubber.value = 0;
+        }
+
+        projectionPlaybackStartPosition = parseFloat(scrubber.value);
+        projectionPlaybackStartTime = null;
+
+        projectionPlaybackRAF = requestAnimationFrame(animateProjectionPlayback);
+    }
+}
+window.toggleProjectionPlayback = toggleProjectionPlayback;
 
 let modificationCount = 0;
 
@@ -2717,7 +3317,371 @@ function createPlanet(holding, index, total, portfolioTotal) {
     return planetGroup;
 }
 
+// ==================== CATACLYSM EFFECT ====================
+let cataclysmActive = false;
+let cataclysmParticles = null;
+let shockwaveRing = null;
+let originalPlanetStates = new Map();
+let cataclysmStartTime = 0;
+
+function triggerCataclysm(message = "RECALIBRATING SYSTEM...") {
+    if (cataclysmActive) return;
+    cataclysmActive = true;
+    cataclysmStartTime = clock.getElapsedTime();
+
+    // Store original planet positions and create explosion vectors
+    planets.forEach((data, ticker) => {
+        const group = data.group;
+        originalPlanetStates.set(ticker, {
+            position: group.position.clone(),
+            scale: group.scale.clone(),
+            rotation: group.rotation.clone()
+        });
+
+        // Random explosion direction (outward from center)
+        const direction = new THREE.Vector3(
+            group.position.x + (Math.random() - 0.5) * 5,
+            (Math.random() - 0.5) * 20,
+            group.position.z + (Math.random() - 0.5) * 5
+        ).normalize();
+
+        group.userData.explosionVelocity = direction.multiplyScalar(15 + Math.random() * 25);
+        group.userData.explosionSpin = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3
+        );
+    });
+
+    // Make sun explode
+    if (sun) {
+        gsap.to(sun.scale, {
+            x: 3, y: 3, z: 3,
+            duration: 0.3,
+            yoyo: true,
+            repeat: 5,
+            ease: "power2.inOut"
+        });
+
+        // Intense flash
+        gsap.to(sun.material, {
+            emissiveIntensity: 5,
+            duration: 0.2,
+            yoyo: true,
+            repeat: 3
+        });
+    }
+
+    // Create massive explosion particle system
+    const particleCount = 3000;
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+
+    for (let i = 0; i < particleCount; i++) {
+        // Start at center (sun position)
+        positions[i * 3] = (Math.random() - 0.5) * 2;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * 2;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 2;
+
+        // Explosion velocity (outward)
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        const speed = 20 + Math.random() * 40;
+        velocities[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
+        velocities[i * 3 + 1] = Math.cos(phi) * speed * 0.5;
+        velocities[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * speed;
+
+        // Fire colors: white -> yellow -> orange -> red
+        const t = Math.random();
+        if (t < 0.2) {
+            colors[i * 3] = 1; colors[i * 3 + 1] = 1; colors[i * 3 + 2] = 0.9; // White-yellow
+        } else if (t < 0.5) {
+            colors[i * 3] = 1; colors[i * 3 + 1] = 0.7; colors[i * 3 + 2] = 0.1; // Yellow-orange
+        } else if (t < 0.8) {
+            colors[i * 3] = 1; colors[i * 3 + 1] = 0.3; colors[i * 3 + 2] = 0; // Orange
+        } else {
+            colors[i * 3] = 0.8; colors[i * 3 + 1] = 0.1; colors[i * 3 + 2] = 0; // Red
+        }
+
+        sizes[i] = 0.5 + Math.random() * 1.5;
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.userData.velocities = velocities;
+
+    const material = new THREE.PointsMaterial({
+        size: 0.8,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    cataclysmParticles = new THREE.Points(geometry, material);
+    scene.add(cataclysmParticles);
+
+    // Create expanding shockwave ring
+    const ringGeometry = new THREE.RingGeometry(0.1, 1, 64);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff6600,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+    });
+    shockwaveRing = new THREE.Mesh(ringGeometry, ringMaterial);
+    shockwaveRing.rotation.x = Math.PI / 2;
+    scene.add(shockwaveRing);
+
+    // Show loading message in HUD
+    const statusEl = document.getElementById('system-status');
+    if (statusEl) {
+        statusEl.innerHTML = `<span style="color: #ff4444; animation: blink 0.3s infinite;">${message}</span>`;
+    }
+
+    // Add screen shake effect via CSS
+    document.getElementById('canvas-container').classList.add('screen-shake');
+}
+
+function updateCataclysm(deltaTime) {
+    if (!cataclysmActive) return;
+
+    const elapsed = clock.getElapsedTime() - cataclysmStartTime;
+    const decay = Math.max(0, 1 - elapsed * 0.1);
+
+    // Update explosion particles
+    if (cataclysmParticles) {
+        const positions = cataclysmParticles.geometry.attributes.position.array;
+        const velocities = cataclysmParticles.geometry.userData.velocities;
+        const sizes = cataclysmParticles.geometry.attributes.size.array;
+
+        for (let i = 0; i < positions.length / 3; i++) {
+            positions[i * 3] += velocities[i * 3] * deltaTime * decay;
+            positions[i * 3 + 1] += velocities[i * 3 + 1] * deltaTime * decay;
+            positions[i * 3 + 2] += velocities[i * 3 + 2] * deltaTime * decay;
+
+            // Add gravity pull back toward center
+            if (elapsed > 1) {
+                positions[i * 3] *= 0.998;
+                positions[i * 3 + 1] *= 0.998;
+                positions[i * 3 + 2] *= 0.998;
+            }
+
+            // Fade and shrink
+            sizes[i] *= 0.999;
+        }
+
+        cataclysmParticles.geometry.attributes.position.needsUpdate = true;
+        cataclysmParticles.geometry.attributes.size.needsUpdate = true;
+        cataclysmParticles.material.opacity = Math.max(0.1, decay);
+    }
+
+    // Expand shockwave
+    if (shockwaveRing) {
+        const scale = 1 + elapsed * 30;
+        shockwaveRing.scale.set(scale, scale, 1);
+        shockwaveRing.material.opacity = Math.max(0, 0.8 - elapsed * 0.15);
+    }
+
+    // Fling planets outward with chaotic spin
+    planets.forEach((data, ticker) => {
+        const group = data.group;
+        if (group.userData.explosionVelocity) {
+            group.position.add(group.userData.explosionVelocity.clone().multiplyScalar(deltaTime * decay));
+            group.rotation.x += group.userData.explosionSpin.x;
+            group.rotation.y += group.userData.explosionSpin.y;
+            group.rotation.z += group.userData.explosionSpin.z;
+
+            // Slow down spin over time
+            group.userData.explosionSpin.multiplyScalar(0.995);
+        }
+    });
+}
+
+function endCataclysm() {
+    if (!cataclysmActive) return;
+
+    // Remove screen shake
+    document.getElementById('canvas-container').classList.remove('screen-shake');
+
+    // Animate planets back to original positions
+    planets.forEach((data, ticker) => {
+        const group = data.group;
+        const original = originalPlanetStates.get(ticker);
+
+        if (original) {
+            gsap.to(group.position, {
+                x: original.position.x,
+                y: original.position.y,
+                z: original.position.z,
+                duration: 2,
+                ease: "elastic.out(1, 0.5)"
+            });
+
+            gsap.to(group.rotation, {
+                x: original.rotation.x,
+                y: original.rotation.y,
+                z: original.rotation.z,
+                duration: 1.5,
+                ease: "power2.out"
+            });
+
+            gsap.to(group.scale, {
+                x: original.scale.x,
+                y: original.scale.y,
+                z: original.scale.z,
+                duration: 1,
+                ease: "back.out(1.5)"
+            });
+        }
+
+        delete group.userData.explosionVelocity;
+        delete group.userData.explosionSpin;
+    });
+
+    // Fade out and remove explosion particles
+    if (cataclysmParticles) {
+        gsap.to(cataclysmParticles.material, {
+            opacity: 0,
+            duration: 1,
+            onComplete: () => {
+                scene.remove(cataclysmParticles);
+                cataclysmParticles.geometry.dispose();
+                cataclysmParticles.material.dispose();
+                cataclysmParticles = null;
+            }
+        });
+    }
+
+    // Fade out shockwave
+    if (shockwaveRing) {
+        gsap.to(shockwaveRing.material, {
+            opacity: 0,
+            duration: 0.5,
+            onComplete: () => {
+                scene.remove(shockwaveRing);
+                shockwaveRing.geometry.dispose();
+                shockwaveRing.material.dispose();
+                shockwaveRing = null;
+            }
+        });
+    }
+
+    // Reset sun
+    if (sun) {
+        gsap.to(sun.scale, { x: 1, y: 1, z: 1, duration: 1, ease: "elastic.out(1, 0.5)" });
+        gsap.to(sun.material, { emissiveIntensity: 0.8, duration: 1 });
+    }
+
+    // Clear status
+    const statusEl = document.getElementById('system-status');
+    if (statusEl) {
+        statusEl.innerHTML = '<span style="color: #00ff88;">SYSTEM STABLE</span>';
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    }
+
+    originalPlanetStates.clear();
+    cataclysmActive = false;
+}
+
+// Make functions globally available
+window.triggerCataclysm = triggerCataclysm;
+window.endCataclysm = endCataclysm;
+
+// ==================== AUTO-FIT SOLAR SYSTEM ====================
+function autoFitSystem(animate = true) {
+    if (planets.size === 0) return;
+
+    // Calculate bounding sphere of all planets
+    let maxDistance = 0;
+    let center = new THREE.Vector3(0, 0, 0);
+    let pointCount = 0;
+
+    planets.forEach((data) => {
+        const group = data.group;
+        const dist = group.position.length();
+        maxDistance = Math.max(maxDistance, dist);
+        center.add(group.position);
+        pointCount++;
+    });
+
+    if (pointCount > 0) {
+        center.divideScalar(pointCount);
+    }
+
+    // Add padding for planet sizes and some breathing room
+    const padding = 1.5;
+    const boundingRadius = maxDistance * padding;
+
+    // Calculate camera distance to fit everything
+    const fov = camera.fov * (Math.PI / 180);
+    const aspect = camera.aspect;
+    const distanceToFit = boundingRadius / Math.tan(fov / 2);
+
+    // Position camera at an angle for better 3D view
+    const cameraAngle = Math.PI / 6; // 30 degrees elevation
+    const targetPos = new THREE.Vector3(
+        0,
+        distanceToFit * Math.sin(cameraAngle) * 0.6,
+        distanceToFit * Math.cos(cameraAngle)
+    );
+
+    // Clamp to reasonable bounds
+    const minDist = 25;
+    const maxDist = 70;
+    const finalDist = Math.max(minDist, Math.min(maxDist, targetPos.length()));
+    targetPos.normalize().multiplyScalar(finalDist);
+
+    if (animate) {
+        gsap.to(camera.position, {
+            x: targetPos.x,
+            y: targetPos.y,
+            z: targetPos.z,
+            duration: 1.5,
+            ease: "power2.inOut"
+        });
+        gsap.to(controls.target, {
+            x: 0,
+            y: 0,
+            z: 0,
+            duration: 1.5,
+            ease: "power2.inOut"
+        });
+    } else {
+        camera.position.copy(targetPos);
+        controls.target.set(0, 0, 0);
+    }
+
+    controls.update();
+}
+
+// Auto-fit on window resize
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Re-fit system after resize
+    if (planets.size > 0 && !cataclysmActive && !clusterViewActive) {
+        autoFitSystem(false);
+    }
+}
+
+window.autoFitSystem = autoFitSystem;
+
 function updatePlanets(deltaTime) {
+    // Update cataclysm effect if active
+    updateCataclysm(deltaTime);
+
+    // Skip normal orbit updates during cataclysm
+    if (cataclysmActive) return;
+
     planets.forEach((data, ticker) => {
         const group = data.group;
         const userData = group.userData;
@@ -2766,12 +3730,6 @@ function updatePlanets(deltaTime) {
             }
         });
     });
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function animate() {
@@ -4620,20 +5578,40 @@ function showSettingsStatus(message, type) {
     }
 }
 
-// Update prices
+// Update prices with CATACLYSM effect
 async function refreshPrices() {
     try {
+        triggerCataclysm("UPDATING MARKET DATA...");
+
         const response = await fetch('/api/prices/update', { method: 'POST' });
         if (response.ok) {
-            location.reload(); // Reload to get new data
+            // Wait a bit for dramatic effect then reload
+            setTimeout(() => {
+                endCataclysm();
+                setTimeout(() => location.reload(), 1500);
+            }, 2000);
+        } else {
+            endCataclysm();
         }
     } catch (error) {
         console.error('Error updating prices:', error);
+        endCataclysm();
     }
 }
 
-// Make refreshPrices available globally
+// Trigger a fun cosmic event for 15 seconds
+function triggerCosmicEvent() {
+    triggerCataclysm("COSMIC ANOMALY DETECTED!");
+
+    // Automatically end after 15 seconds
+    setTimeout(() => {
+        endCataclysm();
+    }, 15000);
+}
+
+// Make functions globally available
 window.refreshPrices = refreshPrices;
+window.triggerCosmicEvent = triggerCosmicEvent;
 
 // ==================== SETUP FUNCTIONALITY ====================
 
@@ -5014,6 +5992,9 @@ async function main() {
 
         // Create the mysterious Alternate Reality pyramid
         createAlternateRealityPyramid();
+
+        // Auto-fit camera to show all planets
+        setTimeout(() => autoFitSystem(true), 500);
 
         // Fetch AI insights in background (non-blocking)
         fetchInsights();

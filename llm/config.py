@@ -56,19 +56,18 @@ def load_config() -> LLMConfig:
         except (json.JSONDecodeError, IOError):
             pass
 
-    # Override with environment variables (higher priority)
+    # Environment variables only for secrets and connection URLs (not model names)
+    # Model names should ONLY come from llm_config.json for single source of truth
     if os.getenv('LLM_PROVIDER'):
         config.provider = os.getenv('LLM_PROVIDER')
     if os.getenv('LLM_ENABLED'):
         config.enabled = os.getenv('LLM_ENABLED', '').lower() in ('true', '1', 'yes')
     if os.getenv('ANTHROPIC_API_KEY'):
         config.anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
-    if os.getenv('CLAUDE_MODEL'):
-        config.claude_model = os.getenv('CLAUDE_MODEL')
     if os.getenv('LOCAL_LLM_URL'):
         config.local_url = os.getenv('LOCAL_LLM_URL')
-    if os.getenv('LOCAL_LLM_MODEL'):
-        config.local_model = os.getenv('LOCAL_LLM_MODEL')
+    # Note: LOCAL_LLM_MODEL and CLAUDE_MODEL env vars are intentionally NOT read here
+    # Model configuration comes ONLY from llm_config.json
 
     return config
 
@@ -137,6 +136,7 @@ def update_config(**kwargs) -> LLMConfig:
     save_config(config)
 
     # Also update .env file for settings that are read from there
+    # Note: Model names are NOT synced to .env - they only live in llm_config.json
     env_file = CONFIG_DIR / ".env"
     env_updates = {}
 
@@ -146,8 +146,8 @@ def update_config(**kwargs) -> LLMConfig:
         env_updates['LLM_ENABLED'] = 'true' if kwargs['enabled'] else 'false'
     if 'local_url' in kwargs:
         env_updates['LOCAL_LLM_URL'] = kwargs['local_url']
-    if 'local_model' in kwargs:
-        env_updates['LOCAL_LLM_MODEL'] = kwargs['local_model']
+    # local_model and claude_model are intentionally NOT synced to .env
+    # Single source of truth: llm_config.json
 
     if env_updates:
         _update_env_file(env_file, env_updates)
