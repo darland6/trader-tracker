@@ -245,7 +245,8 @@ async def settings_page(request: Request):
             "enabled": llm_config.enabled,
             "claude_model": llm_config.claude_model,
             "local_url": llm_config.local_url,
-            "local_model": llm_config.local_model
+            "local_model": llm_config.local_model,
+            "has_api_key": bool(llm_config.anthropic_api_key)
         },
         "active": "settings"
     })

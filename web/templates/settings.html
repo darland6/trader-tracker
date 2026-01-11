@@ -77,40 +77,72 @@
             <p class="text-base-content/60 mb-4">Configure the LLM for generating event insights.</p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Provider Selection -->
                 <div class="form-control">
                     <label class="label">
                         <span class="label-text">Provider</span>
                     </label>
-                    <select id="llm-provider" class="select select-bordered">
+                    <select id="llm-provider" class="select select-bordered" onchange="updateProviderFields()">
                         <option value="local" {% if llm_config.provider == 'local' %}selected{% endif %}>Local LLM</option>
                         <option value="claude" {% if llm_config.provider == 'claude' %}selected{% endif %}>Claude API</option>
                     </select>
                 </div>
 
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text">Model</span>
-                    </label>
-                    <input type="text" id="llm-model"
-                           class="input input-bordered"
-                           value="{{ llm_config.local_model if llm_config.provider == 'local' else llm_config.claude_model }}">
-                </div>
-
-                <div class="form-control" id="local-url-field">
-                    <label class="label">
-                        <span class="label-text">Local LLM URL</span>
-                    </label>
-                    <input type="text" id="llm-url"
-                           class="input input-bordered"
-                           value="{{ llm_config.local_url }}">
-                </div>
-
+                <!-- Enable Toggle -->
                 <div class="form-control">
                     <label class="label cursor-pointer justify-start gap-4">
                         <input type="checkbox" id="llm-enabled" class="toggle toggle-primary"
                                {% if llm_config.enabled %}checked{% endif %}>
                         <span class="label-text">Enable AI Insights</span>
                     </label>
+                </div>
+
+                <!-- Local LLM URL (only for local) -->
+                <div class="form-control" id="local-url-field" style="{% if llm_config.provider != 'local' %}display: none;{% endif %}">
+                    <label class="label">
+                        <span class="label-text">Local LLM URL</span>
+                    </label>
+                    <input type="text" id="llm-url"
+                           class="input input-bordered"
+                           placeholder="http://192.168.50.10:1234/v1"
+                           value="{{ llm_config.local_url }}">
+                </div>
+
+                <!-- Local Model (only for local) -->
+                <div class="form-control" id="local-model-field" style="{% if llm_config.provider != 'local' %}display: none;{% endif %}">
+                    <label class="label">
+                        <span class="label-text">Local Model</span>
+                    </label>
+                    <input type="text" id="llm-local-model"
+                           class="input input-bordered"
+                           placeholder="meta/llama-3.3-70b"
+                           value="{{ llm_config.local_model }}">
+                </div>
+
+                <!-- Claude API Key (only for claude) -->
+                <div class="form-control" id="claude-key-field" style="{% if llm_config.provider != 'claude' %}display: none;{% endif %}">
+                    <label class="label">
+                        <span class="label-text">Anthropic API Key</span>
+                    </label>
+                    <input type="password" id="llm-api-key"
+                           class="input input-bordered"
+                           placeholder="{% if llm_config.has_api_key %}••••••••••••••••{% else %}sk-ant-...{% endif %}">
+                    {% if llm_config.has_api_key %}
+                    <label class="label">
+                        <span class="label-text-alt text-success">API key is configured</span>
+                    </label>
+                    {% endif %}
+                </div>
+
+                <!-- Claude Model (only for claude) -->
+                <div class="form-control" id="claude-model-field" style="{% if llm_config.provider != 'claude' %}display: none;{% endif %}">
+                    <label class="label">
+                        <span class="label-text">Claude Model</span>
+                    </label>
+                    <input type="text" id="llm-claude-model"
+                           class="input input-bordered"
+                           placeholder="claude-sonnet-4-20250514"
+                           value="{{ llm_config.claude_model }}">
                 </div>
             </div>
 
@@ -243,11 +275,20 @@
         }
     });
 
+    // Show/hide fields based on provider
+    function updateProviderFields() {
+        const provider = document.getElementById('llm-provider').value;
+        const isLocal = provider === 'local';
+
+        document.getElementById('local-url-field').style.display = isLocal ? 'block' : 'none';
+        document.getElementById('local-model-field').style.display = isLocal ? 'block' : 'none';
+        document.getElementById('claude-key-field').style.display = isLocal ? 'none' : 'block';
+        document.getElementById('claude-model-field').style.display = isLocal ? 'none' : 'block';
+    }
+
     // LLM Settings
     async function saveLLMSettings() {
         const provider = document.getElementById('llm-provider').value;
-        const model = document.getElementById('llm-model').value;
-        const url = document.getElementById('llm-url').value;
         const enabled = document.getElementById('llm-enabled').checked;
 
         const resultDiv = document.getElementById('llm-result');
@@ -256,15 +297,19 @@
         try {
             const payload = {
                 provider: provider,
-                enabled: enabled,
-                local_url: url
+                enabled: enabled
             };
 
-            // Set the appropriate model field based on provider
+            // Set fields based on provider
             if (provider === 'local') {
-                payload.local_model = model;
+                payload.local_url = document.getElementById('llm-url').value;
+                payload.local_model = document.getElementById('llm-local-model').value;
             } else {
-                payload.claude_model = model;
+                payload.claude_model = document.getElementById('llm-claude-model').value;
+                const apiKey = document.getElementById('llm-api-key').value;
+                if (apiKey && !apiKey.includes('•')) {
+                    payload.api_key = apiKey;
+                }
             }
 
             const response = await fetch('/api/config/llm', {
@@ -348,10 +393,5 @@
         }
     }
 
-    // Show/hide URL field based on provider
-    document.getElementById('llm-provider').addEventListener('change', function() {
-        document.getElementById('local-url-field').style.display =
-            this.value === 'local' ? 'block' : 'none';
-    });
 </script>
 {% endblock %}

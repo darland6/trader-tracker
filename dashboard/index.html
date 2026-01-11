@@ -2395,14 +2395,18 @@
                 </div>
                 <div class="panel-body" id="insights-body">
                     <div class="insights-scroll" id="insights-content">
-                        <div id="insights-loading" style="text-align: center; padding: 20px;">
+                        <div id="insights-loading" style="text-align: center; padding: 20px; display: none;">
                             <div class="spinner" style="width: 30px; height: 30px;"></div>
                             <p style="font-size: 10px; color: #0088ff; margin-top: 10px;">Analyzing...</p>
                         </div>
-                        <div id="insights-list" style="display: none;"></div>
+                        <div id="insights-list">
+                            <div class="insight-card info">
+                                <div class="insight-text" style="text-align: center; color: #666;">Click Refresh to load AI insights</div>
+                            </div>
+                        </div>
                     </div>
                     <div class="insights-footer">
-                        <span class="insights-timestamp" id="insights-timestamp">Loading...</span>
+                        <span class="insights-timestamp" id="insights-timestamp">Not loaded</span>
                         <button class="insights-refresh" onclick="refreshInsights()">Refresh</button>
                     </div>
                 </div>

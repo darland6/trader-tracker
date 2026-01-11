@@ -4533,7 +4533,7 @@ let playbackLoading = false;
 
 async function togglePlaybackMode() {
     playbackMode = !playbackMode;
-    const panel = document.getElementById('playback-panel');
+    const panel = document.getElementById('playback-console');
     const toggleBtn = document.getElementById('playback-toggle');
 
     if (playbackMode) {
@@ -4568,7 +4568,7 @@ async function togglePlaybackMode() {
 window.togglePlaybackMode = togglePlaybackMode;
 
 function togglePlaybackExpand() {
-    const panel = document.getElementById('playback-panel');
+    const panel = document.getElementById('playback-console');
     panel.classList.toggle('compact');
 }
 window.togglePlaybackExpand = togglePlaybackExpand;
