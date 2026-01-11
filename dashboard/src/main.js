@@ -5435,6 +5435,47 @@ function toggleChat() {
 }
 window.toggleChat = toggleChat;
 
+// Toggle fullscreen mode for chat
+let chatFullscreen = false;
+function toggleChatFullscreen() {
+    const panel = document.getElementById('chat-console');
+    const btn = document.getElementById('fullscreen-toggle');
+    const icon = document.getElementById('chat-toggle-icon');
+    const body = document.getElementById('chat-body');
+
+    chatFullscreen = !chatFullscreen;
+
+    if (chatFullscreen) {
+        // Enter fullscreen
+        panel.classList.remove('minimized');
+        panel.classList.add('fullscreen');
+        btn.textContent = '[X]';
+        btn.title = 'Exit fullscreen';
+        icon.textContent = '−';
+        if (body) body.style.display = 'block';
+        document.getElementById('chat-input').focus();
+
+        // Scroll to bottom
+        const messages = document.getElementById('chat-messages');
+        if (messages) {
+            messages.scrollTop = messages.scrollHeight;
+        }
+    } else {
+        // Exit fullscreen
+        panel.classList.remove('fullscreen');
+        btn.textContent = '[ ]';
+        btn.title = 'Toggle fullscreen';
+    }
+}
+window.toggleChatFullscreen = toggleChatFullscreen;
+
+// Handle Escape key to exit fullscreen
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && chatFullscreen) {
+        toggleChatFullscreen();
+    }
+});
+
 function handleChatKeypress(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
