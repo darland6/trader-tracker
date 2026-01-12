@@ -133,23 +133,110 @@
                 </div>
             </div>
 
-            <!-- Income Breakdown -->
-            <div class="card bg-base-100 shadow-xl">
+            <!-- Income Breakdown (Expandable) -->
+            <div class="card bg-base-100 shadow-xl" x-data="incomeBreakdown()">
                 <div class="card-body">
-                    <h2 class="card-title">Income Breakdown</h2>
-                    <div class="space-y-2">
-                        <div class="flex justify-between">
-                            <span>Trading Gains</span>
-                            <span class="font-mono">${{ "{:,.0f}".format(state.income.trading_gains) }}</span>
+                    <h2 class="card-title">
+                        Income Breakdown
+                        <span class="text-sm font-normal opacity-60" x-text="year ? `(${year})` : ''"></span>
+                    </h2>
+                    <div class="space-y-1">
+                        <!-- Trading Gains Row -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                            <input type="checkbox" @change="expanded.trades && loadDetails()" x-model="expanded.trades">
+                            <div class="collapse-title py-2 min-h-0 flex justify-between items-center">
+                                <span>Trading Gains</span>
+                                <span class="font-mono">${{ "{:,.0f}".format(state.income.trading_gains) }}</span>
+                            </div>
+                            <div class="collapse-content">
+                                <template x-if="loading">
+                                    <div class="text-center py-2"><span class="loading loading-spinner loading-sm"></span></div>
+                                </template>
+                                <template x-if="!loading && details.trades">
+                                    <div class="space-y-1 text-sm">
+                                        <div class="flex justify-between opacity-60 text-xs mb-2">
+                                            <span>Gains: <span class="text-success">$<span x-text="details.trades.gains?.toLocaleString()"></span></span></span>
+                                            <span>Losses: <span class="text-error">-$<span x-text="details.trades.losses?.toLocaleString()"></span></span></span>
+                                        </div>
+                                        <template x-for="tx in details.trades.transactions" :key="tx.date + tx.ticker">
+                                            <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                                <div>
+                                                    <span class="font-bold" x-text="tx.ticker"></span>
+                                                    <span class="text-xs opacity-60 ml-2" x-text="tx.date"></span>
+                                                </div>
+                                                <span class="font-mono" :class="tx.gain >= 0 ? 'text-success' : 'text-error'"
+                                                      x-text="'$' + tx.gain?.toLocaleString()"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="details.trades.transactions?.length === 0">
+                                            <div class="text-center opacity-60 py-2">No trading gains this year</div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Option Income</span>
-                            <span class="font-mono">${{ "{:,.0f}".format(state.income.option_income) }}</span>
+
+                        <!-- Option Income Row -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                            <input type="checkbox" @change="expanded.options && loadDetails()" x-model="expanded.options">
+                            <div class="collapse-title py-2 min-h-0 flex justify-between items-center">
+                                <span>Option Income</span>
+                                <span class="font-mono">${{ "{:,.0f}".format(state.income.option_income) }}</span>
+                            </div>
+                            <div class="collapse-content">
+                                <template x-if="loading">
+                                    <div class="text-center py-2"><span class="loading loading-spinner loading-sm"></span></div>
+                                </template>
+                                <template x-if="!loading && details.options">
+                                    <div class="space-y-1 text-sm">
+                                        <template x-for="tx in details.options.transactions" :key="tx.date + tx.ticker">
+                                            <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                                <div>
+                                                    <span class="font-bold" x-text="tx.ticker"></span>
+                                                    <span class="text-xs ml-1" x-text="tx.strategy"></span>
+                                                    <span class="text-xs opacity-60 ml-2" x-text="tx.date"></span>
+                                                </div>
+                                                <span class="font-mono text-success" x-text="'$' + tx.gain?.toLocaleString()"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="details.options.transactions?.length === 0">
+                                            <div class="text-center opacity-60 py-2">No option income this year</div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
-                        <div class="flex justify-between">
-                            <span>Dividends</span>
-                            <span class="font-mono">${{ "{:,.0f}".format(state.income.dividends) }}</span>
+
+                        <!-- Dividends Row -->
+                        <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                            <input type="checkbox" @change="expanded.dividends && loadDetails()" x-model="expanded.dividends">
+                            <div class="collapse-title py-2 min-h-0 flex justify-between items-center">
+                                <span>Dividends</span>
+                                <span class="font-mono">${{ "{:,.0f}".format(state.income.dividends) }}</span>
+                            </div>
+                            <div class="collapse-content">
+                                <template x-if="loading">
+                                    <div class="text-center py-2"><span class="loading loading-spinner loading-sm"></span></div>
+                                </template>
+                                <template x-if="!loading && details.dividends">
+                                    <div class="space-y-1 text-sm">
+                                        <template x-for="tx in details.dividends.transactions" :key="tx.date + tx.ticker">
+                                            <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                                <div>
+                                                    <span class="font-bold" x-text="tx.ticker"></span>
+                                                    <span class="text-xs opacity-60 ml-2" x-text="tx.date"></span>
+                                                </div>
+                                                <span class="font-mono text-success" x-text="'$' + tx.amount?.toLocaleString()"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="details.dividends.transactions?.length === 0">
+                                            <div class="text-center opacity-60 py-2">No dividends this year</div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
+
                         <div class="divider my-1"></div>
                         <div class="flex justify-between font-bold">
                             <span>Total YTD</span>
@@ -158,6 +245,33 @@
                     </div>
                 </div>
             </div>
+
+            <script>
+                function incomeBreakdown() {
+                    return {
+                        expanded: { trades: false, options: false, dividends: false },
+                        loading: false,
+                        details: {},
+                        year: null,
+                        loaded: false,
+
+                        async loadDetails() {
+                            if (this.loaded) return;
+                            this.loading = true;
+                            try {
+                                const response = await fetch('/api/income-breakdown');
+                                const data = await response.json();
+                                this.details = data;
+                                this.year = data.year;
+                                this.loaded = true;
+                            } catch (error) {
+                                console.error('Failed to load income details:', error);
+                            }
+                            this.loading = false;
+                        }
+                    }
+                }
+            </script>
 
             <!-- Gains Summary -->
             <div class="card bg-base-100 shadow-xl">
