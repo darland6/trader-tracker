@@ -1366,51 +1366,6 @@
             color: #0088ff;
         }
 
-        /* LLM Status Panel */
-        .llm-status-box {
-            background: linear-gradient(180deg, rgba(0, 50, 100, 0.3), rgba(0, 30, 60, 0.4));
-            border: 1px solid rgba(0, 136, 255, 0.3);
-            border-radius: 4px;
-            padding: 12px;
-            margin-bottom: 12px;
-        }
-
-        .llm-status-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 8px;
-        }
-
-        .llm-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
-
-        .llm-indicator.connected {
-            background: #00ff88;
-            box-shadow: 0 0 10px #00ff88;
-        }
-
-        .llm-indicator.disconnected {
-            background: #ff4444;
-            box-shadow: 0 0 10px #ff4444;
-        }
-
-        .llm-indicator.checking {
-            background: #ffd700;
-            box-shadow: 0 0 10px #ffd700;
-            animation: pulse-status 0.5s ease-in-out infinite;
-        }
-
-        .llm-status-text {
-            font-size: 10px;
-            color: #00ffff;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
         /* ==================== LOADING STATE ==================== */
         #loading {
             position: absolute;
@@ -3383,51 +3338,59 @@
                 </div>
             </div>
 
-            <!-- Settings Console -->
+            <!-- LLM Settings Panel -->
             <div id="settings-console" class="control-panel">
                 <div class="panel-header">
                     <span class="panel-title">LLM Settings</span>
                     <button class="modal-close" onclick="toggleSettings()" style="font-size: 16px;">&times;</button>
                 </div>
                 <div class="panel-body">
-                    <div class="llm-status-box">
-                        <div class="llm-status-row">
-                            <div class="llm-indicator checking" id="llm-indicator"></div>
-                            <span class="llm-status-text" id="llm-status-text">Checking...</span>
-                        </div>
-                        <div style="font-size: 9px; color: #666;">
-                            <span id="llm-status-provider">--</span> | <span id="llm-status-model">--</span>
-                        </div>
+                    <!-- Status indicator -->
+                    <div id="llm-status-display" style="display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(0,50,100,0.3); border-radius: 4px; margin-bottom: 12px;">
+                        <div id="llm-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #ffd700;"></div>
+                        <span id="llm-status-msg" style="font-size: 11px; color: #aaa;">Checking...</span>
                     </div>
+
+                    <!-- Provider selection -->
                     <div class="setting-group">
                         <label class="setting-label">Provider</label>
-                        <select id="llm-provider" class="setting-select" onchange="onProviderChange()">
-                            <option value="claude">Claude (Anthropic)</option>
+                        <select id="llm-provider" class="setting-select">
                             <option value="local">Local LLM</option>
+                            <option value="claude">Claude (Anthropic)</option>
                         </select>
                     </div>
-                    <div class="setting-group" id="api-key-group">
-                        <label class="setting-label">API Key</label>
-                        <input type="password" id="api-key" class="setting-input" placeholder="sk-ant-...">
-                        <div id="api-key-status" style="font-size: 10px; margin-top: 4px;"></div>
+
+                    <!-- Local LLM settings -->
+                    <div id="local-settings">
+                        <div class="setting-group">
+                            <label class="setting-label">URL</label>
+                            <input type="text" id="local-url" class="setting-input" placeholder="http://192.168.50.10:1234/v1">
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Model</label>
+                            <input type="text" id="local-model" class="setting-input" placeholder="model-name">
+                        </div>
                     </div>
-                    <div class="setting-group" id="claude-model-group">
-                        <label class="setting-label">Model</label>
-                        <input type="text" id="claude-model" class="setting-input" placeholder="claude-sonnet-4-20250514">
+
+                    <!-- Claude settings -->
+                    <div id="claude-settings" style="display: none;">
+                        <div class="setting-group">
+                            <label class="setting-label">Model</label>
+                            <input type="text" id="claude-model" class="setting-input" placeholder="claude-sonnet-4-20250514">
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">API Key</label>
+                            <input type="password" id="api-key" class="setting-input" placeholder="sk-ant-...">
+                            <div id="api-key-status" style="font-size: 10px; margin-top: 4px;"></div>
+                        </div>
                     </div>
-                    <div class="setting-group" id="local-url-group" style="display: none;">
-                        <label class="setting-label">Local URL</label>
-                        <input type="text" id="local-url" class="setting-input" placeholder="http://localhost:1234/v1">
-                    </div>
-                    <div class="setting-group" id="local-model-group" style="display: none;">
-                        <label class="setting-label">Local Model</label>
-                        <input type="text" id="local-model" class="setting-input" placeholder="mistral-7b">
-                    </div>
+
+                    <!-- Actions -->
                     <div class="settings-actions">
-                        <button class="settings-btn secondary" onclick="testLLM()">Test</button>
-                        <button class="settings-btn primary" onclick="saveLLMSettings()">Save</button>
+                        <button class="settings-btn secondary" onclick="testLLMConnection()">Test</button>
+                        <button class="settings-btn primary" onclick="saveLLMConfig()">Save</button>
                     </div>
-                    <div id="settings-status" style="margin-top: 8px; font-size: 10px;"></div>
+                    <div id="llm-save-status" style="margin-top: 8px; font-size: 10px;"></div>
                 </div>
             </div>
         </div>

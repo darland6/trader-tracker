@@ -5928,6 +5928,9 @@ async function updateSessionStats() {
 
 // ==================== LLM SETTINGS ====================
 
+// Store the full config so we preserve all fields when saving
+let currentLLMConfig = null;
+
 function toggleSettings() {
     const panel = document.getElementById('settings-console');
     const isVisible = panel.classList.contains('visible');
@@ -5936,174 +5939,185 @@ function toggleSettings() {
         panel.classList.remove('visible');
     } else {
         panel.classList.add('visible');
-        loadLLMSettings();
+        loadLLMConfig();
     }
 }
 window.toggleSettings = toggleSettings;
 
-function onProviderChange() {
-    const provider = document.getElementById('llm-provider').value;
-    const apiKeyGroup = document.getElementById('api-key-group');
-    const claudeGroup = document.getElementById('claude-model-group');
-    const localUrlGroup = document.getElementById('local-url-group');
-    const localModelGroup = document.getElementById('local-model-group');
-
-    if (provider === 'claude') {
-        apiKeyGroup.style.display = 'block';
-        claudeGroup.style.display = 'block';
-        localUrlGroup.style.display = 'none';
-        localModelGroup.style.display = 'none';
-    } else {
-        apiKeyGroup.style.display = 'none';
-        claudeGroup.style.display = 'none';
-        localUrlGroup.style.display = 'block';
-        localModelGroup.style.display = 'block';
-    }
-}
-window.onProviderChange = onProviderChange;
-
-async function loadLLMSettings() {
+// Load full config from server
+async function loadLLMConfig() {
+    const statusEl = document.getElementById('llm-save-status');
     try {
         const response = await fetch('/api/config/llm');
-        const data = await response.json();
+        if (!response.ok) throw new Error('Failed to fetch config');
 
-        document.getElementById('llm-provider').value = data.provider;
-        document.getElementById('claude-model').value = data.claude_model;
-        document.getElementById('local-url').value = data.local_url;
-        document.getElementById('local-model').value = data.local_model;
+        currentLLMConfig = await response.json();
+
+        // Populate form fields
+        document.getElementById('llm-provider').value = currentLLMConfig.provider || 'local';
+        document.getElementById('local-url').value = currentLLMConfig.local_url || '';
+        document.getElementById('local-model').value = currentLLMConfig.local_model || '';
+        document.getElementById('claude-model').value = currentLLMConfig.claude_model || '';
 
         // Show API key status
-        updateApiKeyStatus(data.has_api_key);
+        const apiKeyStatus = document.getElementById('api-key-status');
+        if (apiKeyStatus) {
+            apiKeyStatus.innerHTML = currentLLMConfig.has_api_key
+                ? '<span style="color: #00ff88;">✓ API key configured</span>'
+                : '';
+        }
 
-        onProviderChange();
+        // Update provider visibility
+        updateProviderFields();
 
-        // Also refresh the status indicator
-        refreshLLMStatus();
+        // Check connection status
+        checkLLMStatus();
+
     } catch (error) {
-        showSettingsStatus('Failed to load settings: ' + error.message, 'error');
+        if (statusEl) statusEl.innerHTML = `<span style="color: #ff4444;">Load failed: ${error.message}</span>`;
     }
 }
 
-async function refreshLLMStatus() {
-    const indicator = document.getElementById('llm-indicator');
-    const providerEl = document.getElementById('llm-status-provider');
-    const modelEl = document.getElementById('llm-status-model');
-    const statusText = document.getElementById('llm-status-text');
+// Update which fields are visible based on provider
+function updateProviderFields() {
+    const provider = document.getElementById('llm-provider').value;
+    const localSettings = document.getElementById('local-settings');
+    const claudeSettings = document.getElementById('claude-settings');
 
-    // Skip if elements don't exist
-    if (!indicator || !providerEl || !modelEl || !statusText) return;
+    if (provider === 'claude') {
+        localSettings.style.display = 'none';
+        claudeSettings.style.display = 'block';
+    } else {
+        localSettings.style.display = 'block';
+        claudeSettings.style.display = 'none';
+    }
+}
 
-    // Set checking state
-    indicator.className = 'llm-status-indicator checking';
-    statusText.textContent = 'Checking...';
+// Listen for provider change
+document.addEventListener('DOMContentLoaded', () => {
+    const providerSelect = document.getElementById('llm-provider');
+    if (providerSelect) {
+        providerSelect.addEventListener('change', updateProviderFields);
+    }
+});
+
+// Check if LLM is reachable
+async function checkLLMStatus() {
+    const dot = document.getElementById('llm-status-dot');
+    const msg = document.getElementById('llm-status-msg');
+
+    if (!dot || !msg) return;
+
+    dot.style.background = '#ffd700';
+    msg.textContent = 'Checking...';
 
     try {
         const response = await fetch('/api/config/llm/status');
         const status = await response.json();
 
-        // Update provider and model
-        providerEl.textContent = status.provider === 'claude' ? 'Claude' : 'Local';
-        modelEl.textContent = status.model || '--';
-
         if (status.connected) {
-            indicator.className = 'llm-status-indicator connected';
-            statusText.textContent = 'Online';
+            dot.style.background = '#00ff88';
+            dot.style.boxShadow = '0 0 10px #00ff88';
+            msg.textContent = `${status.provider === 'claude' ? 'Claude' : 'Local'}: ${status.model || 'connected'}`;
+            msg.style.color = '#00ff88';
         } else {
-            indicator.className = 'llm-status-indicator disconnected';
-            statusText.textContent = 'Offline';
+            dot.style.background = '#ff4444';
+            dot.style.boxShadow = '0 0 10px #ff4444';
+            msg.textContent = status.error || 'Offline';
+            msg.style.color = '#ff4444';
         }
     } catch (error) {
-        indicator.className = 'llm-status-indicator disconnected';
-        statusText.textContent = 'Error';
+        dot.style.background = '#ff4444';
+        dot.style.boxShadow = '0 0 10px #ff4444';
+        msg.textContent = 'Error';
+        msg.style.color = '#ff4444';
     }
 }
-window.refreshLLMStatus = refreshLLMStatus;
 
-async function saveLLMSettings() {
-    const provider = document.getElementById('llm-provider').value;
-    const claudeModel = document.getElementById('claude-model').value;
-    const localUrl = document.getElementById('local-url').value;
-    const localModel = document.getElementById('local-model').value;
-    const apiKey = document.getElementById('api-key').value;
+// Save config - preserves all fields
+async function saveLLMConfig() {
+    const statusEl = document.getElementById('llm-save-status');
 
-    const payload = {
-        provider: provider,
-        claude_model: claudeModel,
-        local_url: localUrl,
-        local_model: localModel
+    // Build complete config, preserving existing fields
+    const config = {
+        provider: document.getElementById('llm-provider').value,
+        enabled: currentLLMConfig?.enabled ?? true,
+        claude_model: document.getElementById('claude-model').value,
+        local_url: document.getElementById('local-url').value,
+        local_model: document.getElementById('local-model').value,
+        timeout: currentLLMConfig?.timeout ?? 180,
+        max_history_events: currentLLMConfig?.max_history_events ?? 10
     };
 
-    // Only include API key if it was entered (not empty)
-    if (apiKey && apiKey.trim()) {
-        payload.api_key = apiKey.trim();
-    }
+    // Handle API key separately if provided
+    const apiKey = document.getElementById('api-key')?.value?.trim();
 
     try {
+        // Save main config
         const response = await fetch('/api/config/llm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(config)
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            // Clear the API key field after saving
-            document.getElementById('api-key').value = '';
-            updateApiKeyStatus(data.has_api_key);
-            showSettingsStatus('Settings saved successfully!', 'success');
-            // Refresh status indicator after saving
-            setTimeout(() => refreshLLMStatus(), 500);
-        } else {
-            const data = await response.json();
-            showSettingsStatus('Failed: ' + (data.detail || 'Unknown error'), 'error');
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Save failed');
         }
+
+        // Save API key if provided
+        if (apiKey) {
+            const keyResponse = await fetch('/api/config/llm/api-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: apiKey })
+            });
+            if (keyResponse.ok) {
+                document.getElementById('api-key').value = '';
+                const apiKeyStatus = document.getElementById('api-key-status');
+                if (apiKeyStatus) {
+                    apiKeyStatus.innerHTML = '<span style="color: #00ff88;">✓ API key configured</span>';
+                }
+            }
+        }
+
+        // Update stored config
+        currentLLMConfig = config;
+
+        if (statusEl) {
+            statusEl.innerHTML = '<span style="color: #00ff88;">Saved!</span>';
+            setTimeout(() => { statusEl.innerHTML = ''; }, 2000);
+        }
+
+        // Re-check status
+        setTimeout(checkLLMStatus, 500);
+
     } catch (error) {
-        showSettingsStatus('Failed to save: ' + error.message, 'error');
+        if (statusEl) statusEl.innerHTML = `<span style="color: #ff4444;">${error.message}</span>`;
     }
 }
-window.saveLLMSettings = saveLLMSettings;
+window.saveLLMConfig = saveLLMConfig;
 
-function updateApiKeyStatus(hasKey) {
-    const statusEl = document.getElementById('api-key-status');
-    if (!statusEl) return;
-    if (hasKey) {
-        statusEl.innerHTML = '<span style="color: #00ff88;">✓ API key configured</span>';
-    } else {
-        statusEl.innerHTML = '';
-    }
-}
-
-async function testLLM() {
-    showSettingsStatus('Testing connection...', '');
+// Test connection
+async function testLLMConnection() {
+    const statusEl = document.getElementById('llm-save-status');
+    if (statusEl) statusEl.innerHTML = '<span style="color: #ffd700;">Testing...</span>';
 
     try {
         const response = await fetch('/api/config/llm/test', { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
-            showSettingsStatus(`Connected to ${data.provider} (${data.model}): "${data.response}"`, 'success');
+            if (statusEl) statusEl.innerHTML = `<span style="color: #00ff88;">✓ ${data.provider}: "${data.response}"</span>`;
+            checkLLMStatus();
         } else {
-            showSettingsStatus('Test failed: ' + data.error, 'error');
+            if (statusEl) statusEl.innerHTML = `<span style="color: #ff4444;">✗ ${data.error}</span>`;
         }
     } catch (error) {
-        showSettingsStatus('Test failed: ' + error.message, 'error');
+        if (statusEl) statusEl.innerHTML = `<span style="color: #ff4444;">✗ ${error.message}</span>`;
     }
 }
-window.testLLM = testLLM;
-
-function showSettingsStatus(message, type) {
-    const status = document.getElementById('settings-status');
-    status.textContent = message;
-    status.className = 'settings-status' + (type ? ' ' + type : '');
-    status.style.display = message ? 'block' : 'none';
-
-    // Auto-hide success messages
-    if (type === 'success') {
-        setTimeout(() => {
-            status.style.display = 'none';
-        }, 3000);
-    }
-}
+window.testLLMConnection = testLLMConnection;
 
 // Update prices with CATACLYSM effect
 async function refreshPrices() {
