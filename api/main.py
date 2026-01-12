@@ -11,6 +11,7 @@ Run with: uvicorn api.main:app --reload --port 8000
 from dotenv import load_dotenv
 load_dotenv()
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -33,11 +34,90 @@ from api.services.skill_discovery import create_skill_router
 # Static files directory
 STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
 
-# Initialize app
+
+# WebSocket connection manager for real-time updates
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+
+manager = ConnectionManager()
+
+
+async def do_price_update():
+    """Perform price update for scheduler."""
+    from api.routes.prices import update_prices
+    try:
+        result = await update_prices(save_to_log=True)
+        return result.data if result else None
+    except Exception as e:
+        print(f"[Scheduler] Price update failed: {e}")
+        return None
+
+
+async def do_alert_check():
+    """Perform alert check for scheduler."""
+    from api.services.alerts import run_all_alert_checks
+    try:
+        return run_all_alert_checks()
+    except Exception as e:
+        print(f"[Scheduler] Alert check failed: {e}")
+        return None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup
+    from pathlib import Path
+    from api.services.scheduler import scheduler
+
+    SCRIPT_DIR = Path(__file__).parent.parent.resolve()
+    CSV_PATH = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
+
+    # Only init database if CSV exists (real or demo data)
+    if CSV_PATH.exists():
+        init_database()
+        sync_csv_to_db()
+    else:
+        # Just create empty database schema
+        init_database()
+
+    # Configure and start scheduler
+    scheduler.set_callbacks(
+        price_update=do_price_update,
+        alert_check=do_alert_check,
+        broadcast=manager.broadcast
+    )
+    scheduler.start()
+
+    yield
+
+    # Shutdown
+    scheduler.stop()
+
+
+# Initialize app with lifespan
 app = FastAPI(
     title="Portfolio Dashboard API",
     description="API for managing financial portfolio with event sourcing",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS for frontend development
@@ -100,30 +180,6 @@ async def favicon():
     return FileResponse(status_code=204)  # No content
 
 
-# WebSocket connection manager for real-time updates
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception:
-                pass
-
-
-manager = ConnectionManager()
-
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates."""
@@ -137,60 +193,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-
-
-async def do_price_update():
-    """Perform price update for scheduler."""
-    from api.routes.prices import update_prices
-    try:
-        result = await update_prices(save_to_log=True)
-        return result.data if result else None
-    except Exception as e:
-        print(f"[Scheduler] Price update failed: {e}")
-        return None
-
-
-async def do_alert_check():
-    """Perform alert check for scheduler."""
-    from api.services.alerts import run_all_alert_checks
-    try:
-        return run_all_alert_checks()
-    except Exception as e:
-        print(f"[Scheduler] Alert check failed: {e}")
-        return None
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and sync on startup if data exists."""
-    from pathlib import Path
-    from api.services.scheduler import scheduler
-
-    SCRIPT_DIR = Path(__file__).parent.parent.resolve()
-    CSV_PATH = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
-
-    # Only init database if CSV exists (real or demo data)
-    if CSV_PATH.exists():
-        init_database()
-        sync_csv_to_db()
-    else:
-        # Just create empty database schema
-        init_database()
-
-    # Configure and start scheduler
-    scheduler.set_callbacks(
-        price_update=do_price_update,
-        alert_check=do_alert_check,
-        broadcast=manager.broadcast
-    )
-    scheduler.start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    from api.services.scheduler import scheduler
-    scheduler.stop()
 
 
 @app.get("/")
