@@ -192,6 +192,31 @@ async def cash_page(request: Request):
     })
 
 
+@router.get("/ideas", response_class=HTMLResponse)
+async def ideas_page(request: Request, status: str = None):
+    """Ideas Lab page - create, view, and manage investment ideas."""
+    from api.routes.ideas import get_ideas
+
+    ideas = get_ideas(status_filter=status)
+
+    # Count by status
+    status_counts = {
+        "seed": len([i for i in ideas if i['status'] == 'seed']),
+        "manifested": len([i for i in ideas if i['status'] == 'manifested']),
+        "actionable": len([i for i in ideas if i['status'] == 'actionable']),
+        "executed": len([i for i in ideas if i['status'] == 'executed']),
+        "archived": len([i for i in ideas if i['status'] == 'archived'])
+    }
+
+    return templates.TemplateResponse("ideas.html", {
+        "request": request,
+        "ideas": ideas,
+        "status_counts": status_counts,
+        "selected_status": status,
+        "active": "ideas"
+    })
+
+
 @router.get("/events", response_class=HTMLResponse)
 async def events_page(request: Request, event_type: str = None, t: str = None):
     """Event history page.

@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+
+{% block title %}Ideas Lab - Portfolio Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold">Ideas Lab</h1>
+            <p class="text-base-content/60">Create, manifest, and track investment ideas</p>
+        </div>
+        <button onclick="document.getElementById('new-idea-modal').showModal()" class="btn btn-primary">
+            + New Idea
+        </button>
+    </div>
+
+    <!-- Status Filters -->
+    <div class="flex flex-wrap gap-2">
+        <a href="/ideas" class="btn btn-sm {% if not selected_status %}btn-active{% else %}btn-ghost{% endif %}">
+            All ({{ ideas|length }})
+        </a>
+        <a href="/ideas?status=seed" class="btn btn-sm {% if selected_status == 'seed' %}btn-active{% else %}btn-ghost{% endif %}">
+            Seeds ({{ status_counts.seed }})
+        </a>
+        <a href="/ideas?status=manifested" class="btn btn-sm {% if selected_status == 'manifested' %}btn-active{% else %}btn-ghost{% endif %}">
+            Manifested ({{ status_counts.manifested }})
+        </a>
+        <a href="/ideas?status=executed" class="btn btn-sm {% if selected_status == 'executed' %}btn-active{% else %}btn-ghost{% endif %}">
+            Executed ({{ status_counts.executed }})
+        </a>
+        <a href="/ideas?status=archived" class="btn btn-sm {% if selected_status == 'archived' %}btn-active{% else %}btn-ghost{% endif %}">
+            Archived ({{ status_counts.archived }})
+        </a>
+    </div>
+
+    <!-- Ideas List -->
+    {% if ideas %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for idea in ideas %}
+        <div class="card bg-base-100 shadow-xl {% if not idea.enabled %}opacity-60{% endif %}">
+            <div class="card-body">
+                <!-- Header -->
+                <div class="flex justify-between items-start">
+                    <h2 class="card-title text-lg">{{ idea.title }}</h2>
+                    <div class="flex gap-1">
+                        <!-- Status Badge -->
+                        {% if idea.status == 'seed' %}
+                        <span class="badge badge-info">Seed</span>
+                        {% elif idea.status == 'manifested' %}
+                        <span class="badge badge-warning">Manifested</span>
+                        {% elif idea.status == 'executed' %}
+                        <span class="badge badge-success">Executed</span>
+                        {% elif idea.status == 'archived' %}
+                        <span class="badge badge-ghost">Archived</span>
+                        {% endif %}
+
+                        <!-- Enabled Toggle -->
+                        <label class="swap swap-flip">
+                            <input type="checkbox"
+                                   {% if idea.enabled %}checked{% endif %}
+                                   onchange="toggleIdea('{{ idea.id }}', this.checked)">
+                            <span class="swap-on badge badge-success">ON</span>
+                            <span class="swap-off badge badge-ghost">OFF</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Description -->
+                <p class="text-sm text-base-content/70 line-clamp-3">{{ idea.description }}</p>
+
+                <!-- Tags -->
+                {% if idea.tags %}
+                <div class="flex flex-wrap gap-1 mt-2">
+                    {% for tag in idea.tags[:5] %}
+                    <span class="badge badge-outline badge-sm">{{ tag }}</span>
+                    {% endfor %}
+                    {% if idea.tags|length > 5 %}
+                    <span class="badge badge-outline badge-sm">+{{ idea.tags|length - 5 }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Meta -->
+                <div class="flex justify-between text-xs text-base-content/50 mt-2">
+                    <span>{{ idea.category | title }}</span>
+                    <span>{{ idea.priority | title }} priority</span>
+                </div>
+
+                <!-- Actions -->
+                {% if idea.actions %}
+                <div class="mt-3 border-t border-base-300 pt-3">
+                    <div class="text-sm font-semibold mb-2">Actions ({{ idea.actions|length }})</div>
+                    <div class="space-y-1 max-h-32 overflow-y-auto">
+                        {% for action in idea.actions[:3] %}
+                        <div class="flex items-center justify-between text-xs p-2 bg-base-200 rounded">
+                            <span>
+                                <span class="font-mono">{{ action.action_type }}</span>
+                                {% if action.target %} - {{ action.target }}{% endif %}
+                            </span>
+                            <span class="badge badge-xs {% if action.executed %}badge-success{% elif action.approved %}badge-warning{% else %}badge-ghost{% endif %}">
+                                {% if action.executed %}Done{% elif action.approved %}Ready{% else %}Pending{% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                        {% if idea.actions|length > 3 %}
+                        <div class="text-xs text-center opacity-60">+{{ idea.actions|length - 3 }} more</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Card Actions -->
+                <div class="card-actions justify-end mt-4">
+                    {% if idea.status == 'seed' %}
+                    <button onclick="manifestIdea('{{ idea.id }}')" class="btn btn-sm btn-primary">
+                        Manifest
+                    </button>
+                    {% endif %}
+                    <button onclick="openEditModal('{{ idea.id }}')" class="btn btn-sm btn-ghost">
+                        View
+                    </button>
+                    {% if idea.status != 'archived' %}
+                    <button onclick="archiveIdea('{{ idea.id }}')" class="btn btn-sm btn-ghost text-error">
+                        Archive
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body text-center py-12">
+            <h3 class="text-lg font-semibold">No ideas yet</h3>
+            <p class="text-base-content/60">Create your first idea to get started</p>
+            <div class="mt-4">
+                <button onclick="document.getElementById('new-idea-modal').showModal()" class="btn btn-primary">
+                    Create Idea
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- New Idea Modal -->
+<dialog id="new-idea-modal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg">New Idea</h3>
+        <form id="new-idea-form" class="space-y-4 mt-4">
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Title</span>
+                </label>
+                <input type="text" name="title" id="idea-title"
+                       class="input input-bordered"
+                       placeholder="e.g., Increase income through covered calls"
+                       required>
+            </div>
+
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Description</span>
+                </label>
+                <textarea name="description" id="idea-description"
+                          class="textarea textarea-bordered h-24"
+                          placeholder="Describe your idea in detail..."
+                          required></textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Category</span>
+                    </label>
+                    <select name="category" id="idea-category" class="select select-bordered">
+                        <option value="general">General</option>
+                        <option value="income">Income</option>
+                        <option value="growth">Growth</option>
+                        <option value="hedge">Hedge</option>
+                        <option value="research">Research</option>
+                        <option value="experiment">Experiment</option>
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-bold">Priority</span>
+                    </label>
+                    <select name="priority" id="idea-priority" class="select select-bordered">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-bold">Tags</span>
+                    <span class="label-text-alt">Comma-separated</span>
+                </label>
+                <input type="text" name="tags" id="idea-tags"
+                       class="input input-bordered"
+                       placeholder="e.g., TSLA, options, income">
+            </div>
+
+            <div class="modal-action">
+                <button type="button" class="btn" onclick="document.getElementById('new-idea-modal').close()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Idea</button>
+            </div>
+        </form>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<!-- View/Edit Idea Modal -->
+<dialog id="edit-idea-modal" class="modal">
+    <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg" id="edit-modal-title">Idea Details</h3>
+        <div id="edit-modal-content" class="mt-4">
+            <!-- Filled by JavaScript -->
+        </div>
+        <div class="modal-action">
+            <button class="btn" onclick="document.getElementById('edit-idea-modal').close()">Close</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<!-- Result Toast -->
+<div id="toast" class="toast toast-end hidden">
+    <div class="alert" id="toast-content">
+        <span id="toast-message"></span>
+    </div>
+</div>
+
+<script>
+    // Create new idea
+    document.getElementById('new-idea-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const tagsInput = document.getElementById('idea-tags').value;
+        const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+
+        const payload = {
+            title: document.getElementById('idea-title').value,
+            description: document.getElementById('idea-description').value,
+            category: document.getElementById('idea-category').value,
+            priority: document.getElementById('idea-priority').value,
+            tags: tags,
+            enabled: true
+        };
+
+        try {
+            const response = await fetch('/api/ideas/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('Idea created successfully!', 'success');
+                document.getElementById('new-idea-modal').close();
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showToast(data.detail || 'Failed to create idea', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    });
+
+    // Toggle idea enabled state
+    async function toggleIdea(ideaId, enabled) {
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/toggle?enabled=${enabled}`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(enabled ? 'Idea enabled' : 'Idea disabled', 'success');
+            } else {
+                showToast(data.detail || 'Failed to toggle idea', 'error');
+                window.location.reload();
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // Manifest idea into actions
+    async function manifestIdea(ideaId) {
+        showToast('Manifesting idea with AI...', 'info');
+
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/manifest`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast(`Generated ${data.action_count} actions!`, 'success');
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showToast(data.detail || 'Manifestation failed', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // Archive idea
+    async function archiveIdea(ideaId) {
+        if (!confirm('Archive this idea?')) return;
+
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/archive`, {
+                method: 'POST'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('Idea archived', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showToast(data.detail || 'Failed to archive', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // Open edit/view modal
+    async function openEditModal(ideaId) {
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}`);
+            const idea = await response.json();
+
+            let actionsHtml = '';
+            if (idea.actions && idea.actions.length > 0) {
+                actionsHtml = `
+                    <div class="mt-4">
+                        <h4 class="font-semibold mb-2">Actions</h4>
+                        <div class="space-y-2">
+                            ${idea.actions.map(action => `
+                                <div class="p-3 bg-base-200 rounded-lg">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <span class="font-mono font-bold">${action.action_type}</span>
+                                            ${action.target ? `<span class="ml-2">${action.target}</span>` : ''}
+                                        </div>
+                                        <div class="flex gap-2">
+                                            ${!action.approved && !action.executed ? `
+                                                <button onclick="approveAction('${ideaId}', '${action.action_id}')"
+                                                        class="btn btn-xs btn-success">Approve</button>
+                                                <button onclick="rejectAction('${ideaId}', '${action.action_id}')"
+                                                        class="btn btn-xs btn-error">Reject</button>
+                                            ` : ''}
+                                            ${action.approved && !action.executed ? `
+                                                <button onclick="executeAction('${ideaId}', '${action.action_id}')"
+                                                        class="btn btn-xs btn-primary">Execute</button>
+                                            ` : ''}
+                                            ${action.executed ? '<span class="badge badge-success">Executed</span>' : ''}
+                                        </div>
+                                    </div>
+                                    ${action.reasoning ? `<p class="text-sm mt-2 opacity-70">${action.reasoning}</p>` : ''}
+                                    ${action.details && Object.keys(action.details).length > 0 ? `
+                                        <pre class="text-xs mt-2 bg-base-300 p-2 rounded overflow-x-auto">${JSON.stringify(action.details, null, 2)}</pre>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('edit-modal-title').textContent = idea.title;
+            document.getElementById('edit-modal-content').innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <span class="badge ${idea.status === 'seed' ? 'badge-info' : idea.status === 'manifested' ? 'badge-warning' : idea.status === 'executed' ? 'badge-success' : 'badge-ghost'}">${idea.status}</span>
+                        <span class="badge badge-outline">${idea.category}</span>
+                        <span class="badge badge-outline">${idea.priority} priority</span>
+                        ${idea.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge badge-ghost">Disabled</span>'}
+                    </div>
+
+                    <p>${idea.description}</p>
+
+                    ${idea.tags && idea.tags.length > 0 ? `
+                        <div class="flex flex-wrap gap-1">
+                            ${idea.tags.map(tag => `<span class="badge badge-outline">${tag}</span>`).join('')}
+                        </div>
+                    ` : ''}
+
+                    <div class="text-sm text-base-content/60">
+                        Created: ${new Date(idea.created_at).toLocaleString()}
+                    </div>
+
+                    ${actionsHtml}
+
+                    ${idea.status === 'seed' ? `
+                        <div class="mt-4">
+                            <button onclick="manifestIdea('${idea.id}'); document.getElementById('edit-idea-modal').close();"
+                                    class="btn btn-primary">
+                                Manifest with AI
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            document.getElementById('edit-idea-modal').showModal();
+        } catch (error) {
+            showToast('Error loading idea: ' + error.message, 'error');
+        }
+    }
+
+    // Action approval/rejection/execution
+    async function approveAction(ideaId, actionId) {
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/actions/${actionId}/approve`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                showToast('Action approved', 'success');
+                openEditModal(ideaId); // Refresh modal
+            } else {
+                showToast('Failed to approve action', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    async function rejectAction(ideaId, actionId) {
+        const reason = prompt('Reason for rejection (optional):');
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/actions/${actionId}/reject?reason=${encodeURIComponent(reason || '')}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                showToast('Action rejected', 'success');
+                openEditModal(ideaId);
+            } else {
+                showToast('Failed to reject action', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    async function executeAction(ideaId, actionId) {
+        if (!confirm('Execute this action? This will create the actual trade/option.')) return;
+
+        try {
+            const response = await fetch(`/api/ideas/${ideaId}/actions/${actionId}/execute`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (response.ok && data.success) {
+                showToast(`Action executed as event #${data.executed_event_id}`, 'success');
+                openEditModal(ideaId);
+            } else {
+                showToast(data.detail || 'Failed to execute action', 'error');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    }
+
+    // Toast notification
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const content = document.getElementById('toast-content');
+        const messageEl = document.getElementById('toast-message');
+
+        content.className = 'alert';
+        if (type === 'success') content.classList.add('alert-success');
+        else if (type === 'error') content.classList.add('alert-error');
+        else if (type === 'warning') content.classList.add('alert-warning');
+        else content.classList.add('alert-info');
+
+        messageEl.textContent = message;
+        toast.classList.remove('hidden');
+
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 3000);
+    }
+</script>
+{% endblock %}
