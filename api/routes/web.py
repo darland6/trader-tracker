@@ -113,7 +113,9 @@ async def dashboard(request: Request):
 
         template_state["active_options"].append({
             "event_id": opt.get('event_id', 0),
+            "position_id": opt.get('position_id', ''),
             "ticker": opt.get('ticker', ''),
+            "action": opt.get('action', 'SELL'),  # BUY or SELL
             "strategy": opt.get('strategy', ''),
             "strike": opt.get('strike', 0),
             "expiration": opt.get('expiration', ''),
@@ -234,20 +236,31 @@ async def events_page(request: Request, event_type: str = None, t: str = None):
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     """Settings page for backup/restore and LLM configuration."""
-    from llm.config import get_llm_config
+    import json
+    import os
 
-    llm_config = get_llm_config()
+    # Read directly from llm_config.json
+    config_file = Path(__file__).parent.parent.parent / "llm_config.json"
+    try:
+        with open(config_file) as f:
+            config = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        config = {
+            "provider": "local",
+            "enabled": True,
+            "claude_model": "claude-sonnet-4-20250514",
+            "local_url": "http://192.168.50.10:1234/v1",
+            "local_model": "meta/llama-3.3-70b",
+            "timeout": 180,
+            "max_history_events": 10
+        }
+
+    # Add API key status
+    config["has_api_key"] = bool(os.getenv("ANTHROPIC_API_KEY"))
 
     return templates.TemplateResponse("settings.html", {
         "request": request,
-        "llm_config": {
-            "provider": llm_config.provider,
-            "enabled": llm_config.enabled,
-            "claude_model": llm_config.claude_model,
-            "local_url": llm_config.local_url,
-            "local_model": llm_config.local_model,
-            "has_api_key": bool(llm_config.anthropic_api_key)
-        },
+        "llm_config": config,
         "active": "settings"
     })
 

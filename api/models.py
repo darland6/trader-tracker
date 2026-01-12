@@ -31,11 +31,12 @@ class TradeRequest(BaseModel):
 
 class OptionOpenRequest(BaseModel):
     ticker: str
-    strategy: str = "Secured Put"
+    action: str = Field(..., pattern="^(BUY|SELL|buy|sell)$")  # BUY or SELL
+    strategy: str = "Put"  # Put, Call
     strike: float = Field(..., gt=0)
     expiration: str  # YYYY-MM-DD
     contracts: int = Field(1, gt=0)
-    premium: float = Field(..., gt=0)
+    premium: float = Field(..., gt=0)  # Total premium (paid if BUY, received if SELL)
     reason: str = ""
 
 

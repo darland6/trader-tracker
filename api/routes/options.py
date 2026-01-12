@@ -25,9 +25,11 @@ async def open_option(option: OptionOpenRequest):
     """Open a new option position."""
     try:
         ticker = option.ticker.upper()
+        action = option.action.upper()
 
         event_id, position_id = create_option_event(
             ticker=ticker,
+            action=action,
             strategy=option.strategy,
             strike=option.strike,
             expiration=option.expiration,
@@ -40,14 +42,16 @@ async def open_option(option: OptionOpenRequest):
 
         return ApiResponse(
             success=True,
-            message=f"Opened {option.strategy} on {ticker} @ ${option.strike} exp {option.expiration}",
+            message=f"{action} {option.contracts} {ticker} {option.strategy} @ ${option.strike} exp {option.expiration}",
             event_id=event_id,
             position_id=position_id,
             data={
                 "ticker": ticker,
+                "action": action,
                 "strategy": option.strategy,
                 "strike": option.strike,
                 "expiration": option.expiration,
+                "contracts": option.contracts,
                 "premium": option.premium,
                 "position_id": position_id
             }

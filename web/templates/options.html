@@ -21,11 +21,13 @@
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Position ID</th>
+                            <th>ID</th>
+                            <th>Action</th>
                             <th>Ticker</th>
-                            <th>Strategy</th>
+                            <th>Type</th>
                             <th>Strike</th>
                             <th>Expiration</th>
+                            <th>Contracts</th>
                             <th>Premium</th>
                             <th>Days Left</th>
                             <th>Actions</th>
@@ -35,11 +37,19 @@
                         {% for opt in active_options %}
                         <tr>
                             <td class="font-mono text-xs">{{ opt.position_id or opt.event_id }}</td>
+                            <td>
+                                <span class="badge {{ 'badge-success' if opt.action == 'SELL' else 'badge-warning' }}">
+                                    {{ opt.action or 'SELL' }}
+                                </span>
+                            </td>
                             <td class="font-bold">{{ opt.ticker }}</td>
                             <td>{{ opt.strategy }}</td>
                             <td>${{ opt.strike }}</td>
                             <td>{{ opt.expiration }}</td>
-                            <td class="text-success">${{ "{:,.0f}".format(opt.premium) }}</td>
+                            <td>{{ '-' if opt.action == 'SELL' else '' }}{{ opt.contracts }}</td>
+                            <td class="{{ 'text-success' if opt.action == 'SELL' else 'text-warning' }}">
+                                ${{ "{:,.0f}".format(opt.premium) }}
+                            </td>
                             <td class="{% if opt.days_to_expiry <= 7 %}text-warning{% elif opt.days_to_expiry < 0 %}text-error{% endif %}">
                                 {{ opt.days_to_expiry }}{% if opt.days_to_expiry < 0 %} (EXPIRED){% endif %}
                             </td>
@@ -48,8 +58,8 @@
                                     <label tabindex="0" class="btn btn-sm btn-ghost">Close</label>
                                     <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
                                         <li>
-                                            <a onclick="openCloseModal('{{ opt.position_id }}', {{ opt.event_id }}, '{{ opt.ticker }}', {{ opt.strike }}, {{ opt.premium }})">
-                                                Buy to Close (enter cost)
+                                            <a onclick="openCloseModal('{{ opt.position_id }}', {{ opt.event_id }}, '{{ opt.ticker }}', {{ opt.strike }}, {{ opt.premium }}, '{{ opt.action or 'SELL' }}')">
+                                                {{ 'Sell to Close' if opt.action == 'BUY' else 'Buy to Close' }} (enter cost)
                                             </a>
                                         </li>
                                         <li>
@@ -57,7 +67,7 @@
                                                     hx-vals='{"position_id": "{{ opt.position_id }}", "event_id": {{ opt.event_id }}, "close_type": "EXPIRE", "close_cost": 0}'
                                                     hx-swap="none"
                                                     hx-on::after-request="window.location.reload()">
-                                                Expire Worthless (Full Profit)
+                                                Expire Worthless
                                             </button>
                                         </li>
                                         <li>
@@ -65,7 +75,7 @@
                                                     hx-vals='{"position_id": "{{ opt.position_id }}", "event_id": {{ opt.event_id }}, "close_type": "ASSIGN", "close_cost": 0}'
                                                     hx-swap="none"
                                                     hx-on::after-request="window.location.reload()">
-                                                Assigned (Shares Transferred)
+                                                Assigned
                                             </button>
                                         </li>
                                     </ul>
@@ -87,10 +97,11 @@
         <div class="modal-box">
             <h3 class="font-bold text-lg">Close Option Position</h3>
             <p class="py-2">
+                <span id="close-modal-action" class="badge"></span>
                 <span id="close-modal-ticker" class="font-bold"></span> @ $<span id="close-modal-strike"></span>
             </p>
             <p class="text-sm text-base-content/60">
-                Original premium received: $<span id="close-modal-premium"></span>
+                Premium: $<span id="close-modal-premium"></span>
             </p>
             <form hx-post="/api/options/close"
                   hx-swap="none"
@@ -101,7 +112,7 @@
                 <input type="hidden" name="close_type" value="CLOSE">
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text">Cost to Buy Back</span>
+                        <span class="label-text" id="close-modal-cost-label">Cost to Close</span>
                     </label>
                     <input type="number" name="close_cost" id="close-modal-cost"
                            class="input input-bordered"
@@ -112,7 +123,7 @@
                            oninput="updateProfit()">
                 </div>
                 <div class="mt-2 text-lg">
-                    Profit: <span id="close-modal-profit" class="font-bold text-success">$0</span>
+                    P&L: <span id="close-modal-profit" class="font-bold">$0</span>
                 </div>
                 <div class="form-control mt-4">
                     <label class="label">
@@ -120,7 +131,7 @@
                     </label>
                     <input type="text" name="reason"
                            class="input input-bordered"
-                           placeholder="Why closing early?">
+                           placeholder="Why closing?">
                 </div>
                 <div class="modal-action">
                     <button type="button" class="btn" onclick="document.getElementById('close-modal').close()">Cancel</button>
@@ -135,22 +146,44 @@
 
     <script>
         let currentPremium = 0;
+        let currentAction = 'SELL';
 
-        function openCloseModal(positionId, eventId, ticker, strike, premium) {
+        function openCloseModal(positionId, eventId, ticker, strike, premium, action) {
             currentPremium = premium;
+            currentAction = action || 'SELL';
+
             document.getElementById('close-modal-position-id').value = positionId;
             document.getElementById('close-modal-event-id').value = eventId;
             document.getElementById('close-modal-ticker').textContent = ticker;
             document.getElementById('close-modal-strike').textContent = strike;
             document.getElementById('close-modal-premium').textContent = premium.toLocaleString();
             document.getElementById('close-modal-cost').value = '';
-            document.getElementById('close-modal-profit').textContent = '$' + premium.toLocaleString();
+
+            // Update action badge
+            const actionEl = document.getElementById('close-modal-action');
+            actionEl.textContent = currentAction;
+            actionEl.className = 'badge ' + (currentAction === 'SELL' ? 'badge-success' : 'badge-warning');
+
+            // Update cost label based on action
+            const costLabel = document.getElementById('close-modal-cost-label');
+            costLabel.textContent = currentAction === 'SELL' ? 'Cost to Buy Back' : 'Premium Received from Sale';
+
+            updateProfit();
             document.getElementById('close-modal').showModal();
         }
 
         function updateProfit() {
             const cost = parseFloat(document.getElementById('close-modal-cost').value) || 0;
-            const profit = currentPremium - cost;
+            let profit;
+
+            if (currentAction === 'SELL') {
+                // Sold option: profit = premium received - cost to buy back
+                profit = currentPremium - cost;
+            } else {
+                // Bought option: profit = sale price - premium paid
+                profit = cost - currentPremium;
+            }
+
             const profitEl = document.getElementById('close-modal-profit');
             profitEl.textContent = '$' + profit.toLocaleString();
             profitEl.className = 'font-bold ' + (profit >= 0 ? 'text-success' : 'text-error');
@@ -162,18 +195,25 @@
         <div class="card-body">
             <h2 class="card-title">Open New Option</h2>
 
-            <form hx-post="/api/options/open"
-                  hx-target="#option-result"
-                  hx-swap="innerHTML"
-                  class="space-y-4">
+            <form id="option-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Action (BUY/SELL) -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Action</span>
+                        </label>
+                        <select name="action" id="option-action" class="select select-bordered" required onchange="updatePremiumLabel()">
+                            <option value="SELL">SELL (receive premium)</option>
+                            <option value="BUY">BUY (pay premium)</option>
+                        </select>
+                    </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Ticker -->
                     <div class="form-control">
                         <label class="label">
                             <span class="label-text font-bold">Underlying Ticker</span>
                         </label>
-                        <input type="text" name="ticker"
+                        <input type="text" name="ticker" id="option-ticker"
                                class="input input-bordered"
                                placeholder="BMNR"
                                required
@@ -183,11 +223,9 @@
                     <!-- Strategy -->
                     <div class="form-control">
                         <label class="label">
-                            <span class="label-text font-bold">Strategy</span>
+                            <span class="label-text font-bold">Type</span>
                         </label>
-                        <select name="strategy" class="select select-bordered" required>
-                            <option value="Secured Put">Secured Put</option>
-                            <option value="Covered Call">Covered Call</option>
+                        <select name="strategy" id="option-strategy" class="select select-bordered" required>
                             <option value="Put">Put</option>
                             <option value="Call">Call</option>
                         </select>
@@ -198,7 +236,7 @@
                         <label class="label">
                             <span class="label-text font-bold">Strike Price</span>
                         </label>
-                        <input type="number" name="strike"
+                        <input type="number" name="strike" id="option-strike"
                                class="input input-bordered"
                                placeholder="31.00"
                                required
@@ -211,7 +249,7 @@
                         <label class="label">
                             <span class="label-text font-bold">Expiration Date</span>
                         </label>
-                        <input type="date" name="expiration"
+                        <input type="date" name="expiration" id="option-expiration"
                                class="input input-bordered"
                                required>
                     </div>
@@ -221,7 +259,7 @@
                         <label class="label">
                             <span class="label-text font-bold">Contracts</span>
                         </label>
-                        <input type="number" name="contracts"
+                        <input type="number" name="contracts" id="option-contracts"
                                class="input input-bordered"
                                value="1"
                                required
@@ -229,31 +267,27 @@
                     </div>
 
                     <!-- Premium -->
-                    <div class="form-control">
+                    <div class="form-control md:col-span-2">
                         <label class="label">
-                            <span class="label-text font-bold">Total Premium Received</span>
+                            <span class="label-text font-bold" id="premium-label">Total Premium Received</span>
                         </label>
-                        <input type="number" name="premium"
+                        <input type="number" name="premium" id="option-premium"
                                class="input input-bordered"
                                placeholder="4000"
                                required
                                min="0.01"
                                step="0.01">
                     </div>
-                </div>
 
-                <!-- Reason -->
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-bold text-warning">Reason</span>
-                    </label>
-                    <select name="reason" class="select select-bordered">
-                        <option value="INCOME_GENERATION">Income Generation</option>
-                        <option value="WILLING_TO_BUY">Willing to Buy at Strike</option>
-                        <option value="WILLING_TO_SELL">Willing to Sell at Strike</option>
-                        <option value="DOWNSIDE_PROTECTION">Downside Protection</option>
-                        <option value="VOLATILITY_PLAY">Volatility Play</option>
-                    </select>
+                    <!-- Reason -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Reason</span>
+                        </label>
+                        <input type="text" name="reason" id="option-reason"
+                               class="input input-bordered"
+                               placeholder="Income generation">
+                    </div>
                 </div>
 
                 <div class="form-control mt-4">
@@ -266,5 +300,60 @@
             <div id="option-result" class="mt-4"></div>
         </div>
     </div>
+
+    <script>
+        function updatePremiumLabel() {
+            const action = document.getElementById('option-action').value;
+            const label = document.getElementById('premium-label');
+            label.textContent = action === 'SELL' ? 'Total Premium Received' : 'Total Premium Paid';
+        }
+
+        // Handle form submission
+        document.getElementById('option-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const form = e.target;
+            const resultDiv = document.getElementById('option-result');
+
+            const payload = {
+                action: document.getElementById('option-action').value,
+                ticker: document.getElementById('option-ticker').value,
+                strategy: document.getElementById('option-strategy').value,
+                strike: parseFloat(document.getElementById('option-strike').value),
+                expiration: document.getElementById('option-expiration').value,
+                contracts: parseInt(document.getElementById('option-contracts').value),
+                premium: parseFloat(document.getElementById('option-premium').value),
+                reason: document.getElementById('option-reason').value
+            };
+
+            try {
+                const response = await fetch('/api/options/open', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `<div class="alert alert-success">
+                        <span>${data.message}</span>
+                    </div>`;
+                    form.reset();
+                    updatePremiumLabel();
+                    // Reload page after short delay to show updated options
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-error">
+                        <span>Error: ${data.detail || data.message || 'Unknown error'}</span>
+                    </div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-error">
+                    <span>Error: ${error.message}</span>
+                </div>`;
+            }
+        });
+    </script>
 </div>
 {% endblock %}

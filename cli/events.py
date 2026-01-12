@@ -196,19 +196,34 @@ def create_trade_event(action, ticker, shares, price, total, gain_loss=0, reason
     return append_event("TRADE", data, reason, notes or reason_text, tags, affects_cash, cash_delta)
 
 
-def create_option_event(ticker, strategy, strike, expiration, contracts, premium, reason_text=""):
-    """Create an OPTION_OPEN event with a unique position UUID."""
+def create_option_event(ticker, action, strategy, strike, expiration, contracts, premium, reason_text=""):
+    """Create an OPTION_OPEN event with a unique position UUID.
+
+    Args:
+        ticker: Underlying stock ticker
+        action: BUY or SELL
+        strategy: Put or Call
+        strike: Strike price
+        expiration: Expiration date (YYYY-MM-DD)
+        contracts: Number of contracts
+        premium: Total premium (positive = received if SELL, paid if BUY)
+        reason_text: Optional reason
+    """
     position_id = str(uuid.uuid4())[:8]  # Short UUID for readability
+    action_upper = action.upper()
+    total_premium = float(premium)
+    premium_per_contract = total_premium / int(contracts) if contracts > 0 else 0
 
     data = {
         "position_id": position_id,
         "ticker": ticker.upper(),
+        "action": action_upper,  # BUY or SELL
         "strategy": strategy,
         "strike": float(strike),
         "expiration": expiration,
         "contracts": int(contracts),
-        "premium_per_contract": float(premium),
-        "total_premium": float(premium) * int(contracts),
+        "premium_per_contract": premium_per_contract,
+        "total_premium": total_premium,
         "status": "OPEN"
     }
 
@@ -220,11 +235,19 @@ def create_option_event(ticker, strategy, strike, expiration, contracts, premium
         "logged_by": "user"
     }
 
-    tags = ["options", "income_generation", ticker.lower()]
-    total_premium = float(premium) * int(contracts)
-    notes = reason_text or f"Opened {strategy} on {ticker}"
+    tags = ["options", ticker.lower()]
 
-    event_id = append_event("OPTION_OPEN", data, reason, notes, tags, True, total_premium)
+    # Cash flow: SELL = receive premium (positive), BUY = pay premium (negative)
+    if action_upper == "SELL":
+        affects_cash = True
+        cash_delta = total_premium
+        notes = reason_text or f"Sold {contracts} {ticker} {strategy} @ ${strike}"
+    else:  # BUY
+        affects_cash = True
+        cash_delta = -total_premium
+        notes = reason_text or f"Bought {contracts} {ticker} {strategy} @ ${strike}"
+
+    event_id = append_event("OPTION_OPEN", data, reason, notes, tags, affects_cash, cash_delta)
     return event_id, position_id
 
 
