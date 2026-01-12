@@ -313,6 +313,77 @@ function createMomentumParticles(radius, momentum) {
     return new THREE.Points(geometry, material);
 }
 
+// Create intraday change indicator (pulsing arrow beam)
+function createDayChangeIndicator(radius, dayChangePct) {
+    const group = new THREE.Group();
+
+    // Only show if there's a meaningful day change (>0.1%)
+    if (Math.abs(dayChangePct) < 0.1) return group;
+
+    const isPositive = dayChangePct >= 0;
+    const color = isPositive ? 0x00ff88 : 0xff4444;
+    const intensity = Math.min(Math.abs(dayChangePct) / 5, 1); // Cap at 5% for max intensity
+
+    // Arrow direction (up for gain, down for loss)
+    const direction = isPositive ? 1 : -1;
+
+    // Create vertical beam/spire
+    const beamHeight = radius * (0.8 + intensity * 1.2);
+    const beamGeometry = new THREE.CylinderGeometry(0.05, 0.15, beamHeight, 8);
+    const beamMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.6 + intensity * 0.3,
+        blending: THREE.AdditiveBlending
+    });
+    const beam = new THREE.Mesh(beamGeometry, beamMaterial);
+    beam.position.y = direction * (radius + beamHeight / 2 + 0.2);
+    beam.rotation.z = isPositive ? 0 : Math.PI; // Flip for down arrow
+    group.add(beam);
+
+    // Arrow head (cone)
+    const arrowSize = 0.3 + intensity * 0.2;
+    const arrowGeometry = new THREE.ConeGeometry(arrowSize, arrowSize * 1.5, 8);
+    const arrowMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending
+    });
+    const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+    arrow.position.y = direction * (radius + beamHeight + arrowSize * 0.75 + 0.2);
+    arrow.rotation.z = isPositive ? 0 : Math.PI; // Point up or down
+    group.add(arrow);
+
+    // Pulsing glow ring at base
+    const ringGeometry = new THREE.RingGeometry(radius + 0.1, radius + 0.3, 32);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.4 + intensity * 0.4,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+    });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = direction * radius * 0.3;
+    group.add(ring);
+
+    // Store animation data
+    group.userData = {
+        type: 'dayChangeIndicator',
+        dayChangePct,
+        isPositive,
+        intensity,
+        beam,
+        arrow,
+        ring,
+        pulsePhase: Math.random() * Math.PI * 2
+    };
+
+    return group;
+}
+
 // Create Cash "planet" with moons representing breakdown
 function createCashPlanet(cashBreakdown, portfolioTotal) {
     const { total, secured_put_collateral, tax_reserve, available } = cashBreakdown;
@@ -684,6 +755,490 @@ function updateAlternateRealityPyramid(deltaTime) {
     if (userData.particles) {
         userData.particles.rotation.y += userData.rotationSpeed * 0.2;
     }
+}
+
+// ==================== TRACKED TICKERS FEATURE ====================
+// Track any stock/crypto ticker as a separate planet near the system
+
+let trackedTickers = new Map(); // ticker -> { planet, price, prevPrice, change, changePercent }
+
+async function loadTrackedTickers() {
+    // Load from localStorage
+    const saved = localStorage.getItem('trackedTickers');
+    if (saved) {
+        const tickers = JSON.parse(saved);
+        for (const ticker of tickers) {
+            await addTrackedTicker(ticker, false);
+        }
+    }
+}
+
+function saveTrackedTickers() {
+    const tickers = Array.from(trackedTickers.keys());
+    localStorage.setItem('trackedTickers', JSON.stringify(tickers));
+}
+
+async function addTrackedTicker(ticker, save = true) {
+    ticker = ticker.toUpperCase().trim();
+    if (!ticker || trackedTickers.has(ticker)) return;
+
+    // Check if it's already in our portfolio
+    if (planets.has(ticker)) {
+        showNotification(`${ticker} is already in your portfolio!`, 'info');
+        return;
+    }
+
+    try {
+        // Fetch current price - try crypto first, then stock
+        let priceData = null;
+
+        // Try stock price first
+        try {
+            const response = await fetch(`/api/prices/quote?ticker=${ticker}`);
+            if (response.ok) {
+                priceData = await response.json();
+            }
+        } catch (e) {}
+
+        if (!priceData || !priceData.price) {
+            showNotification(`Could not get price for ${ticker}`, 'error');
+            return;
+        }
+
+        // Create planet for this ticker
+        const planet = createTrackedTickerPlanet(ticker, priceData);
+
+        trackedTickers.set(ticker, {
+            planet,
+            price: priceData.price,
+            prevPrice: priceData.previous_close || priceData.price,
+            change: priceData.change || 0,
+            changePercent: priceData.change_percent || 0,
+            orbitAngle: Math.random() * Math.PI * 2,
+            orbitRadius: 55 + trackedTickers.size * 8
+        });
+
+        if (save) {
+            saveTrackedTickers();
+            showNotification(`Now tracking ${ticker}`, 'success');
+        }
+
+    } catch (error) {
+        console.error('Failed to add tracked ticker:', error);
+        showNotification(`Failed to track ${ticker}`, 'error');
+    }
+}
+
+function createTrackedTickerPlanet(ticker, priceData) {
+    const group = new THREE.Group();
+
+    // Planet size based on tracking (small, uniform)
+    const planetRadius = 1.5;
+
+    // Color based on gain/loss
+    const change = priceData.change_percent || 0;
+    let planetColor;
+    if (change > 0) {
+        planetColor = new THREE.Color(0x00ff88).lerp(new THREE.Color(0xffffff), 0.3);
+    } else if (change < 0) {
+        planetColor = new THREE.Color(0xff4444).lerp(new THREE.Color(0xffffff), 0.3);
+    } else {
+        planetColor = new THREE.Color(0x888888);
+    }
+
+    // Main planet sphere
+    const geometry = new THREE.SphereGeometry(planetRadius, 24, 24);
+    const material = new THREE.MeshStandardMaterial({
+        color: planetColor,
+        metalness: 0.3,
+        roughness: 0.7,
+        emissive: planetColor,
+        emissiveIntensity: 0.2
+    });
+    const planet = new THREE.Mesh(geometry, material);
+    group.add(planet);
+
+    // Glow ring
+    const glowGeometry = new THREE.RingGeometry(planetRadius * 1.3, planetRadius * 1.8, 32);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: planetColor,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.rotation.x = Math.PI / 2;
+    group.add(glow);
+
+    // Label
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 256;
+    labelCanvas.height = 64;
+    const ctx = labelCanvas.getContext('2d');
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(ticker, 128, 30);
+    ctx.font = '16px Arial';
+    ctx.fillStyle = change >= 0 ? '#00ff88' : '#ff4444';
+    ctx.fillText(`${change >= 0 ? '+' : ''}${change.toFixed(2)}%`, 128, 52);
+
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true });
+    const label = new THREE.Sprite(labelMaterial);
+    label.scale.set(6, 1.5, 1);
+    label.position.y = planetRadius + 2;
+    group.add(label);
+
+    // Position in orbit around system
+    const orbitRadius = 55 + trackedTickers.size * 8;
+    const angle = Math.PI * 0.25 + trackedTickers.size * 0.5; // Start in a cluster
+    group.position.x = Math.cos(angle) * orbitRadius;
+    group.position.z = Math.sin(angle) * orbitRadius;
+    group.position.y = 3;
+
+    group.userData = {
+        type: 'tracked-ticker',
+        ticker,
+        planet,
+        glow,
+        label,
+        orbitRadius,
+        orbitAngle: angle,
+        orbitSpeed: 0.0002
+    };
+
+    scene.add(group);
+    return group;
+}
+
+function updateTrackedTickers(deltaTime) {
+    trackedTickers.forEach((data, ticker) => {
+        if (data.planet) {
+            const userData = data.planet.userData;
+
+            // Slow orbit
+            userData.orbitAngle += userData.orbitSpeed;
+            data.planet.position.x = Math.cos(userData.orbitAngle) * userData.orbitRadius;
+            data.planet.position.z = Math.sin(userData.orbitAngle) * userData.orbitRadius;
+
+            // Gentle float
+            data.planet.position.y = 3 + Math.sin(Date.now() * 0.002 + userData.orbitRadius) * 0.3;
+
+            // Rotate planet
+            if (userData.planet) {
+                userData.planet.rotation.y += 0.005;
+            }
+
+            // Pulse glow
+            if (userData.glow) {
+                userData.glow.material.opacity = 0.2 + Math.sin(Date.now() * 0.003) * 0.1;
+            }
+        }
+    });
+}
+
+function showTrackedTickerInfo(ticker, data) {
+    // Show popup with ticker info and destroy button
+    let popup = document.getElementById('tracked-ticker-popup');
+    if (!popup) {
+        popup = document.createElement('div');
+        popup.id = 'tracked-ticker-popup';
+        popup.innerHTML = `
+            <div class="tracked-popup-backdrop" onclick="closeTrackedTickerPopup()"></div>
+            <div class="tracked-popup-content">
+                <h3 id="tracked-ticker-name"></h3>
+                <div id="tracked-ticker-price"></div>
+                <div id="tracked-ticker-change"></div>
+                <div class="tracked-popup-actions">
+                    <button class="btn btn-refresh" onclick="refreshTrackedTicker()">🔄 Refresh</button>
+                    <button class="btn btn-destroy" onclick="destroyTrackedTicker()">💥 Destroy</button>
+                </div>
+                <button class="tracked-popup-close" onclick="closeTrackedTickerPopup()">&times;</button>
+            </div>
+        `;
+        document.body.appendChild(popup);
+    }
+
+    popup.dataset.ticker = ticker;
+    document.getElementById('tracked-ticker-name').textContent = `${ticker} (Tracking)`;
+    document.getElementById('tracked-ticker-price').textContent = `$${data.price?.toLocaleString(undefined, {minimumFractionDigits: 2}) || 'N/A'}`;
+
+    const changeEl = document.getElementById('tracked-ticker-change');
+    const change = data.changePercent || 0;
+    changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}% today`;
+    changeEl.className = change >= 0 ? 'positive' : 'negative';
+
+    popup.classList.add('visible');
+}
+
+function closeTrackedTickerPopup() {
+    const popup = document.getElementById('tracked-ticker-popup');
+    if (popup) popup.classList.remove('visible');
+}
+
+async function refreshTrackedTicker() {
+    const popup = document.getElementById('tracked-ticker-popup');
+    const ticker = popup?.dataset.ticker;
+    if (!ticker || !trackedTickers.has(ticker)) return;
+
+    try {
+        const response = await fetch(`/api/prices/quote?ticker=${ticker}`);
+        if (response.ok) {
+            const priceData = await response.json();
+            const data = trackedTickers.get(ticker);
+            data.price = priceData.price;
+            data.prevPrice = priceData.previous_close || priceData.price;
+            data.change = priceData.change || 0;
+            data.changePercent = priceData.change_percent || 0;
+
+            // Update label
+            updateTrackedTickerLabel(ticker, data);
+
+            // Update popup
+            showTrackedTickerInfo(ticker, data);
+            showNotification(`${ticker} updated!`, 'success');
+        }
+    } catch (error) {
+        showNotification('Failed to refresh price', 'error');
+    }
+}
+
+function updateTrackedTickerLabel(ticker, data) {
+    const planet = data.planet;
+    if (!planet || !planet.userData.label) return;
+
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 256;
+    labelCanvas.height = 64;
+    const ctx = labelCanvas.getContext('2d');
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(ticker, 128, 30);
+    ctx.font = '16px Arial';
+    ctx.fillStyle = data.changePercent >= 0 ? '#00ff88' : '#ff4444';
+    ctx.fillText(`${data.changePercent >= 0 ? '+' : ''}${data.changePercent.toFixed(2)}%`, 128, 52);
+
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    planet.userData.label.material.map.dispose();
+    planet.userData.label.material.map = labelTexture;
+    planet.userData.label.material.needsUpdate = true;
+}
+
+function destroyTrackedTicker() {
+    const popup = document.getElementById('tracked-ticker-popup');
+    const ticker = popup?.dataset.ticker;
+    if (!ticker || !trackedTickers.has(ticker)) return;
+
+    const data = trackedTickers.get(ticker);
+
+    // Close popup
+    closeTrackedTickerPopup();
+
+    // Trigger destruction animation
+    destroyPlanetAnimation(data.planet, ticker);
+}
+
+function destroyPlanetAnimation(planetGroup, ticker) {
+    if (!planetGroup) return;
+
+    // Create explosion particles
+    const particleCount = 100;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const velocities = [];
+
+    const planetPos = planetGroup.position.clone();
+
+    for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        positions[i3] = planetPos.x + (Math.random() - 0.5) * 2;
+        positions[i3 + 1] = planetPos.y + (Math.random() - 0.5) * 2;
+        positions[i3 + 2] = planetPos.z + (Math.random() - 0.5) * 2;
+
+        velocities.push({
+            x: (Math.random() - 0.5) * 0.5,
+            y: (Math.random() - 0.5) * 0.5,
+            z: (Math.random() - 0.5) * 0.5
+        });
+    }
+
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const particleMaterial = new THREE.PointsMaterial({
+        color: 0xff6600,
+        size: 0.5,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending
+    });
+
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    scene.add(particles);
+
+    // Flash effect
+    const flashGeometry = new THREE.SphereGeometry(5, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffaa00,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    flash.position.copy(planetPos);
+    scene.add(flash);
+
+    // Play sound effect (screen shake instead)
+    triggerScreenShake(0.3);
+
+    // Animate destruction
+    let progress = 0;
+    const animate = () => {
+        progress += 0.02;
+
+        // Expand particles
+        const pos = particles.geometry.attributes.position.array;
+        for (let i = 0; i < particleCount; i++) {
+            const i3 = i * 3;
+            pos[i3] += velocities[i].x;
+            pos[i3 + 1] += velocities[i].y;
+            pos[i3 + 2] += velocities[i].z;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        particleMaterial.opacity = 1 - progress;
+
+        // Expand and fade flash
+        flash.scale.setScalar(1 + progress * 5);
+        flashMaterial.opacity = 1 - progress;
+
+        // Shrink planet
+        const shrink = Math.max(0, 1 - progress * 2);
+        planetGroup.scale.setScalar(shrink);
+
+        if (progress < 1) {
+            requestAnimationFrame(animate);
+        } else {
+            // Cleanup
+            scene.remove(particles);
+            scene.remove(flash);
+            scene.remove(planetGroup);
+            particleGeometry.dispose();
+            particleMaterial.dispose();
+            flashGeometry.dispose();
+            flashMaterial.dispose();
+
+            // Remove from tracking
+            trackedTickers.delete(ticker);
+            saveTrackedTickers();
+
+            showNotification(`${ticker} destroyed and untracked!`, 'warning');
+        }
+    };
+    animate();
+}
+
+function triggerScreenShake(intensity = 0.5) {
+    const duration = 500;
+    const startTime = Date.now();
+    const originalPosition = camera.position.clone();
+
+    const shake = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = elapsed / duration;
+
+        if (progress < 1) {
+            const decay = 1 - progress;
+            camera.position.x = originalPosition.x + (Math.random() - 0.5) * intensity * decay;
+            camera.position.y = originalPosition.y + (Math.random() - 0.5) * intensity * decay;
+            requestAnimationFrame(shake);
+        } else {
+            camera.position.copy(originalPosition);
+        }
+    };
+    shake();
+}
+
+// Track Ticker Dialog
+function showTrackTickerDialog() {
+    let dialog = document.getElementById('track-ticker-dialog');
+    if (!dialog) {
+        dialog = document.createElement('div');
+        dialog.id = 'track-ticker-dialog';
+        dialog.innerHTML = `
+            <div class="track-dialog-backdrop" onclick="closeTrackTickerDialog()"></div>
+            <div class="track-dialog-content">
+                <h3>Track Ticker</h3>
+                <p>Enter a stock or crypto symbol to track as a planet</p>
+                <input type="text" id="track-ticker-input" placeholder="e.g., AAPL, BTC, NVDA" autofocus />
+                <div class="track-dialog-actions">
+                    <button class="btn btn-cancel" onclick="closeTrackTickerDialog()">Cancel</button>
+                    <button class="btn btn-track" onclick="submitTrackTicker()">🛰️ Track</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+
+        // Add enter key listener
+        document.getElementById('track-ticker-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitTrackTicker();
+        });
+    }
+
+    dialog.classList.add('visible');
+    setTimeout(() => document.getElementById('track-ticker-input').focus(), 100);
+}
+
+function closeTrackTickerDialog() {
+    const dialog = document.getElementById('track-ticker-dialog');
+    if (dialog) {
+        dialog.classList.remove('visible');
+        document.getElementById('track-ticker-input').value = '';
+    }
+}
+
+function submitTrackTicker() {
+    const input = document.getElementById('track-ticker-input');
+    const ticker = input.value.trim().toUpperCase();
+
+    if (ticker) {
+        closeTrackTickerDialog();
+        addTrackedTicker(ticker);
+    }
+}
+
+// Simple notification function (if not already defined)
+function showNotification(message, type = 'info') {
+    let container = document.getElementById('notification-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 10000;';
+        document.body.appendChild(container);
+    }
+
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        padding: 12px 20px;
+        margin-bottom: 10px;
+        background: ${type === 'success' ? 'rgba(0,255,136,0.2)' : type === 'error' ? 'rgba(255,68,68,0.2)' : type === 'warning' ? 'rgba(255,170,0,0.2)' : 'rgba(100,100,255,0.2)'};
+        border-left: 3px solid ${type === 'success' ? '#00ff88' : type === 'error' ? '#ff4444' : type === 'warning' ? '#ffaa00' : '#6666ff'};
+        color: #fff;
+        border-radius: 4px;
+        font-size: 14px;
+        animation: slideIn 0.3s ease;
+    `;
+
+    container.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(50px)';
+        notification.style.transition = 'all 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 // Show Alternate Reality Modal
@@ -3354,7 +3909,7 @@ function getAlternateDescription(sys) {
 // ============ End Cluster View Functions ============
 
 function createPlanet(holding, index, total, portfolioTotal) {
-    const { ticker, shares, market_value, unrealized_gain_pct, current_price } = holding;
+    const { ticker, shares, market_value, unrealized_gain_pct, current_price, day_change_pct = 0 } = holding;
 
     // Calculate size based on position size (relative to total portfolio value)
     // This makes planet sizes proportional to the sun (entire portfolio)
@@ -3427,6 +3982,12 @@ function createPlanet(holding, index, total, portfolioTotal) {
         planetGroup.add(ring);
     }
 
+    // Add intraday change indicator (pulsing arrow)
+    const dayChangeIndicator = createDayChangeIndicator(radius, day_change_pct);
+    if (dayChangeIndicator.children.length > 0) {
+        planetGroup.add(dayChangeIndicator);
+    }
+
     // Position in orbit around sun
     // Use allocation-based orbit distance (clamped to reasonable range)
     const orbitRadius = Math.max(minOrbit, Math.min(maxOrbit, orbitFromAllocation));
@@ -3442,6 +4003,7 @@ function createPlanet(holding, index, total, portfolioTotal) {
         shares,
         market_value,
         gain_pct: unrealized_gain_pct,
+        day_change_pct,
         allocation_pct: allocationPct,
         orbitRadius,
         orbitSpeed: 0.0003 + (1 - sizeRatio) * 0.0005, // Smaller = faster orbit
@@ -3449,7 +4011,8 @@ function createPlanet(holding, index, total, portfolioTotal) {
         rotationSpeed: 0.002 + Math.random() * 0.002,
         momentum,
         particles,
-        planet
+        planet,
+        dayChangeIndicator
     };
 
     // Create faint orbit line
@@ -3882,6 +4445,35 @@ function updatePlanets(deltaTime) {
             userData.particles.rotation.x += 0.002;
         }
 
+        // Animate day change indicator (pulsing effect)
+        if (userData.dayChangeIndicator && userData.dayChangeIndicator.userData) {
+            const indicatorData = userData.dayChangeIndicator.userData;
+            const time = clock.getElapsedTime();
+            const pulse = Math.sin(time * 3 + indicatorData.pulsePhase) * 0.5 + 0.5;
+
+            // Pulse the beam opacity
+            if (indicatorData.beam && indicatorData.beam.material) {
+                indicatorData.beam.material.opacity = 0.4 + pulse * 0.4 * indicatorData.intensity;
+            }
+
+            // Pulse the arrow
+            if (indicatorData.arrow && indicatorData.arrow.material) {
+                indicatorData.arrow.material.opacity = 0.6 + pulse * 0.3;
+            }
+
+            // Pulse and rotate the ring
+            if (indicatorData.ring && indicatorData.ring.material) {
+                indicatorData.ring.material.opacity = 0.3 + pulse * 0.4 * indicatorData.intensity;
+                indicatorData.ring.rotation.z = time * 0.5;
+            }
+
+            // Gentle bob animation for the arrow
+            if (indicatorData.arrow) {
+                const direction = indicatorData.isPositive ? 1 : -1;
+                indicatorData.arrow.position.y += Math.sin(time * 2) * 0.002 * direction;
+            }
+        }
+
         // Pulse glow based on momentum
         const pulseIntensity = Math.sin(clock.getElapsedTime() * (2 + Math.abs(userData.momentum) * 3)) * 0.1;
         group.children.forEach(child => {
@@ -3920,8 +4512,11 @@ function animate() {
     // Update planet orbits and effects
     updatePlanets(deltaTime);
 
-    // Update alternate reality pyramid
-    updateAlternateRealityPyramid(deltaTime);
+    // Update alternate reality pyramid - disabled, using /realities page now
+    // updateAlternateRealityPyramid(deltaTime);
+
+    // Update tracked tickers
+    updateTrackedTickers(deltaTime);
 
     // Update popup position if a planet is selected
     if (selectedPlanet) {
@@ -3950,8 +4545,12 @@ async function fetchPortfolioData() {
 function updateHUD(data) {
     document.getElementById('total-value').textContent =
         '$' + data.total_value.toLocaleString('en-US', { maximumFractionDigits: 0 });
-    document.getElementById('cash-value').textContent =
-        '$' + data.cash.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    // Show available cash (after tax reserve) with total on hover
+    const cashEl = document.getElementById('cash-value');
+    const availableCash = data.cash_breakdown?.available || data.cash;
+    const taxReserve = data.cash_breakdown?.tax_reserve || 0;
+    cashEl.textContent = '$' + availableCash.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    cashEl.title = `Total: $${data.cash.toLocaleString()} | Tax Reserve: $${taxReserve.toLocaleString()}`;
     document.getElementById('holdings-value').textContent =
         '$' + data.portfolio_value.toLocaleString('en-US', { maximumFractionDigits: 0 });
     document.getElementById('income-value').textContent =
@@ -3983,6 +4582,8 @@ function updateHUD(data) {
 
     data.holdings.forEach(h => {
         const isGain = h.unrealized_gain_pct >= 0;
+        const dayIsUp = (h.day_change_pct || 0) >= 0;
+        const hasDayChange = Math.abs(h.day_change_pct || 0) >= 0.01;
         const card = document.createElement('div');
         card.className = 'holding-card' + (isGain ? '' : ' loss');
         card.innerHTML = `
@@ -3991,7 +4592,11 @@ function updateHUD(data) {
             <div class="holding-gain ${isGain ? 'positive' : 'negative'}">
                 ${isGain ? '+' : ''}${h.unrealized_gain_pct.toFixed(1)}%
             </div>
-            <div class="holding-shares">${h.shares.toLocaleString()} shares</div>
+            ${hasDayChange ? `
+            <div class="holding-day-change ${dayIsUp ? 'positive' : 'negative'}" style="font-size: 9px; margin-top: 2px;">
+                ${dayIsUp ? '▲' : '▼'} ${dayIsUp ? '+' : ''}${(h.day_change_pct || 0).toFixed(2)}% today
+            </div>
+            ` : `<div class="holding-shares">${h.shares.toLocaleString()} shares</div>`}
         `;
 
         // Focus camera on planet when clicked
@@ -4106,12 +4711,23 @@ function onCanvasClick(event) {
         }
     }
 
-    // Check alternate reality pyramid
-    if (alternateRealityPyramid) {
-        const pyramidIntersects = raycaster.intersectObject(alternateRealityPyramid, true);
-        if (pyramidIntersects.length > 0) {
-            showAlternateRealityModal();
-            return;
+    // Check alternate reality pyramid - disabled, using /realities page
+    // if (alternateRealityPyramid) {
+    //     const pyramidIntersects = raycaster.intersectObject(alternateRealityPyramid, true);
+    //     if (pyramidIntersects.length > 0) {
+    //         showAlternateRealityModal();
+    //         return;
+    //     }
+    // }
+
+    // Check tracked tickers
+    for (const [ticker, data] of trackedTickers) {
+        if (data.planet) {
+            const intersects = raycaster.intersectObject(data.planet, true);
+            if (intersects.length > 0) {
+                showTrackedTickerInfo(ticker, data);
+                return;
+            }
         }
     }
 
@@ -4150,11 +4766,20 @@ function onCanvasMouseMove(event) {
 
     const intersects = raycaster.intersectObjects(planetObjects);
 
-    // Check pyramid hover
-    const pyramidHover = alternateRealityPyramid && raycaster.intersectObject(alternateRealityPyramid, true).length > 0;
+    // Check pyramid hover - disabled
+    // const pyramidHover = alternateRealityPyramid && raycaster.intersectObject(alternateRealityPyramid, true).length > 0;
+
+    // Check tracked ticker hover
+    let trackedHover = false;
+    for (const [ticker, data] of trackedTickers) {
+        if (data.planet && raycaster.intersectObject(data.planet, true).length > 0) {
+            trackedHover = true;
+            break;
+        }
+    }
 
     // Update cursor
-    if (intersects.length > 0 || (sun && raycaster.intersectObject(sun).length > 0) || pyramidHover) {
+    if (intersects.length > 0 || (sun && raycaster.intersectObject(sun).length > 0) || trackedHover) {
         renderer.domElement.style.cursor = 'pointer';
     } else {
         renderer.domElement.style.cursor = 'default';
@@ -4226,9 +4851,26 @@ function showCashPlanetInfo() {
                 </span>
                 <span style="font-family: monospace; color: #ff4444;">$${cb.tax_reserve.toLocaleString()}</span>
             </div>
-            <div style="font-size: 11px; color: #888; margin-left: 16px; margin-top: -4px;">
-                ${(cb.tax_rate * 100).toFixed(0)}% of $${cb.ytd_realized_gains.toLocaleString()} YTD gains
+            ${cb.tax_breakdown ? `
+            <div style="font-size: 10px; color: #888; margin-left: 16px; background: rgba(255,68,68,0.1); padding: 6px; border-radius: 4px; margin-top: 4px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span>Trading (${(cb.tax_breakdown.trading_rate * 100).toFixed(0)}%)</span>
+                    <span>$${cb.tax_breakdown.trading_tax.toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span>Options (${(cb.tax_breakdown.option_rate * 100).toFixed(0)}%)</span>
+                    <span>$${cb.tax_breakdown.option_tax.toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Dividends (${(cb.tax_breakdown.dividend_rate * 100).toFixed(0)}%)</span>
+                    <span>$${cb.tax_breakdown.dividend_tax.toLocaleString()}</span>
+                </div>
             </div>
+            ` : `
+            <div style="font-size: 11px; color: #888; margin-left: 16px; margin-top: -4px;">
+                Est. tax on YTD income
+            </div>
+            `}
 
             <div style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
                 <div style="display: flex; justify-content: space-between;">
@@ -4285,6 +4927,12 @@ function showPlanetInfo(ticker, worldPosition) {
 
     const gainClass = holding.unrealized_gain_pct >= 0 ? 'gain-positive' : 'gain-negative';
     const gainSign = holding.unrealized_gain_pct >= 0 ? '+' : '';
+    const dayChangePct = holding.day_change_pct || 0;
+    const dayChangeValue = holding.day_change_value || 0;
+    const dayIsUp = dayChangePct >= 0;
+    const dayClass = dayIsUp ? 'gain-positive' : 'gain-negative';
+    const daySign = dayIsUp ? '+' : '';
+    const hasDayChange = Math.abs(dayChangePct) >= 0.01;
 
     popup.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -4308,6 +4956,20 @@ function showPlanetInfo(ticker, worldPosition) {
                 <span style="color: #888;">Cost Basis</span>
                 <span style="font-family: monospace;">$${holding.cost_basis.toLocaleString()}</span>
             </div>
+            ${hasDayChange ? `
+            <div style="display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px;">
+                <span style="color: #888;">${dayIsUp ? '▲' : '▼'} Today</span>
+                <span class="${dayClass}" style="font-weight: bold; font-size: 16px;">
+                    ${daySign}${dayChangePct.toFixed(2)}%
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: #888;">Day Change</span>
+                <span class="${dayClass}" style="font-family: monospace;">
+                    ${daySign}$${Math.abs(dayChangeValue).toLocaleString()}
+                </span>
+            </div>
+            ` : ''}
             <div style="display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px;">
                 <span style="color: #888;">Gain/Loss</span>
                 <span class="${gainClass}" style="font-weight: bold; font-size: 18px;">
@@ -6398,6 +7060,191 @@ async function runAnalyzedScan() {
 }
 window.runAnalyzedScan = runAnalyzedScan;
 
+async function runAgentScan() {
+    const loading = document.getElementById('scanner-loading');
+    const summary = document.getElementById('scanner-summary');
+    const results = document.getElementById('scanner-results');
+    const analysis = document.getElementById('scanner-analysis');
+
+    // Show loading with agent-specific message
+    loading.style.display = 'block';
+    loading.innerHTML = `
+        <div class="spinner"></div>
+        <p class="loading-text" style="margin-top: 20px;">Agent Analyzing Options...</p>
+        <p style="font-size: 10px; color: #9333ea; margin-top: 8px;">Fetching Dexter research + LLM scoring</p>
+        <p style="font-size: 9px; color: #666; margin-top: 4px;">This may take 30-60 seconds</p>
+    `;
+    summary.style.display = 'none';
+    results.style.display = 'none';
+    analysis.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/scanner/recommendations/agent');
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Agent scan failed');
+        }
+
+        scannerData = await response.json();
+
+        if (scannerData.status === 'error') {
+            throw new Error(scannerData.error || 'Agent scan failed');
+        }
+
+        displayAgentResults(scannerData);
+    } catch (error) {
+        console.error('Agent scan error:', error);
+        loading.style.display = 'none';
+        results.style.display = 'block';
+        document.getElementById('scanner-results-list').innerHTML = `
+            <div class="scanner-empty">
+                <h3>Agent Scan Failed</h3>
+                <p>${error.message}</p>
+                <p style="margin-top: 12px; font-size: 11px; color: #666;">Make sure:</p>
+                <ul style="text-align: left; font-size: 10px; color: #888;">
+                    <li>LLM is enabled in settings</li>
+                    <li>Dexter MCP server is running (optional but recommended)</li>
+                    <li>You have holdings with optionable stocks</li>
+                </ul>
+            </div>
+        `;
+    }
+}
+window.runAgentScan = runAgentScan;
+
+function displayAgentResults(data) {
+    const loading = document.getElementById('scanner-loading');
+    const summary = document.getElementById('scanner-summary');
+    const results = document.getElementById('scanner-results');
+    const resultsList = document.getElementById('scanner-results-list');
+    const analysis = document.getElementById('scanner-analysis');
+    const analysisText = document.getElementById('scanner-analysis-text');
+    const errors = document.getElementById('scanner-errors');
+
+    // Reset loading
+    loading.innerHTML = `
+        <div class="spinner"></div>
+        <p class="loading-text" style="margin-top: 20px;">Scanning Options Chains...</p>
+        <p style="font-size: 10px; color: #0088ff; margin-top: 8px;">Fetching theta, delta, and premium data</p>
+    `;
+    loading.style.display = 'none';
+
+    // Update summary
+    if (data.portfolio_summary) {
+        const ps = data.portfolio_summary;
+        document.getElementById('scanner-holdings-count').textContent = ps.holdings_scanned;
+        document.getElementById('scanner-ytd-income').textContent =
+            '$' + (ps.ytd_income || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        document.getElementById('scanner-remaining').textContent =
+            '$' + (ps.remaining_goal || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        document.getElementById('scanner-potential').textContent =
+            '$' + (data.potential_income || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        summary.style.display = 'grid';
+    }
+
+    // Show market outlook and strategy notes from agent
+    let analysisContent = '';
+    if (data.market_outlook) {
+        analysisContent += `<div style="margin-bottom: 12px;"><strong style="color: #06b6d4;">Market Outlook:</strong> ${data.market_outlook}</div>`;
+    }
+    if (data.strategy_notes) {
+        analysisContent += `<div><strong style="color: #9333ea;">Strategy:</strong> ${data.strategy_notes}</div>`;
+    }
+    if (analysisContent) {
+        analysisText.innerHTML = analysisContent;
+        analysis.querySelector('.scanner-analysis-badge').textContent = 'Agent Analysis';
+        analysis.querySelector('.scanner-analysis-badge').style.background = 'linear-gradient(135deg, #9333ea, #06b6d4)';
+        analysis.style.display = 'block';
+    }
+
+    // Display agent-scored recommendations
+    if (data.recommendations && data.recommendations.length > 0) {
+        resultsList.innerHTML = data.recommendations.map((rec, idx) => `
+            <div class="scanner-rec" data-rec-index="${idx}" onclick="showTradePreview(${idx})" style="${rec.agent_confidence === 'HIGH' ? 'border-left: 3px solid #00ff88;' : rec.agent_confidence === 'LOW' ? 'border-left: 3px solid #ff4444;' : ''}">
+                <div class="scanner-rec-ticker">
+                    ${rec.ticker}
+                    <span class="confidence-badge ${(rec.agent_confidence || 'MEDIUM').toLowerCase()}">${rec.agent_confidence || 'MEDIUM'}</span>
+                </div>
+                <div class="scanner-rec-strategy ${(rec.type || 'put').toLowerCase()}">${rec.strategy || rec.type}</div>
+                <div class="scanner-rec-details">
+                    <div>
+                        <span class="strike">$${(rec.strike || 0).toFixed(2)}</span>
+                        <span class="exp">exp ${rec.expiration || '?'} (${rec.dte || '?'}d)</span>
+                    </div>
+                    ${rec.agent_reasoning ? `<div class="agent-reasoning" style="font-size: 9px; color: #9333ea; margin-top: 4px; line-height: 1.3;">${rec.agent_reasoning.slice(0, 120)}${rec.agent_reasoning.length > 120 ? '...' : ''}</div>` : ''}
+                    ${rec.agent_risk_factors && rec.agent_risk_factors.length > 0 ? `<div class="risk-factors" style="font-size: 8px; color: #ff6b6b; margin-top: 2px;">⚠ ${rec.agent_risk_factors.slice(0, 2).join(', ')}</div>` : ''}
+                </div>
+                <div class="scanner-rec-premium">
+                    <div class="amount">$${(rec.premium_per_contract || 0).toFixed(0)}</div>
+                    <div class="yield">${(rec.annualized_yield_pct || 0).toFixed(1)}% ann.</div>
+                </div>
+                <div class="scanner-rec-score" style="background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(6, 182, 212, 0.2));">
+                    <div class="score-value">${(rec.agent_score || rec.score || 0).toFixed(0)}</div>
+                    <div class="score-label">agent</div>
+                </div>
+            </div>
+        `).join('');
+
+        // Add confidence badge styles if not present
+        if (!document.getElementById('agent-scan-styles')) {
+            const style = document.createElement('style');
+            style.id = 'agent-scan-styles';
+            style.textContent = `
+                .confidence-badge {
+                    font-size: 8px;
+                    padding: 2px 6px;
+                    border-radius: 8px;
+                    margin-left: 6px;
+                    text-transform: uppercase;
+                }
+                .confidence-badge.high { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+                .confidence-badge.medium { background: rgba(255, 170, 0, 0.2); color: #ffaa00; }
+                .confidence-badge.low { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+            `;
+            document.head.appendChild(style);
+        }
+
+        results.style.display = 'block';
+    } else {
+        resultsList.innerHTML = `
+            <div class="scanner-empty">
+                <h3>No Agent Recommendations</h3>
+                <p>The agent could not find suitable opportunities or returned no recommendations.</p>
+            </div>
+        `;
+        results.style.display = 'block';
+    }
+
+    // Show research summary if available
+    if (data.research_summary) {
+        const researchTickers = Object.keys(data.research_summary).filter(t => data.research_summary[t].available);
+        if (researchTickers.length > 0) {
+            const existingErrors = errors.style.display === 'block' ? errors.innerHTML : '';
+            errors.innerHTML = `
+                ${existingErrors}
+                <div style="margin-top: ${existingErrors ? '12px' : '0'};">
+                    <div style="color: #06b6d4; font-size: 10px; font-weight: 600; margin-bottom: 6px;">Dexter Research</div>
+                    <div style="font-size: 9px; color: #888;">Fetched data for: ${researchTickers.join(', ')}</div>
+                </div>
+            `;
+            errors.style.display = 'block';
+        }
+    }
+
+    // Show scan errors if any
+    if (data.scan_errors && data.scan_errors.length > 0) {
+        const currentContent = errors.innerHTML;
+        errors.innerHTML = `
+            ${currentContent}
+            <div style="margin-top: ${currentContent ? '12px' : '0'};">
+                <div style="color: #ff6b6b; font-size: 10px; font-weight: 600; margin-bottom: 6px;">Scan Notes</div>
+                <div style="font-size: 9px; color: #888;">${data.scan_errors.join('<br>')}</div>
+            </div>
+        `;
+        errors.style.display = 'block';
+    }
+}
+
 function displayScannerResults(data) {
     const loading = document.getElementById('scanner-loading');
     const summary = document.getElementById('scanner-summary');
@@ -6896,8 +7743,11 @@ async function main() {
             createPlanet(holding, index, portfolioData.holdings.length, totalValue);
         });
 
-        // Create the mysterious Alternate Reality pyramid
-        createAlternateRealityPyramid();
+        // Alternate Reality pyramid removed - now using dedicated /realities page
+        // createAlternateRealityPyramid();
+
+        // Load tracked tickers
+        loadTrackedTickers();
 
         // Auto-fit camera to show all planets
         setTimeout(() => autoFitSystem(true), 500);

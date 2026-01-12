@@ -273,6 +273,23 @@ def generate_event_insights(event_type: str, event_data: dict,
     )
 
 
+def clean_llm_response(response: str) -> str:
+    """Clean LLM response by removing think tags and other artifacts.
+
+    Some models (like GLM-4) output <think>...</think> chain-of-thought
+    that should be stripped from the final response.
+    """
+    import re
+
+    # Remove <think>...</think> tags
+    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+
+    # Remove leading/trailing whitespace
+    response = response.strip()
+
+    return response
+
+
 def get_llm_response(prompt: str, max_tokens: int = 500, system_prompt: str = None) -> str:
     """Simple function to get an LLM response for a prompt.
 
@@ -292,7 +309,7 @@ def get_llm_response(prompt: str, max_tokens: int = 500, system_prompt: str = No
         return "LLM is disabled in configuration"
 
     if system_prompt is None:
-        system_prompt = "You are a helpful financial analysis assistant. Be concise and actionable."
+        system_prompt = "You are a helpful financial analysis assistant. Be concise and actionable. Do not include chain-of-thought reasoning."
 
     try:
         import httpx
@@ -310,7 +327,7 @@ def get_llm_response(prompt: str, max_tokens: int = 500, system_prompt: str = No
                 system=system_prompt,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return message.content[0].text
+            return clean_llm_response(message.content[0].text)
         else:
             # Use local OpenAI-compatible API
             url = f"{config.local_url.rstrip('/')}/chat/completions"
@@ -330,7 +347,7 @@ def get_llm_response(prompt: str, max_tokens: int = 500, system_prompt: str = No
                 response.raise_for_status()
 
                 data = response.json()
-                return data["choices"][0]["message"]["content"]
+                return clean_llm_response(data["choices"][0]["message"]["content"])
 
     except httpx.ConnectError:
         return f"Cannot connect to LLM at {config.local_url}. Is the server running?"

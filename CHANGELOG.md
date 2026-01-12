@@ -4,6 +4,117 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Cosmic Timeline Visualization & AI Self-Reflection (2026-01-12)
+
+#### Alternate Realities Cosmic Animations (`web/static/realities.js`)
+- **Planet Birth Animation** - Stock purchases trigger particle cloud coalescing into new planet
+  - Particles spawn at random positions and converge into planet position
+  - 2-second animation with easing and fade-in
+  - Planet appears after particles coalesce
+- **Asteroid Collision Animation** - Stock sales trigger impact and debris
+  - Impact flash effect at collision point
+  - Debris particles scatter outward with rotation
+  - Planet shrinks proportionally to shares sold
+  - 1.5-second dramatic animation
+- **Timeline Playback Controls** - Play button for smooth animation through history
+  - Variable speed: 0.5x, 1x, 2x, 4x playback speeds
+  - Date display during playback
+  - Auto-stops at end of timeline
+- **Ambient Background Animations** - Cosmic events based on portfolio performance
+  - Green portfolio: comets, supernovas, nebula formation
+  - Red portfolio: asteroid storms, collisions, star deaths
+  - Distant solar systems as backdrop with orbiting mini-planets
+- **LLM-Powered Projections** - Realities page now heavily uses LLM for:
+  - Future timeline projections (3-year forecasts)
+  - Macro event identification (earnings, Fed meetings, market events)
+  - Per-reality narrative generation
+
+#### Main Dashboard Ticker Tracking (`dashboard/src/main.js`)
+- **Track Any Ticker** - New "📡 Track" button in command panel
+  - Track stocks or crypto by entering ticker symbol
+  - Planet spawns next to main solar system
+  - Shows real-time price and day change (%, $)
+- **Tracked Ticker Planets**
+  - Distinct purple/magenta color scheme
+  - Pulsing glow effect
+  - Click to show popup with price details
+- **Destroy Animation** - Remove tracked tickers with dramatic effect
+  - Planet explodes with particle debris
+  - Fragments scatter and fade
+  - Confirms removal with notification
+- **LocalStorage Persistence** - Tracked tickers saved across sessions
+- **Removed Ethereum Pyramid** - Alternate reality pyramid removed from main view (realities page is now primary)
+
+#### AI Self-Reflective Prompts (`llm/prompts.py`)
+- **Socratic Self-Questioning** - LLM now asks itself 3-5 probing questions before generating insights
+  - "Why did they make this decision NOW rather than waiting?"
+  - "Is this consistent with their income goal or a deviation?"
+  - "What are they potentially missing or not seeing?"
+- **Enhanced Insight Structure** - JSON response includes `self_questions` array
+- **Deep Reflection Prompt** - New comprehensive portfolio analysis prompt
+  - Questions on performance, risk, behavior, opportunity cost, blind spots
+  - Returns uncomfortable truths, hidden patterns, action items
+- **Income Scanner Prompt** - Options analysis with self-dialogue
+  - Market condition assessment before recommendations
+  - Rejected opportunities with reasoning
+
+#### Agent Scanner Self-Questioning (`api/services/agent_scanner.py`)
+- **7 Self-Questions** before making recommendations:
+  1. "What's the current market sentiment and how does it affect option premiums?"
+  2. "Which of these stocks would I actually want to own at the put strike prices?"
+  3. "Am I recommending high-premium options because they're good or because they look attractive?"
+  4. "What's the realistic probability of assignment and am I okay with that outcome?"
+  5. "Is this portfolio overexposed to any sector or correlation risk?"
+  6. "How close is this portfolio to its income goal and what's the appropriate risk level?"
+  7. "What information am I missing that would change my recommendations?"
+- **Self-Reflection in Response** - JSON includes `self_reflection` object with:
+  - `key_question_answered` - Most important self-question and answer
+  - `rejected_opportunities` - What was considered but rejected (and why)
+  - `risk_concerns` - Concerns about any recommendations
+- **Contrarian View** - Response includes "what could go wrong" perspective
+
+#### Income Breakdown Year Selector
+- **Year dropdown selector** - Choose which year to view income breakdown
+  - Available years: current year and 4 previous years
+  - API supports `?year=YYYY` query parameter
+  - Auto-reloads data when year changes
+
+#### Architecture Review Document (`docs/ARCHITECTURE_REVIEW.md`)
+- **Self-Reflection Analysis** of current codebase structure
+- **Issues Identified**:
+  - Service layer duplication (alt_history.py + alternate_reality.py)
+  - Route layer bloat (18 routes → should be 6)
+  - Frontend confusion (dashboard vs web templates)
+  - LLM integration sprawl across multiple files
+  - Data model ambiguity (CSV vs SQLite vs JSON)
+- **Proposed Simplified Architecture**:
+  - Consolidated routes: portfolio, events, realities, ai, admin, web
+  - New `core/` directory for business logic
+  - Single source of truth for data
+- **4-Phase Migration Plan** with priorities
+
+### Added - Intraday Change Visuals & Expandable Dashboard Rows (2026-01-12)
+
+#### Intraday Change Indicators on 3D Planets
+- **Day change data** - API now returns `day_change_pct` and `day_change_value` for each holding
+- **Pulsing arrow indicators** - Planets display vertical arrows (up/down) based on daily performance
+- **Visual intensity** - Arrow size and glow intensity scales with % change (max at 5%)
+- **Animated effects** - Pulsing beam, rotating ring, and bobbing arrow animation
+- **HUD cards** - Holdings grid shows daily change with ▲/▼ indicator
+- **Planet popup** - Clicking planet shows day change section with both % and $ values
+
+#### Dashboard Expandable Rows
+- **Income Breakdown expansion** - Tap Trading Gains/Options/Dividends to see individual transactions
+- **Gains Summary expansion** - Tap Realized/Unrealized gains to see transaction details
+- **Alpine.js integration** - Smooth collapse/expand animations with lazy loading
+- **Tax calculations** - Shows estimated tax impact for each category
+
+#### Ideas Lab Page (`/ideas`)
+- **Dedicated page** - Full page for managing investment ideas
+- **CRUD operations** - Create, view, edit, archive ideas
+- **Status filtering** - Filter by seed, manifested, actionable, executed, archived
+- **AI manifestation** - Generate actionable trades from seed ideas
+
 ### Added - Options BUY/SELL Tracking & Income Breakdown (2026-01-12)
 
 #### Options BUY/SELL Action Field

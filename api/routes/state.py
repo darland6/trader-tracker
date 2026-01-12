@@ -11,6 +11,57 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from reconstruct_state import load_event_log, reconstruct_state
 from api.database import get_cached_prices
 
+# Cache for daily change data (refreshed on price updates)
+_daily_change_cache = {}
+_daily_change_timestamp = None
+
+
+def get_daily_changes(tickers: list) -> dict:
+    """Get daily change percentages for tickers from yfinance.
+
+    Returns dict of ticker -> {day_change_pct, day_change_value, previous_close}
+    """
+    global _daily_change_cache, _daily_change_timestamp
+
+    # Check cache freshness (5 minutes)
+    now = datetime.now()
+    if _daily_change_timestamp and (now - _daily_change_timestamp).seconds < 300:
+        # Return cached data if still fresh
+        return {t: _daily_change_cache.get(t, {}) for t in tickers}
+
+    try:
+        import yfinance as yf
+
+        result = {}
+        for ticker in tickers:
+            try:
+                t = yf.Ticker(ticker)
+                info = t.fast_info
+
+                current = info.get('lastPrice', 0)
+                previous_close = info.get('previousClose', info.get('regularMarketPreviousClose', 0))
+
+                if previous_close and current:
+                    day_change = current - previous_close
+                    day_change_pct = (day_change / previous_close) * 100
+                    result[ticker] = {
+                        'day_change_pct': round(day_change_pct, 2),
+                        'day_change_value': round(day_change, 2),
+                        'previous_close': round(previous_close, 2)
+                    }
+                else:
+                    result[ticker] = {'day_change_pct': 0, 'day_change_value': 0, 'previous_close': 0}
+            except Exception:
+                result[ticker] = {'day_change_pct': 0, 'day_change_value': 0, 'previous_close': 0}
+
+        # Update cache
+        _daily_change_cache = result
+        _daily_change_timestamp = now
+
+        return result
+    except Exception:
+        return {t: {'day_change_pct': 0, 'day_change_value': 0, 'previous_close': 0} for t in tickers}
+
 router = APIRouter(prefix="/api", tags=["state"])
 
 SCRIPT_DIR = Path(__file__).parent.parent.parent.resolve()
@@ -39,6 +90,10 @@ async def get_state():
     holdings = []
     total_holdings_value = 0
 
+    # Get tickers for daily change lookup
+    tickers = [t for t, s in state.get('holdings', {}).items() if s > 0.01]
+    daily_changes = get_daily_changes(tickers)
+
     for ticker, shares in state.get('holdings', {}).items():
         if shares > 0.01:  # Filter out dust/fractional positions
             price = state.get('latest_prices', {}).get(ticker, 0)
@@ -48,6 +103,11 @@ async def get_state():
             unrealized_gain = market_value - total_cost
             gain_pct = ((market_value - total_cost) / total_cost * 100) if total_cost > 0 else 0
 
+            # Get daily change data
+            day_data = daily_changes.get(ticker, {})
+            day_change_pct = day_data.get('day_change_pct', 0)
+            day_change_value = day_data.get('day_change_value', 0) * shares  # Total position change
+
             holdings.append({
                 "ticker": ticker,
                 "shares": shares,
@@ -56,7 +116,9 @@ async def get_state():
                 "cost_basis": total_cost,
                 "avg_cost": cost_info.get('avg_price', 0),
                 "unrealized_gain": unrealized_gain,
-                "unrealized_gain_pct": round(gain_pct, 2)
+                "unrealized_gain_pct": round(gain_pct, 2),
+                "day_change_pct": day_change_pct,
+                "day_change_value": round(day_change_value, 2)
             })
             total_holdings_value += market_value
 
@@ -67,23 +129,106 @@ async def get_state():
     # Sort by market value descending
     holdings.sort(key=lambda x: x["market_value"], reverse=True)
 
-    # Build active options list
+    # Build active options list with P&L calculation
     active_options = []
+    options_to_price = []
+
+    # First pass: collect options info
     for opt in state.get('active_options', []):
         exp_date = datetime.strptime(opt.get('expiration', '2099-12-31'), '%Y-%m-%d')
         days_to_expiry = (exp_date - datetime.now()).days
+        premium_received = opt.get('total_premium', opt.get('premium', 0))
+        contracts = opt.get('contracts', 1)
 
-        active_options.append({
+        option_info = {
             "event_id": opt.get('event_id', 0),
             "position_id": opt.get('position_id', ''),
             "ticker": opt.get('ticker', ''),
             "strategy": opt.get('strategy', ''),
             "strike": opt.get('strike', 0),
             "expiration": opt.get('expiration', ''),
-            "contracts": opt.get('contracts', 1),
-            "premium": opt.get('total_premium', opt.get('premium', 0)),
-            "days_to_expiry": days_to_expiry
-        })
+            "contracts": contracts,
+            "premium": premium_received,
+            "premium_per_contract": premium_received / contracts if contracts > 0 else 0,
+            "days_to_expiry": days_to_expiry,
+            # P&L fields (will be updated with live prices)
+            "current_price": None,
+            "current_value": None,
+            "unrealized_pnl": None,
+            "unrealized_pnl_pct": None
+        }
+
+        options_to_price.append(option_info)
+        active_options.append(option_info)
+
+    # Fetch current option prices
+    try:
+        import yfinance as yf
+
+        for opt in options_to_price:
+            try:
+                ticker = opt['ticker']
+                strike = opt['strike']
+                expiration = opt['expiration']
+                strategy = opt['strategy'].lower()
+                contracts = opt['contracts']
+                premium_received = opt['premium']
+
+                # Determine option type
+                is_call = 'call' in strategy
+                is_put = 'put' in strategy or 'secured' in strategy
+
+                if not (is_call or is_put):
+                    continue
+
+                # Get option chain from yfinance
+                stock = yf.Ticker(ticker)
+                exp_dates = stock.options
+
+                if expiration in exp_dates:
+                    opt_chain = stock.option_chain(expiration)
+
+                    if is_call:
+                        chain = opt_chain.calls
+                    else:
+                        chain = opt_chain.puts
+
+                    # Find our strike
+                    option_row = chain[chain['strike'] == strike]
+
+                    if not option_row.empty:
+                        # Use last price or mid of bid/ask
+                        last_price = option_row['lastPrice'].iloc[0]
+                        bid = option_row['bid'].iloc[0]
+                        ask = option_row['ask'].iloc[0]
+
+                        # Use mid if last price seems stale
+                        if bid > 0 and ask > 0:
+                            mid = (bid + ask) / 2
+                            current_price = mid if last_price == 0 else last_price
+                        else:
+                            current_price = last_price
+
+                        # Current value = price * 100 * contracts (options are 100 shares each)
+                        current_value = current_price * 100 * contracts
+
+                        # For sold options: profit if current_value < premium
+                        # (we'd pay less to close than we received)
+                        unrealized_pnl = premium_received - current_value
+                        unrealized_pnl_pct = (unrealized_pnl / premium_received * 100) if premium_received > 0 else 0
+
+                        opt['current_price'] = round(current_price, 2)
+                        opt['current_value'] = round(current_value, 2)
+                        opt['unrealized_pnl'] = round(unrealized_pnl, 2)
+                        opt['unrealized_pnl_pct'] = round(unrealized_pnl_pct, 2)
+
+            except Exception as e:
+                # If we can't get price, leave P&L as None
+                pass
+
+    except ImportError:
+        # yfinance not available
+        pass
 
     # Calculate totals
     portfolio_value = sum(h["market_value"] for h in holdings)
@@ -131,12 +276,23 @@ async def get_state():
             contracts = opt.get('contracts', 1)
             secured_put_collateral += strike * 100 * contracts
 
-    # 2. Short-term capital gains tax reserve
-    # Calculate estimated taxes on YTD realized gains at 25% rate
+    # 2. Tax reserve calculation
+    # Short-term capital gains (trading gains + options) taxed at 25%
     SHORT_TERM_TAX_RATE = 0.25
-    ytd_realized_gains = state.get('ytd_trading_gains', 0) + state.get('ytd_option_income', 0)
-    # Only reserve for gains (not losses)
-    tax_reserve = max(0, ytd_realized_gains * SHORT_TERM_TAX_RATE)
+    # Qualified dividends taxed at 15%
+    DIVIDEND_TAX_RATE = 0.15
+
+    ytd_trading_gains = state.get('ytd_trading_gains', 0)
+    ytd_option_income = state.get('ytd_option_income', 0)
+    ytd_dividends = state.get('ytd_dividends', 0)
+
+    # Calculate tax on each income type
+    trading_tax = max(0, ytd_trading_gains) * SHORT_TERM_TAX_RATE
+    option_tax = max(0, ytd_option_income) * SHORT_TERM_TAX_RATE
+    dividend_tax = max(0, ytd_dividends) * DIVIDEND_TAX_RATE
+
+    # Total tax reserve
+    tax_reserve = trading_tax + option_tax + dividend_tax
 
     # 3. Available cash (what's actually deployable)
     available_cash = max(0, total_cash - secured_put_collateral - tax_reserve)
@@ -145,8 +301,17 @@ async def get_state():
         "total": total_cash,
         "secured_put_collateral": secured_put_collateral,
         "tax_reserve": tax_reserve,
-        "tax_rate": SHORT_TERM_TAX_RATE,
-        "ytd_realized_gains": ytd_realized_gains,
+        "tax_breakdown": {
+            "trading_gains": ytd_trading_gains,
+            "trading_tax": trading_tax,
+            "trading_rate": SHORT_TERM_TAX_RATE,
+            "option_income": ytd_option_income,
+            "option_tax": option_tax,
+            "option_rate": SHORT_TERM_TAX_RATE,
+            "dividend_income": ytd_dividends,
+            "dividend_tax": dividend_tax,
+            "dividend_rate": DIVIDEND_TAX_RATE
+        },
         "available": available_cash,
         "allocated_pct": round(((secured_put_collateral + tax_reserve) / total_cash * 100) if total_cash > 0 else 0, 1)
     }
@@ -184,15 +349,92 @@ async def get_summary():
     }
 
 
+def calculate_monthly_dividends(transactions: list, year: int) -> dict:
+    """Calculate dividend income by month for the given year."""
+    from collections import defaultdict
+
+    monthly = defaultdict(float)
+
+    for trans in transactions:
+        try:
+            date_str = trans.get('date', '')
+            if date_str:
+                month = int(date_str.split('-')[1])
+                monthly[month] += trans.get('amount', 0)
+        except (ValueError, IndexError):
+            continue
+
+    # Return all 12 months with 0 for missing months
+    return {
+        "by_month": {i: monthly.get(i, 0) for i in range(1, 13)},
+        "monthly_avg": sum(monthly.values()) / max(1, len([m for m in monthly.values() if m > 0])),
+        "months_with_dividends": len([m for m in monthly.values() if m > 0])
+    }
+
+
+def project_annual_dividends(transactions: list, year: int) -> dict:
+    """Project annual dividend income based on YTD data."""
+    from datetime import datetime
+
+    total_ytd = sum(t.get('amount', 0) for t in transactions)
+    current_month = datetime.now().month
+    current_day = datetime.now().day
+
+    # Calculate days elapsed in year
+    days_elapsed = (datetime.now() - datetime(year, 1, 1)).days
+    days_in_year = 365
+
+    if days_elapsed > 0:
+        daily_rate = total_ytd / days_elapsed
+        projected_annual = daily_rate * days_in_year
+    else:
+        projected_annual = 0
+
+    # Calculate by ticker for recurring dividend estimates
+    by_ticker = {}
+    for trans in transactions:
+        ticker = trans.get('ticker', 'Unknown')
+        if ticker not in by_ticker:
+            by_ticker[ticker] = {'total': 0, 'count': 0, 'last_amount': 0}
+        by_ticker[ticker]['total'] += trans.get('amount', 0)
+        by_ticker[ticker]['count'] += 1
+        by_ticker[ticker]['last_amount'] = trans.get('amount', 0)
+
+    # Estimate annual per ticker (assuming quarterly dividends)
+    ticker_projections = {}
+    for ticker, data in by_ticker.items():
+        if data['count'] > 0:
+            avg_payment = data['total'] / data['count']
+            # Most dividends are quarterly (4x/year)
+            ticker_projections[ticker] = {
+                'ytd': data['total'],
+                'count': data['count'],
+                'avg_payment': avg_payment,
+                'projected_annual': avg_payment * 4  # Assume quarterly
+            }
+
+    return {
+        "ytd": total_ytd,
+        "projected_annual": round(projected_annual, 2),
+        "days_elapsed": days_elapsed,
+        "daily_rate": round(daily_rate, 2) if days_elapsed > 0 else 0,
+        "by_ticker": ticker_projections
+    }
+
+
 @router.get("/income-breakdown")
-async def get_income_breakdown():
-    """Get detailed income breakdown with individual transactions and tax calculations."""
+async def get_income_breakdown(year: int = None):
+    """Get detailed income breakdown with individual transactions and tax calculations.
+
+    Args:
+        year: Year to filter by (defaults to current year)
+    """
     import json
     import pandas as pd
 
     # Load events
     events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
-    current_year = datetime.now().year
+    current_year = year if year else datetime.now().year
 
     # Tax rate for short-term capital gains
     TAX_RATE = 0.25
@@ -305,18 +547,21 @@ async def get_income_breakdown():
             "count": len(option_transactions)
         },
 
-        # Dividend breakdown
+        # Dividend breakdown with monthly analysis
         "dividends": {
             "transactions": sorted(dividend_transactions, key=lambda x: x['date'], reverse=True),
             "income": dividend_income,
             "tax": dividend_tax,
-            "count": len(dividend_transactions)
+            "count": len(dividend_transactions),
+            "monthly": calculate_monthly_dividends(dividend_transactions, current_year),
+            "projected_annual": project_annual_dividends(dividend_transactions, current_year)
         },
 
         # Totals
         "totals": {
             "gross_income": total_income,
             "total_tax": total_tax,
-            "net_after_tax": total_income - total_tax
+            "net_after_tax": total_income - total_tax,
+            "effective_tax_rate": round((total_tax / total_income * 100) if total_income > 0 else 0, 1)
         }
     }

@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alternate Realities | Portfolio Multiverse</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #050510;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        /* HUD Overlay */
+        .hud {
+            position: fixed;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .hud > * {
+            pointer-events: auto;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(to bottom, rgba(5,5,16,0.9) 0%, transparent 100%);
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            background: linear-gradient(135deg, #9333ea, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .back-btn {
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-btn:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.4);
+        }
+
+        /* Timeline Control */
+        .timeline-control {
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 800px;
+            padding: 20px 30px;
+            background: rgba(20, 20, 40, 0.9);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 16px;
+            backdrop-filter: blur(20px);
+        }
+
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .timeline-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #9333ea;
+        }
+
+        .timeline-date {
+            font-size: 18px;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .timeline-slider {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #9333ea, #06b6d4);
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 0 20px rgba(147, 51, 234, 0.5);
+            transition: transform 0.2s ease;
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .timeline-markers {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* Reality Cards */
+        .reality-panel {
+            top: 100px;
+            right: 30px;
+            width: 320px;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        .reality-panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .reality-panel::-webkit-scrollbar-thumb {
+            background: rgba(147, 51, 234, 0.5);
+            border-radius: 2px;
+        }
+
+        .reality-card {
+            background: rgba(20, 20, 40, 0.9);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .reality-card:hover {
+            border-color: rgba(147, 51, 234, 0.6);
+            transform: translateX(-5px);
+            box-shadow: 5px 0 30px rgba(147, 51, 234, 0.2);
+        }
+
+        .reality-card.active {
+            border-color: #9333ea;
+            box-shadow: 0 0 30px rgba(147, 51, 234, 0.3);
+        }
+
+        .reality-card.reality-main {
+            border-color: rgba(6, 182, 212, 0.5);
+        }
+
+        .reality-card.reality-main.active {
+            border-color: #06b6d4;
+            box-shadow: 0 0 30px rgba(6, 182, 212, 0.3);
+        }
+
+        .reality-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .reality-badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .reality-main .reality-badge {
+            background: rgba(6, 182, 212, 0.2);
+            color: #06b6d4;
+        }
+
+        .reality-alt .reality-badge {
+            background: rgba(147, 51, 234, 0.2);
+            color: #9333ea;
+        }
+
+        .reality-value {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: monospace;
+            margin-bottom: 8px;
+        }
+
+        .reality-change {
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        .reality-change.positive { color: #00ff88; }
+        .reality-change.negative { color: #ff4444; }
+
+        .reality-description {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        /* Comparison Panel */
+        .comparison-panel {
+            top: 100px;
+            left: 30px;
+            width: 350px;
+            background: rgba(20, 20, 40, 0.9);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            display: none;
+        }
+
+        .comparison-panel.visible {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .comparison-title {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #9333ea;
+            margin-bottom: 16px;
+        }
+
+        .comparison-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .comparison-row:last-child {
+            border-bottom: none;
+        }
+
+        .comparison-label {
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .comparison-values {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .comparison-value {
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        .comparison-arrow {
+            color: rgba(255,255,255,0.3);
+        }
+
+        .comparison-diff {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .comparison-diff.positive {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+
+        .comparison-diff.negative {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff4444;
+        }
+
+        /* Loading State */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #050510;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(147, 51, 234, 0.2);
+            border-top-color: #9333ea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-size: 14px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.6);
+        }
+
+        /* Event Timeline */
+        .events-timeline {
+            position: fixed;
+            bottom: 140px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            padding: 10px;
+            background: rgba(20, 20, 40, 0.8);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .event-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .event-dot.gain { background: #00ff88; }
+        .event-dot.loss { background: #ff4444; }
+        .event-dot.neutral { background: #888; }
+
+        .event-dot:hover {
+            transform: scale(1.5);
+        }
+
+        .event-dot::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 12px;
+            background: rgba(20, 20, 40, 0.95);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+            border-radius: 8px;
+            white-space: nowrap;
+            font-size: 12px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            margin-bottom: 8px;
+        }
+
+        .event-dot:hover::after {
+            opacity: 1;
+        }
+
+        /* Create Reality Button */
+        .create-btn {
+            position: fixed;
+            top: 80px;
+            right: 30px;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #9333ea, #06b6d4);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 101;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .create-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(147, 51, 234, 0.4);
+        }
+
+        /* Create Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal {
+            background: rgba(20, 20, 40, 0.98);
+            border: 1px solid rgba(147, 51, 234, 0.5);
+            border-radius: 16px;
+            padding: 30px;
+            width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #9333ea, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 8px;
+        }
+
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #9333ea;
+        }
+
+        .form-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .purchase-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .remove-purchase {
+            background: rgba(255, 68, 68, 0.2);
+            border: none;
+            color: #ff4444;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .add-purchase {
+            background: rgba(147, 51, 234, 0.2);
+            border: 1px dashed rgba(147, 51, 234, 0.5);
+            color: #9333ea;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 14px;
+            background: linear-gradient(135deg, #9333ea, #06b6d4);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(147, 51, 234, 0.3);
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 14px;
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        /* Macro Event Popup */
+        .macro-event-popup {
+            position: fixed;
+            bottom: 200px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20, 20, 40, 0.95);
+            border: 2px solid;
+            border-radius: 12px;
+            padding: 16px 24px;
+            max-width: 500px;
+            text-align: center;
+            z-index: 150;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+
+        .macro-event-popup.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .macro-event-popup.bullish {
+            border-color: #22c55e;
+            box-shadow: 0 0 40px rgba(34, 197, 94, 0.3);
+        }
+
+        .macro-event-popup.bearish {
+            border-color: #ef4444;
+            box-shadow: 0 0 40px rgba(239, 68, 68, 0.3);
+        }
+
+        .macro-event-popup.neutral {
+            border-color: #06b6d4;
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.3);
+        }
+
+        .macro-event-date {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 4px;
+        }
+
+        .macro-event-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .macro-event-description {
+            font-size: 14px;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.4;
+        }
+
+        .macro-event-impact {
+            margin-top: 10px;
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+
+        .macro-event-impact.positive {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .macro-event-impact.negative {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        /* Bull/Bear tint overlay */
+        .sentiment-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .sentiment-overlay.bullish {
+            background: radial-gradient(circle at center, rgba(34, 197, 94, 0.1) 0%, transparent 70%);
+        }
+
+        .sentiment-overlay.bearish {
+            background: radial-gradient(circle at center, rgba(239, 68, 68, 0.1) 0%, transparent 70%);
+        }
+
+        /* Quick scenarios */
+        .quick-scenarios {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .scenario-btn {
+            padding: 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .scenario-btn:hover {
+            background: rgba(147, 51, 234, 0.2);
+            border-color: rgba(147, 51, 234, 0.5);
+        }
+
+        /* Playback Controls */
+        .playback-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .control-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(147, 51, 234, 0.3);
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .control-btn:hover {
+            background: rgba(147, 51, 234, 0.5);
+            transform: scale(1.1);
+        }
+
+        #speed-btn {
+            width: auto;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .playback-info {
+            margin-left: auto;
+            font-family: monospace;
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        /* Event Notifications */
+        .event-notification {
+            padding: 12px 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transform: translateX(50px);
+            transition: all 0.3s ease;
+            border-left: 3px solid;
+        }
+
+        .event-notification.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .event-notification.buy {
+            border-color: #00ff88;
+        }
+
+        .event-notification.sell {
+            border-color: #ff6b6b;
+        }
+
+        .event-icon {
+            font-size: 20px;
+        }
+
+        .event-message {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* Reality stats in cards */
+        .reality-stats {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: rgba(255,255,255,0.5);
+        }
+
+        /* Timeline section wrapper */
+        .timeline-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Ambient background animations */
+        .ambient-effect {
+            position: fixed;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0.4;
+        }
+
+        .ambient-comet {
+            position: absolute;
+            width: 100px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+            animation: comet-fly 3s linear forwards;
+        }
+
+        @keyframes comet-fly {
+            from {
+                transform: translateX(-200px) translateY(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            to {
+                transform: translateX(2000px) translateY(500px);
+                opacity: 0;
+            }
+        }
+
+        .ambient-explosion {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            animation: explosion-pulse 2s ease-out forwards;
+        }
+
+        @keyframes explosion-pulse {
+            0% {
+                transform: scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(3);
+                opacity: 0;
+            }
+        }
+
+        .ambient-explosion.good {
+            background: radial-gradient(circle, rgba(0,255,136,0.8) 0%, transparent 70%);
+            box-shadow: 0 0 40px rgba(0,255,136,0.5);
+        }
+
+        .ambient-explosion.bad {
+            background: radial-gradient(circle, rgba(255,68,68,0.8) 0%, transparent 70%);
+            box-shadow: 0 0 40px rgba(255,68,68,0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Initializing Multiverse</div>
+    </div>
+
+    <!-- Top Bar -->
+    <div class="hud top-bar">
+        <h1 class="title">Portfolio Multiverse</h1>
+        <a href="/dashboard" class="back-btn">← Back to Dashboard</a>
+    </div>
+
+    <!-- Reality Selection Panel -->
+    <div class="hud reality-panel" id="reality-panel">
+        <!-- Cards populated by JS -->
+    </div>
+
+    <!-- Comparison Panel -->
+    <div class="hud comparison-panel" id="comparison-panel">
+        <div class="comparison-title">Reality Comparison</div>
+        <div id="comparison-content">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Timeline Control -->
+    <div class="hud timeline-control timeline-section">
+        <div class="timeline-header">
+            <span class="timeline-title">Timeline Position</span>
+            <span class="timeline-date" id="timeline-date">Present Day</span>
+        </div>
+        <!-- Playback controls will be inserted here by JS -->
+        <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="100" value="100">
+        <div class="timeline-markers">
+            <span>Start</span>
+            <span>25%</span>
+            <span>50%</span>
+            <span>75%</span>
+            <span>Present</span>
+        </div>
+    </div>
+
+    <!-- Ambient Effects Container -->
+    <div id="ambient-container" class="ambient-effect"></div>
+
+    <!-- Event Dots Timeline -->
+    <div class="events-timeline" id="events-timeline">
+        <!-- Populated by JS -->
+    </div>
+
+    <!-- Create Reality Button -->
+    <button class="create-btn" id="create-btn">+ Create Reality</button>
+
+    <!-- Create Reality Modal -->
+    <div class="modal-overlay" id="create-modal">
+        <div class="modal">
+            <h2 class="modal-title">Create Alternate Reality</h2>
+
+            <div class="form-group">
+                <label class="form-label">Quick Scenarios</label>
+                <div class="quick-scenarios">
+                    <button class="scenario-btn" data-scenario="tech-bull">Tech Bull Run</button>
+                    <button class="scenario-btn" data-scenario="dividend">Dividend Focus</button>
+                    <button class="scenario-btn" data-scenario="index">Index Investor</button>
+                    <button class="scenario-btn" data-scenario="ai-play">AI Revolution</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Reality Name</label>
+                <input type="text" class="form-input" id="reality-name" placeholder="e.g., Tech Heavy 2024">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="reality-description" placeholder="What is this 'what-if' scenario exploring?"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Start Date</label>
+                <input type="date" class="form-input" id="reality-start-date" value="2024-01-02">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Starting Cash ($)</label>
+                <input type="number" class="form-input" id="reality-cash" value="100000" min="0" step="1000">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Initial Stock Purchases</label>
+                <div id="purchases-container">
+                    <div class="purchase-row">
+                        <input type="text" class="form-input" placeholder="Ticker (e.g., NVDA)" data-field="ticker">
+                        <input type="number" class="form-input" placeholder="Shares" data-field="shares" min="1">
+                        <button class="remove-purchase" onclick="removePurchase(this)">✕</button>
+                    </div>
+                </div>
+                <button class="add-purchase" id="add-purchase-btn">+ Add Stock Purchase</button>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-secondary" id="cancel-create">Cancel</button>
+                <button class="btn-primary" id="submit-create">Create Reality</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Macro Event Popup -->
+    <div class="macro-event-popup" id="macro-event-popup">
+        <div class="macro-event-date" id="event-date"></div>
+        <div class="macro-event-title" id="event-title"></div>
+        <div class="macro-event-description" id="event-description"></div>
+        <span class="macro-event-impact" id="event-impact"></span>
+    </div>
+
+    <!-- Sentiment Overlay -->
+    <div class="sentiment-overlay" id="sentiment-overlay"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="/static/realities.js"></script>
+</body>
+</html>

@@ -179,10 +179,15 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
                 'contracts': data.get('contracts', 1),
                 'total_premium': data.get('total_premium', data.get('premium', 0))
             })
-            
-            premium = data.get('total_premium', data.get('premium', 0))
-            state['ytd_option_income'] += premium
-            state['ytd_income'] += premium
+
+            # Track option income - only count YTD (current year) for SELL options
+            action = data.get('action', 'SELL')
+            event_year = event['timestamp'].year if hasattr(event['timestamp'], 'year') else pd.to_datetime(event['timestamp']).year
+            current_year = datetime.now().year
+            if event_year == current_year and action == 'SELL':
+                premium = data.get('total_premium', data.get('premium', 0))
+                state['ytd_option_income'] += premium
+                state['ytd_income'] += premium
             state['cash'] += event['cash_delta']
         
         elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN']:
@@ -209,18 +214,25 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
                 state['active_options'] = [opt for opt in state['active_options']
                                           if opt.get('uuid') != uuid]
 
-            # Track profit
+            # Track profit - only count YTD (current year)
             profit = data.get('profit', 0)
-            state['ytd_option_income'] += profit
-            state['ytd_income'] += profit
+            event_year = event['timestamp'].year if hasattr(event['timestamp'], 'year') else pd.to_datetime(event['timestamp']).year
+            current_year = datetime.now().year
+            if event_year == current_year:
+                state['ytd_option_income'] += profit
+                state['ytd_income'] += profit
 
             # Update cash (e.g., buying back an option costs money)
             state['cash'] += event['cash_delta']
         
         elif event_type == 'DIVIDEND':
             amount = data['amount']
-            state['ytd_dividends'] += amount
-            state['ytd_income'] += amount
+            # Track dividends - only count YTD (current year)
+            event_year = event['timestamp'].year if hasattr(event['timestamp'], 'year') else pd.to_datetime(event['timestamp']).year
+            current_year = datetime.now().year
+            if event_year == current_year:
+                state['ytd_dividends'] += amount
+                state['ytd_income'] += amount
             state['cash'] += event['cash_delta']
         
         elif event_type == 'WITHDRAWAL':
@@ -263,6 +275,17 @@ def reconstruct_state(events_df, as_of_timestamp=None, ticker_filter=None):
         elif event_type == 'ADJUSTMENT':
             # Cash adjustments (journal entries, reconciliation, etc.)
             state['cash'] += event['cash_delta']
+
+            # Handle cost basis adjustments
+            adj_type = data.get('type', '')
+            if adj_type == 'COST_BASIS_SYNC' and 'adjustments' in data:
+                for ticker, adj in data['adjustments'].items():
+                    if ticker in state['cost_basis']:
+                        target_cost = adj.get('target', adj.get('new_value', 0))
+                        if target_cost > 0:
+                            shares = state['cost_basis'][ticker]['shares']
+                            state['cost_basis'][ticker]['total_cost'] = target_cost
+                            state['cost_basis'][ticker]['avg_price'] = target_cost / shares if shares > 0 else 0
 
         elif event_type == 'INSIGHT_LOG':
             # AI insight usage logging - no state change

@@ -43,7 +43,8 @@ def load_event_log(filepath='event_log_enhanced.csv'):
     if 'tags_json' in df.columns:
         df['tags'] = df['tags_json'].apply(json.loads)
     
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    # Use format='mixed' to handle both ISO8601 and standard datetime formats
+    df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
     return df
 
 def prepare_agent_context(events_df, include_full_history=True):

@@ -3,7 +3,36 @@
 {% block title %}Options - Portfolio Manager{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+<div class="space-y-6" x-data="optionsData()">
+    <!-- Cash Secured Summary -->
+    <div class="stats shadow bg-base-100 w-full">
+        <div class="stat">
+            <div class="stat-title">Cash Available</div>
+            <div class="stat-value text-success" x-text="'$' + cash.toLocaleString()">Loading...</div>
+            <div class="stat-desc">Current cash balance</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Cash to Secure Puts</div>
+            <div class="stat-value" :class="cashRequired <= cash ? 'text-info' : 'text-error'" x-text="'$' + cashRequired.toLocaleString()">Loading...</div>
+            <div class="stat-desc">Required if all puts assigned</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Coverage</div>
+            <div class="stat-value" :class="coveragePct >= 100 ? 'text-success' : 'text-warning'" x-text="coveragePct.toFixed(0) + '%'">Loading...</div>
+            <div class="stat-desc" x-text="cashRequired <= cash ? 'Fully secured' : 'Margin required'"></div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Free Cash</div>
+            <div class="stat-value" :class="freeCash >= 0 ? 'text-success' : 'text-error'" x-text="(freeCash >= 0 ? '$' : '-$') + Math.abs(freeCash).toLocaleString()">Loading...</div>
+            <div class="stat-desc">After securing puts</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Options P&L</div>
+            <div class="stat-value" :class="optionsPnL >= 0 ? 'text-success' : 'text-error'" x-text="(optionsPnL >= 0 ? '+$' : '-$') + Math.abs(optionsPnL).toLocaleString()">Loading...</div>
+            <div class="stat-desc">Unrealized gain/loss</div>
+        </div>
+    </div>
+
     <!-- Active Options -->
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
@@ -29,6 +58,9 @@
                             <th>Expiration</th>
                             <th>Contracts</th>
                             <th>Premium</th>
+                            <th>Current Value</th>
+                            <th>Unrealized P&L</th>
+                            <th>Cash Secured</th>
                             <th>Days Left</th>
                             <th>Actions</th>
                         </tr>
@@ -49,6 +81,28 @@
                             <td>{{ '-' if opt.action == 'SELL' else '' }}{{ opt.contracts }}</td>
                             <td class="{{ 'text-success' if opt.action == 'SELL' else 'text-warning' }}">
                                 ${{ "{:,.0f}".format(opt.premium) }}
+                            </td>
+                            <td class="font-mono">
+                                {% if opt.current_value is not none %}
+                                ${{ "{:,.0f}".format(opt.current_value) }}
+                                {% else %}
+                                <span class="text-base-content/40">--</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono font-bold {% if opt.unrealized_pnl is not none %}{{ 'text-success' if opt.unrealized_pnl >= 0 else 'text-error' }}{% endif %}">
+                                {% if opt.unrealized_pnl is not none %}
+                                {{ '+' if opt.unrealized_pnl >= 0 else '' }}${{ "{:,.0f}".format(opt.unrealized_pnl) }}
+                                <span class="text-xs">({{ "{:+.0f}".format(opt.unrealized_pnl_pct) }}%)</span>
+                                {% else %}
+                                <span class="text-base-content/40">--</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono {% if opt.action == 'SELL' and opt.strategy == 'Put' %}text-info{% else %}text-base-content/40{% endif %}">
+                                {% if opt.action == 'SELL' and opt.strategy == 'Put' %}
+                                ${{ "{:,.0f}".format(opt.strike * 100 * opt.contracts) }}
+                                {% else %}
+                                -
+                                {% endif %}
                             </td>
                             <td class="{% if opt.days_to_expiry <= 7 %}text-warning{% elif opt.days_to_expiry < 0 %}text-error{% endif %}">
                                 {{ opt.days_to_expiry }}{% if opt.days_to_expiry < 0 %} (EXPIRED){% endif %}
@@ -408,6 +462,58 @@
                 submitBtn.innerHTML = 'Open Option Position';
             }
         });
+
+        // Update premium label based on action type
+        function updatePremiumLabel() {
+            const action = document.getElementById('option-action').value;
+            const label = document.getElementById('premium-label');
+            label.textContent = action === 'SELL' ? 'Premium Received per Share' : 'Premium Paid per Share';
+        }
+    </script>
+
+    <!-- Alpine.js data for cash calculations -->
+    <script>
+        function optionsData() {
+            return {
+                cash: 0,
+                cashRequired: 0,
+                coveragePct: 0,
+                freeCash: 0,
+                optionsPnL: 0,
+
+                async init() {
+                    try {
+                        const response = await fetch('/api/state');
+                        const state = await response.json();
+                        this.cash = Math.round(state.cash || 0);
+
+                        // Calculate cash required for sold puts
+                        const options = state.active_options || [];
+                        this.cashRequired = options.reduce((sum, opt) => {
+                            if ((opt.action === 'SELL' || !opt.action) && opt.strategy === 'Put') {
+                                return sum + (opt.strike * 100 * (opt.contracts || 1));
+                            }
+                            return sum;
+                        }, 0);
+
+                        this.cashRequired = Math.round(this.cashRequired);
+                        this.coveragePct = this.cashRequired > 0 ? (this.cash / this.cashRequired) * 100 : 100;
+                        this.freeCash = this.cash - this.cashRequired;
+
+                        // Calculate total options P&L
+                        this.optionsPnL = options.reduce((sum, opt) => {
+                            if (opt.unrealized_pnl !== null && opt.unrealized_pnl !== undefined) {
+                                return sum + opt.unrealized_pnl;
+                            }
+                            return sum;
+                        }, 0);
+                        this.optionsPnL = Math.round(this.optionsPnL);
+                    } catch (error) {
+                        console.error('Failed to load cash data:', error);
+                    }
+                }
+            };
+        }
     </script>
 </div>
 {% endblock %}

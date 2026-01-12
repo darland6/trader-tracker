@@ -119,6 +119,60 @@ async def get_analyzed_recommendations():
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 
+@router.get("/recommendations/agent")
+async def get_agent_analyzed_recommendations(
+    max_dte: int = 45,
+    min_premium: float = 50,
+    max_results: int = 10
+):
+    """
+    Get AI agent-scored options recommendations using Dexter research.
+
+    This endpoint:
+    1. Scans options chains for all holdings
+    2. Fetches Dexter financial research for top candidates
+    3. Uses an LLM agent to analyze and score opportunities
+    4. Returns ranked recommendations with reasoning
+
+    Takes longer than /recommendations but provides intelligent analysis.
+    """
+    from api.services.agent_scanner import get_agent_recommendations
+
+    try:
+        result = await get_agent_recommendations(
+            max_dte=max_dte,
+            min_premium=min_premium,
+            max_results=max_results
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent scan failed: {str(e)}")
+
+
+@router.post("/agent/scan")
+async def start_agent_scan(request: ScanRequest):
+    """
+    Start an agent-enhanced options scan.
+
+    Uses Dexter for research and LLM for intelligent scoring.
+    """
+    from api.services.agent_scanner import get_agent_recommendations
+
+    try:
+        result = await get_agent_recommendations(
+            max_dte=request.max_dte,
+            min_premium=request.min_premium,
+            max_results=request.max_results
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent scan failed: {str(e)}")
+
+
 @router.get("/ticker/{ticker}")
 async def scan_ticker(ticker: str, max_dte: int = 45):
     """

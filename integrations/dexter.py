@@ -380,8 +380,8 @@ async def query_dexter_mcp(question: str, timeout: int = 120) -> DexterResult:
     """
     Query Dexter via MCP server using JSON-RPC over SSE.
 
-    MCP SSE protocol requires maintaining the SSE connection open while
-    sending messages to the /messages endpoint.
+    MCP SSE protocol: POST requests return 202 Accepted, actual responses
+    come back via the SSE stream. Must use raw sockets for bidirectional comms.
 
     Args:
         question: The financial research question to ask
@@ -390,9 +390,9 @@ async def query_dexter_mcp(question: str, timeout: int = 120) -> DexterResult:
     Returns:
         DexterResult with the research findings
     """
-    import httpx
-    import uuid
+    import socket
     import re
+    import uuid
 
     if not is_mcp_available():
         return DexterResult(
@@ -402,119 +402,160 @@ async def query_dexter_mcp(question: str, timeout: int = 120) -> DexterResult:
             error=f"Dexter MCP server not reachable at {MCP_SERVER_HOST}:{MCP_SERVER_PORT}. Check firewall settings."
         )
 
-    base_url = f"http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}"
+    host = MCP_SERVER_HOST
+    port = MCP_SERVER_PORT
+
+    # Extract ticker from question
+    ticker = extract_ticker_from_question(question)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            # Step 1: Connect to SSE endpoint to get session
-            async with client.stream(
-                "GET",
-                f"{base_url}/sse",
-                headers={"Accept": "text/event-stream"}
-            ) as sse_response:
-                # Read the first event to get the session endpoint
-                session_id = None
-                messages_endpoint = None
+        # Create SSE socket (long-lived for receiving responses)
+        sse_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sse_sock.settimeout(timeout)
+        sse_sock.connect((host, port))
 
-                async for line in sse_response.aiter_lines():
-                    if line.startswith("data:"):
-                        data = line[5:].strip()
-                        # Parse the endpoint URL to get session ID
-                        if "sessionId=" in data:
-                            match = re.search(r'sessionId=([a-f0-9-]+)', data)
-                            if match:
-                                session_id = match.group(1)
-                                messages_endpoint = data
-                                break
+        # Send SSE request
+        sse_request = (
+            f"GET /sse HTTP/1.1\r\n"
+            f"Host: {host}:{port}\r\n"
+            f"Accept: text/event-stream\r\n"
+            f"Connection: keep-alive\r\n"
+            f"\r\n"
+        )
+        sse_sock.send(sse_request.encode())
 
-                if not session_id:
-                    return DexterResult(
-                        success=False,
-                        query=question,
-                        answer="",
-                        error="Could not establish MCP session"
-                    )
+        # Read until we get session endpoint
+        buffer = b""
+        session_endpoint = None
+        while True:
+            chunk = sse_sock.recv(1024)
+            if not chunk:
+                break
+            buffer += chunk
+            match = re.search(rb'data: (/messages\?sessionId=[a-f0-9-]+)', buffer)
+            if match:
+                session_endpoint = match.group(1).decode()
+                break
 
-                # Step 2: First list available tools
-                list_request = {
-                    "jsonrpc": "2.0",
-                    "id": "list-1",
-                    "method": "tools/list",
-                    "params": {}
-                }
+        if not session_endpoint:
+            sse_sock.close()
+            return DexterResult(
+                success=False,
+                query=question,
+                answer="",
+                error="Could not establish MCP session"
+            )
 
-                list_response = await client.post(
-                    f"{base_url}{messages_endpoint}",
-                    json=list_request,
-                    headers={"Content-Type": "application/json"}
-                )
+        def send_mcp_request(method: str, params: dict, req_id: str) -> None:
+            """Send MCP request via separate HTTP connection (returns 202)."""
+            post_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            post_sock.settimeout(10)
+            post_sock.connect((host, port))
 
-                available_tools = []
-                if list_response.status_code == 200:
-                    try:
-                        list_result = list_response.json()
-                        if "result" in list_result and "tools" in list_result["result"]:
-                            available_tools = [t["name"] for t in list_result["result"]["tools"]]
-                    except Exception:
-                        pass
+            body = json.dumps({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+            request = (
+                f"POST {session_endpoint} HTTP/1.1\r\n"
+                f"Host: {host}:{port}\r\n"
+                f"Content-Type: application/json\r\n"
+                f"Content-Length: {len(body)}\r\n"
+                f"Connection: close\r\n"
+                f"\r\n"
+                f"{body}"
+            )
+            post_sock.send(request.encode())
 
-                # Step 3: Call the appropriate tool
-                # Try common tool names for research
-                tool_names_to_try = ["research", "query", "ask", "analyze"]
-                if available_tools:
-                    tool_names_to_try = available_tools + tool_names_to_try
+            # Read 202 response (don't need the content)
+            try:
+                post_sock.recv(4096)
+            except:
+                pass
+            post_sock.close()
 
-                for tool_name in tool_names_to_try:
-                    call_request = {
-                        "jsonrpc": "2.0",
-                        "id": str(uuid.uuid4()),
-                        "method": "tools/call",
-                        "params": {
-                            "name": tool_name,
-                            "arguments": {"query": question}
-                        }
-                    }
+        def read_sse_response(req_id: str, read_timeout: int = 30) -> dict:
+            """Read response from SSE stream for given request ID."""
+            sse_sock.settimeout(read_timeout)
+            buffer = b""
+            start_time = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
 
-                    try:
-                        call_response = await client.post(
-                            f"{base_url}{messages_endpoint}",
-                            json=call_request,
-                            headers={"Content-Type": "application/json"}
-                        )
+            while True:
+                try:
+                    chunk = sse_sock.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
 
-                        if call_response.status_code == 200:
-                            result = call_response.json()
-                            if "result" in result:
-                                content = result["result"]
-                                if isinstance(content, dict) and "content" in content:
-                                    content_list = content["content"]
-                                    if content_list and isinstance(content_list, list):
-                                        answer = content_list[0].get("text", str(content_list))
-                                    else:
-                                        answer = str(content)
-                                else:
-                                    answer = str(content)
+                    # Parse SSE events
+                    text = buffer.decode(errors='ignore')
+                    for line in text.split('\n'):
+                        if line.startswith('data:') and f'"id":"{req_id}"' in line:
+                            try:
+                                return json.loads(line[5:].strip())
+                            except json.JSONDecodeError:
+                                pass
+                except socket.timeout:
+                    break
 
-                                return DexterResult(
-                                    success=True,
-                                    query=question,
-                                    answer=answer,
-                                    raw_output=str(result)
-                                )
-                            elif "error" in result:
-                                # Tool not found, try next
-                                continue
-                    except Exception:
-                        continue
+            return {}
 
-                return DexterResult(
-                    success=False,
-                    query=question,
-                    answer="",
-                    error=f"MCP server has tools {available_tools} but none responded to research query"
-                )
+        # Initialize MCP session
+        send_mcp_request("initialize", {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "portfolio-tracker", "version": "1.0"}
+        }, "init-1")
+        init_resp = read_sse_response("init-1", 10)
 
-    except httpx.TimeoutException:
+        if not init_resp.get("result"):
+            sse_sock.close()
+            return DexterResult(
+                success=False,
+                query=question,
+                answer="",
+                error="MCP initialization failed"
+            )
+
+        # Determine which tools to call based on question
+        tools_to_call = determine_tools_for_question(question, ticker)
+        results = []
+
+        for tool_name, tool_args in tools_to_call:
+            req_id = f"tool-{uuid.uuid4().hex[:8]}"
+            send_mcp_request("tools/call", {"name": tool_name, "arguments": tool_args}, req_id)
+            tool_resp = read_sse_response(req_id, 60)
+
+            if tool_resp.get("result"):
+                content = tool_resp["result"]
+                if isinstance(content, dict) and "content" in content:
+                    content_list = content["content"]
+                    if content_list and isinstance(content_list, list):
+                        for item in content_list:
+                            if isinstance(item, dict) and "text" in item:
+                                results.append(f"**{tool_name}**:\n{item['text']}")
+                            else:
+                                results.append(f"**{tool_name}**:\n{json.dumps(item, indent=2)}")
+                else:
+                    results.append(f"**{tool_name}**:\n{json.dumps(content, indent=2)}")
+            elif tool_resp.get("error"):
+                results.append(f"**{tool_name}** error: {tool_resp['error'].get('message', 'Unknown error')}")
+
+        sse_sock.close()
+
+        if results:
+            return DexterResult(
+                success=True,
+                query=question,
+                answer="\n\n".join(results),
+                raw_output=str(results)
+            )
+
+        return DexterResult(
+            success=False,
+            query=question,
+            answer="",
+            error=f"No results from MCP tools for ticker '{ticker}'"
+        )
+
+    except socket.timeout:
         return DexterResult(
             success=False,
             query=question,
@@ -528,6 +569,89 @@ async def query_dexter_mcp(question: str, timeout: int = 120) -> DexterResult:
             answer="",
             error=f"MCP query failed: {str(e)}"
         )
+
+
+def extract_ticker_from_question(question: str) -> str:
+    """Extract stock ticker from a question."""
+    import re
+
+    # Known tickers to look for (common ones)
+    known_tickers = {
+        'AAPL', 'TSLA', 'META', 'NVDA', 'AMD', 'MSFT', 'GOOGL', 'GOOG', 'AMZN',
+        'PLTR', 'COIN', 'MSTR', 'RKLB', 'SPOT', 'BMNR', 'NBIS', 'SPY', 'QQQ',
+        'NFLX', 'DIS', 'BA', 'JPM', 'GS', 'V', 'MA', 'PYPL', 'SQ', 'SHOP',
+        'UBER', 'LYFT', 'ABNB', 'SNOW', 'CRM', 'ORCL', 'IBM', 'INTC', 'ARM',
+        'BTC', 'ETH', 'XRP', 'SOL', 'DOGE'
+    }
+
+    question_upper = question.upper()
+
+    # First check for known tickers
+    for ticker in known_tickers:
+        if ticker in question_upper:
+            return ticker
+
+    # Fallback: look for uppercase words that look like tickers
+    skip_words = {
+        'THE', 'AND', 'FOR', 'ARE', 'HOW', 'WHAT', 'SHOW', 'GET', 'PUT', 'CALL',
+        'BUY', 'SELL', 'DAYS', 'OUT', 'WITH', 'FROM', 'ABOUT', 'DOING', 'USD',
+        'PRICE', 'STOCK', 'OPTIONS', 'OPTION', 'TRADE', 'TRADING'
+    }
+
+    # Look for 2-5 letter uppercase words
+    matches = re.findall(r'\b([A-Z]{2,5})\b', question_upper)
+    for candidate in matches:
+        if candidate not in skip_words:
+            return candidate
+
+    return ""
+
+
+def determine_tools_for_question(question: str, ticker: str) -> list:
+    """Determine which MCP tools to call based on the question."""
+    question_lower = question.lower()
+    tools = []
+
+    if not ticker:
+        return tools
+
+    # Price-related
+    if any(word in question_lower for word in ['price', 'stock', 'trading', 'current', 'snapshot']):
+        tools.append(("get_price_snapshot", {"ticker": ticker}))
+
+    # Financial metrics
+    if any(word in question_lower for word in ['metric', 'p/e', 'ratio', 'valuation', 'market cap', 'dividend']):
+        tools.append(("get_financial_metrics_snapshot", {"ticker": ticker}))
+
+    # Financial statements
+    if any(word in question_lower for word in ['income', 'revenue', 'earnings', 'profit']):
+        tools.append(("get_income_statements", {"ticker": ticker, "period": "quarterly", "limit": 4}))
+    if any(word in question_lower for word in ['balance', 'assets', 'debt', 'equity']):
+        tools.append(("get_balance_sheets", {"ticker": ticker, "period": "quarterly", "limit": 4}))
+    if any(word in question_lower for word in ['cash flow', 'operating', 'investing']):
+        tools.append(("get_cash_flow_statements", {"ticker": ticker, "period": "quarterly", "limit": 4}))
+    if any(word in question_lower for word in ['financial', 'statement', 'all financials']):
+        tools.append(("get_all_financial_statements", {"ticker": ticker, "period": "quarterly", "limit": 2}))
+
+    # News
+    if any(word in question_lower for word in ['news', 'article', 'headline']):
+        tools.append(("get_news", {"ticker": ticker, "limit": 5}))
+
+    # Insider trading
+    if any(word in question_lower for word in ['insider', 'executive', 'officer']):
+        tools.append(("get_insider_trades", {"ticker": ticker, "limit": 10}))
+
+    # Crypto
+    if any(word in question_lower for word in ['crypto', 'bitcoin', 'btc', 'eth']):
+        crypto_ticker = f"{ticker}-USD" if '-' not in ticker else ticker
+        tools.append(("get_crypto_price_snapshot", {"ticker": crypto_ticker}))
+
+    # Default: get price and metrics if no specific tool matched
+    if not tools:
+        tools.append(("get_price_snapshot", {"ticker": ticker}))
+        tools.append(("get_financial_metrics_snapshot", {"ticker": ticker}))
+
+    return tools
 
 
 async def query_dexter_auto(question: str, timeout: int = 120) -> DexterResult:

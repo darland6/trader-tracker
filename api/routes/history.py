@@ -303,3 +303,69 @@ async def get_prepared_playback():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/projections")
+async def get_reality_projections(
+    years_forward: int = 3,
+    years_back: int = 1,
+    use_llm: bool = True
+):
+    """
+    Generate LLM-powered timeline projections for the multiverse visualization.
+
+    Returns past analysis and future projections with:
+    - Multiple reality scenarios (base, bull, bear)
+    - Monthly portfolio value snapshots
+    - Macro economic events affecting the portfolio
+    - Sentiment scores for timeline coloring
+
+    Args:
+        years_forward: How many years to project into future (default 3)
+        years_back: How many years of history to include (default 1)
+        use_llm: Whether to use LLM for intelligent projections (default true)
+
+    Returns:
+        Structured projection data with realities, snapshots, and events
+    """
+    from api.services.reality_projections import generate_projections
+
+    try:
+        result = await generate_projections(
+            years_forward=years_forward,
+            years_back=years_back,
+            use_llm=use_llm
+        )
+
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/projections/generate")
+async def generate_new_projections(
+    years_forward: int = 3,
+    years_back: int = 1
+):
+    """
+    Force regeneration of projections using LLM.
+
+    This endpoint always uses the LLM to generate fresh projections,
+    useful when you want to get new scenarios.
+    """
+    from api.services.reality_projections import generate_projections
+
+    try:
+        result = await generate_projections(
+            years_forward=years_forward,
+            years_back=years_back,
+            use_llm=True
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

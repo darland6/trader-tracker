@@ -526,7 +526,7 @@ async def chat(request: ChatRequest):
 
             response = api_client.messages.create(
                 model=config.claude_model,
-                max_tokens=1024,
+                max_tokens=4096,
                 system=system_prompt,
                 messages=messages
             )
@@ -563,7 +563,7 @@ async def chat(request: ChatRequest):
                 json={
                     "model": config.local_model,
                     "messages": local_messages,
-                    "max_tokens": 1024,
+                    "max_tokens": 4096,
                     "temperature": 0.7
                 },
                 timeout=config.timeout
@@ -619,7 +619,7 @@ async def chat(request: ChatRequest):
             if config.provider == "claude":
                 follow_up = api_client.messages.create(
                     model=config.claude_model,
-                    max_tokens=1024,
+                    max_tokens=4096,
                     system=system_prompt,
                     messages=messages
                 )
@@ -639,7 +639,7 @@ async def chat(request: ChatRequest):
                     json={
                         "model": config.local_model,
                         "messages": local_messages,
-                        "max_tokens": 1024,
+                        "max_tokens": 4096,
                         "temperature": 0.7
                     },
                     timeout=config.timeout
@@ -687,7 +687,7 @@ async def chat(request: ChatRequest):
                         if config.provider == "claude":
                             follow_up = api_client.messages.create(
                                 model=config.claude_model,
-                                max_tokens=1024,
+                                max_tokens=4096,
                                 system=system_prompt,
                                 messages=messages
                             )
@@ -707,7 +707,7 @@ async def chat(request: ChatRequest):
                                 json={
                                     "model": config.local_model,
                                     "messages": local_messages,
-                                    "max_tokens": 1024,
+                                    "max_tokens": 4096,
                                     "temperature": 0.7
                                 },
                                 timeout=config.timeout

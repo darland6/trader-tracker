@@ -309,6 +309,15 @@ async def settings_page(request: Request):
     })
 
 
+@router.get("/realities", response_class=HTMLResponse)
+async def realities_page(request: Request):
+    """Alternate realities / multiverse visualization page."""
+    return templates.TemplateResponse("realities.html", {
+        "request": request,
+        "active": "realities"
+    })
+
+
 @router.get("/docs", response_class=HTMLResponse)
 async def docs_page(request: Request, doc: str = "readme"):
     """Documentation viewer page."""

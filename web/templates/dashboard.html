@@ -136,9 +136,15 @@
             <!-- Income Breakdown (Expandable) -->
             <div class="card bg-base-100 shadow-xl" x-data="incomeBreakdown()">
                 <div class="card-body">
-                    <h2 class="card-title">
-                        Income Breakdown
-                        <span class="text-sm font-normal opacity-60" x-text="year ? `(${year})` : ''"></span>
+                    <h2 class="card-title flex justify-between items-center">
+                        <span>Income Breakdown</span>
+                        <select class="select select-sm select-bordered w-24 text-sm font-normal"
+                                x-model="selectedYear"
+                                @change="changeYear()">
+                            <template x-for="y in availableYears" :key="y">
+                                <option :value="y" x-text="y"></option>
+                            </template>
+                        </select>
                     </h2>
                     <div class="space-y-1">
                         <!-- Trading Gains Row -->
@@ -248,18 +254,21 @@
 
             <script>
                 function incomeBreakdown() {
+                    const currentYear = new Date().getFullYear();
                     return {
                         expanded: { trades: false, options: false, dividends: false },
                         loading: false,
                         details: {},
                         year: null,
                         loaded: false,
+                        selectedYear: currentYear,
+                        availableYears: Array.from({length: 5}, (_, i) => currentYear - i),
 
                         async loadDetails() {
-                            if (this.loaded) return;
+                            if (this.loaded && this.year === this.selectedYear) return;
                             this.loading = true;
                             try {
-                                const response = await fetch('/api/income-breakdown');
+                                const response = await fetch(`/api/income-breakdown?year=${this.selectedYear}`);
                                 const data = await response.json();
                                 this.details = data;
                                 this.year = data.year;
@@ -268,29 +277,90 @@
                                 console.error('Failed to load income details:', error);
                             }
                             this.loading = false;
+                        },
+
+                        async changeYear() {
+                            this.loaded = false;
+                            this.details = {};
+                            // Reload if any section is expanded
+                            if (this.expanded.trades || this.expanded.options || this.expanded.dividends) {
+                                await this.loadDetails();
+                            }
                         }
                     }
                 }
             </script>
 
-            <!-- Gains Summary -->
-            <div class="card bg-base-100 shadow-xl">
+            <!-- Gains Summary (Expandable) -->
+            <div class="card bg-base-100 shadow-xl" x-data="gainsSummary()">
                 <div class="card-body">
                     <h2 class="card-title">Gains Summary</h2>
 
-                    <!-- Realized Gains -->
-                    <div class="mb-3">
+                    <!-- Realized Gains Section -->
+                    <div class="mb-2">
                         <h3 class="font-semibold text-sm opacity-70 mb-1">Realized (YTD Closed Positions)</h3>
                         <div class="space-y-1">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-success">Gains</span>
-                                <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.realized_gains) }}</span>
+                            <!-- Realized Gains Row -->
+                            <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                                <input type="checkbox" @change="expanded.realizedGains && loadRealizedDetails()" x-model="expanded.realizedGains">
+                                <div class="collapse-title py-2 min-h-0 flex justify-between items-center text-sm">
+                                    <span class="text-success">Gains</span>
+                                    <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.realized_gains) }}</span>
+                                </div>
+                                <div class="collapse-content">
+                                    <template x-if="loading">
+                                        <div class="text-center py-2"><span class="loading loading-spinner loading-sm"></span></div>
+                                    </template>
+                                    <template x-if="!loading">
+                                        <div class="space-y-1 text-sm">
+                                            <template x-for="tx in realizedGains" :key="tx.date + tx.ticker">
+                                                <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                                    <div>
+                                                        <span class="font-bold" x-text="tx.ticker"></span>
+                                                        <span class="text-xs opacity-60 ml-2" x-text="tx.date"></span>
+                                                    </div>
+                                                    <span class="font-mono text-success" x-text="'+$' + tx.gain?.toLocaleString()"></span>
+                                                </div>
+                                            </template>
+                                            <template x-if="realizedGains.length === 0">
+                                                <div class="text-center opacity-60 py-2">No realized gains this year</div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-error">Losses</span>
-                                <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.realized_losses) }}</span>
+
+                            <!-- Realized Losses Row -->
+                            <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                                <input type="checkbox" @change="expanded.realizedLosses && loadRealizedDetails()" x-model="expanded.realizedLosses">
+                                <div class="collapse-title py-2 min-h-0 flex justify-between items-center text-sm">
+                                    <span class="text-error">Losses</span>
+                                    <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.realized_losses) }}</span>
+                                </div>
+                                <div class="collapse-content">
+                                    <template x-if="loading">
+                                        <div class="text-center py-2"><span class="loading loading-spinner loading-sm"></span></div>
+                                    </template>
+                                    <template x-if="!loading">
+                                        <div class="space-y-1 text-sm">
+                                            <template x-for="tx in realizedLosses" :key="tx.date + tx.ticker">
+                                                <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                                    <div>
+                                                        <span class="font-bold" x-text="tx.ticker"></span>
+                                                        <span class="text-xs opacity-60 ml-2" x-text="tx.date"></span>
+                                                    </div>
+                                                    <span class="font-mono text-error" x-text="'-$' + Math.abs(tx.gain)?.toLocaleString()"></span>
+                                                </div>
+                                            </template>
+                                            <template x-if="realizedLosses.length === 0">
+                                                <div class="text-center opacity-60 py-2">No realized losses this year</div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
-                            <div class="flex justify-between font-semibold">
+
+                            <div class="flex justify-between font-semibold px-2 py-1">
                                 <span>Net Realized</span>
                                 <span class="font-mono {% if state.gains.realized_net >= 0 %}text-success{% else %}text-error{% endif %}">
                                     ${{ "{:,.0f}".format(state.gains.realized_net) }}
@@ -301,19 +371,65 @@
 
                     <div class="divider my-1"></div>
 
-                    <!-- Unrealized Gains -->
+                    <!-- Unrealized Gains Section -->
                     <div>
                         <h3 class="font-semibold text-sm opacity-70 mb-1">Unrealized (Open Positions)</h3>
                         <div class="space-y-1">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-success">Gains</span>
-                                <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.unrealized_gains) }}</span>
+                            <!-- Unrealized Gains Row -->
+                            <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                                <input type="checkbox" x-model="expanded.unrealizedGains">
+                                <div class="collapse-title py-2 min-h-0 flex justify-between items-center text-sm">
+                                    <span class="text-success">Gains</span>
+                                    <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.unrealized_gains) }}</span>
+                                </div>
+                                <div class="collapse-content">
+                                    <div class="space-y-1 text-sm">
+                                        {% for h in state.holdings %}
+                                        {% if h.unrealized_gain >= 0 %}
+                                        <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                            <div>
+                                                <span class="font-bold">{{ h.ticker }}</span>
+                                                <span class="text-xs opacity-60 ml-2">{{ "{:,}".format(h.shares) }} shares</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <span class="font-mono text-success">+${{ "{:,.0f}".format(h.unrealized_gain) }}</span>
+                                                <span class="text-xs opacity-60 ml-1">({{ "{:+.1f}".format(h.unrealized_gain_pct) }}%)</span>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-error">Losses</span>
-                                <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.unrealized_losses) }}</span>
+
+                            <!-- Unrealized Losses Row -->
+                            <div class="collapse collapse-arrow bg-base-200 rounded-lg">
+                                <input type="checkbox" x-model="expanded.unrealizedLosses">
+                                <div class="collapse-title py-2 min-h-0 flex justify-between items-center text-sm">
+                                    <span class="text-error">Losses</span>
+                                    <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.unrealized_losses) }}</span>
+                                </div>
+                                <div class="collapse-content">
+                                    <div class="space-y-1 text-sm">
+                                        {% for h in state.holdings %}
+                                        {% if h.unrealized_gain < 0 %}
+                                        <div class="flex justify-between items-center p-2 bg-base-300 rounded">
+                                            <div>
+                                                <span class="font-bold">{{ h.ticker }}</span>
+                                                <span class="text-xs opacity-60 ml-2">{{ "{:,}".format(h.shares) }} shares</span>
+                                            </div>
+                                            <div class="text-right">
+                                                <span class="font-mono text-error">-${{ "{:,.0f}".format(h.unrealized_gain|abs) }}</span>
+                                                <span class="text-xs opacity-60 ml-1">({{ "{:.1f}".format(h.unrealized_gain_pct) }}%)</span>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="flex justify-between font-semibold">
+
+                            <div class="flex justify-between font-semibold px-2 py-1">
                                 <span>Net Unrealized</span>
                                 <span class="font-mono {% if state.gains.unrealized_net >= 0 %}text-success{% else %}text-error{% endif %}">
                                     ${{ "{:,.0f}".format(state.gains.unrealized_net) }}
@@ -323,6 +439,39 @@
                     </div>
                 </div>
             </div>
+
+            <script>
+                function gainsSummary() {
+                    return {
+                        expanded: {
+                            realizedGains: false,
+                            realizedLosses: false,
+                            unrealizedGains: false,
+                            unrealizedLosses: false
+                        },
+                        loading: false,
+                        realizedGains: [],
+                        realizedLosses: [],
+                        loaded: false,
+
+                        async loadRealizedDetails() {
+                            if (this.loaded) return;
+                            this.loading = true;
+                            try {
+                                const response = await fetch('/api/income-breakdown');
+                                const data = await response.json();
+                                // Split trades into gains and losses
+                                this.realizedGains = (data.trades?.transactions || []).filter(tx => tx.gain > 0);
+                                this.realizedLosses = (data.trades?.transactions || []).filter(tx => tx.gain < 0);
+                                this.loaded = true;
+                            } catch (error) {
+                                console.error('Failed to load realized details:', error);
+                            }
+                            this.loading = false;
+                        }
+                    }
+                }
+            </script>
         </div>
     </div>
 

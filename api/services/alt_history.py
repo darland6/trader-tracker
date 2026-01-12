@@ -68,16 +68,17 @@ def get_history_events(history_id: str) -> Optional[pd.DataFrame]:
     return df.sort_values('timestamp')
 
 
-def create_history(name: str, description: str = "", modifications: list = None) -> dict:
+def create_history(name: str, description: str = "", modifications: list = None, use_llm: bool = True) -> dict:
     """Create a new alternate history.
 
     Args:
         name: Display name for this reality
         description: What-if scenario description
         modifications: List of modification rules to apply
+        use_llm: Whether to use LLM to interpret description and generate modifications
 
     Returns:
-        The created history metadata
+        The created history metadata with processing status
     """
     ensure_storage()
 
@@ -87,6 +88,16 @@ def create_history(name: str, description: str = "", modifications: list = None)
     real_events = DATA_DIR / "event_log_enhanced.csv"
     alt_events = ALT_HISTORIES_DIR / f"{history_id}.csv"
     shutil.copy(real_events, alt_events)
+
+    # If description provided but no modifications, use LLM to generate them
+    llm_generated = False
+    llm_analysis = None
+    if description and not modifications and use_llm:
+        result = generate_modifications_from_description(description, history_id)
+        if result:
+            modifications = result.get("modifications", [])
+            llm_analysis = result.get("analysis", {})
+            llm_generated = True
 
     # Apply modifications if provided
     if modifications:
@@ -100,7 +111,10 @@ def create_history(name: str, description: str = "", modifications: list = None)
         "created_at": datetime.now().isoformat(),
         "modified_at": datetime.now().isoformat(),
         "modifications": modifications or [],
-        "event_count": len(pd.read_csv(alt_events))
+        "event_count": len(pd.read_csv(alt_events)),
+        "llm_generated": llm_generated,
+        "llm_analysis": llm_analysis,
+        "status": "ready"
     }
 
     # Add to index
@@ -109,6 +123,98 @@ def create_history(name: str, description: str = "", modifications: list = None)
     save_index(index)
 
     return history
+
+
+def generate_modifications_from_description(description: str, history_id: str) -> Optional[dict]:
+    """Use LLM to interpret a scenario description and generate modifications.
+
+    Args:
+        description: Natural language description of the what-if scenario
+        history_id: The history ID to analyze
+
+    Returns:
+        Dictionary with modifications and analysis, or None if LLM unavailable
+    """
+    try:
+        from llm.config import get_llm_config
+        from llm.client import get_llm_response
+
+        config = get_llm_config()
+        if not config.enabled:
+            return None
+
+        # Load current holdings to understand the portfolio
+        from reconstruct_state import load_event_log, reconstruct_state
+        events = load_event_log(str(DATA_DIR / "event_log_enhanced.csv"))
+        state = reconstruct_state(events)
+
+        holdings_summary = "\n".join([
+            f"- {ticker}: {shares:.0f} shares"
+            for ticker, shares in state.get('holdings', {}).items()
+            if shares > 0.01
+        ])
+
+        prompt = f"""You are analyzing a portfolio to create an alternate reality scenario.
+
+CURRENT HOLDINGS:
+{holdings_summary}
+
+USER'S SCENARIO DESCRIPTION:
+"{description}"
+
+Based on this description, generate modifications to transform this portfolio into the alternate reality.
+
+Available modification types:
+1. remove_ticker - Remove all trades for a ticker: {{"type": "remove_ticker", "ticker": "TSLA"}}
+2. scale_position - Scale shares up/down: {{"type": "scale_position", "ticker": "TSLA", "scale": 2.0}}
+3. add_trade - Add a hypothetical trade: {{"type": "add_trade", "ticker": "NVDA", "action": "BUY", "shares": 100, "price": 500, "timestamp": "2024-01-15"}}
+
+Interpret the user's intent and generate appropriate modifications.
+
+Respond ONLY in JSON format (no explanation text before or after):
+{{
+    "analysis": {{
+        "interpretation": "What the user wants to explore",
+        "key_changes": ["List of main changes being made"],
+        "expected_impact": "How this will affect the portfolio"
+    }},
+    "modifications": [
+        {{"type": "...", ...}},
+        ...
+    ]
+}}
+
+If the scenario is about market conditions (bull/bear) rather than specific trades, respond with empty modifications but explain in analysis that projections will reflect this."""
+
+        response = get_llm_response(prompt, max_tokens=1500)
+        if not response:
+            return None
+
+        # Parse JSON from response - handle <think> tags and other prefixes
+        try:
+            # Remove <think>...</think> tags if present
+            import re
+            clean_response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+
+            # Find JSON object
+            json_start = clean_response.find('{')
+            json_end = clean_response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                json_str = clean_response[json_start:json_end]
+                result = json.loads(json_str)
+                return result
+        except json.JSONDecodeError as e:
+            print(f"LLM response JSON parse failed: {e}")
+            print(f"Response was: {response[:500]}")
+            pass
+
+        return None
+
+    except Exception as e:
+        print(f"LLM modification generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def apply_modifications(history_id: str, modifications: list):
@@ -491,6 +597,545 @@ def find_divergence_points(events1: pd.DataFrame, events2: pd.DataFrame) -> list
     divergences.sort(key=lambda x: x.get('timestamp', ''))
 
     return divergences
+
+
+def create_seeded_reality(
+    name: str,
+    description: str,
+    start_date: str,
+    starting_cash: float,
+    tickers: list,
+    scenario_type: str = "custom",
+    trading_style: str = "moderate",
+    use_llm: bool = True
+) -> dict:
+    """Create a new alternate reality with generated trading history.
+
+    This creates a complete event log with trades (buys AND sells) throughout
+    the timeline, using real historical prices.
+
+    Args:
+        name: Display name for this reality
+        description: What-if scenario description
+        start_date: When the alternate timeline begins (YYYY-MM-DD)
+        starting_cash: Initial cash to invest
+        tickers: List of tickers to trade
+        scenario_type: "bull", "bear", "dca", "swing", "custom"
+        trading_style: "conservative", "moderate", "aggressive"
+        use_llm: Whether to use LLM to generate intelligent trade decisions
+
+    Returns:
+        The created history with full trading timeline
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+
+    ensure_storage()
+    history_id = str(uuid.uuid4())[:8]
+
+    # Fetch historical prices for all tickers
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    price_data = {}
+
+    for ticker in tickers:
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(start=start_date, end=end_date)
+            if not hist.empty:
+                price_data[ticker] = {
+                    date.strftime('%Y-%m-%d'): row['Close']
+                    for date, row in hist.iterrows()
+                }
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+
+    if not price_data:
+        return {"error": "Could not fetch historical prices for any ticker"}
+
+    # Get all trading dates
+    all_dates = set()
+    for ticker_prices in price_data.values():
+        all_dates.update(ticker_prices.keys())
+    sorted_dates = sorted(all_dates)
+
+    if not sorted_dates:
+        return {"error": "No price data available"}
+
+    # Generate trades based on scenario and style
+    if use_llm:
+        trades = generate_llm_trading_history(
+            price_data, sorted_dates, starting_cash, tickers,
+            scenario_type, trading_style, description
+        )
+    else:
+        trades = generate_algorithmic_trades(
+            price_data, sorted_dates, starting_cash, tickers,
+            scenario_type, trading_style
+        )
+
+    # Build event log
+    events = []
+    event_id = 1
+
+    # Initial deposit
+    events.append({
+        "event_id": event_id,
+        "timestamp": f"{sorted_dates[0]} 09:30:00",
+        "event_type": "DEPOSIT",
+        "data_json": json.dumps({
+            "amount": starting_cash,
+            "source": f"Alternate Reality: {name}"
+        }),
+        "reason_json": json.dumps({"primary": "ALTERNATE_REALITY_SEED"}),
+        "notes": f"Initial deposit for {name}",
+        "tags_json": '["alternate", "deposit"]',
+        "affects_cash": True,
+        "cash_delta": starting_cash
+    })
+    event_id += 1
+
+    # Add trades
+    for trade in trades:
+        action = trade['action']
+        total = trade['shares'] * trade['price']
+        cash_delta = total if action == 'SELL' else -total
+
+        events.append({
+            "event_id": event_id,
+            "timestamp": f"{trade['date']} 10:00:00",
+            "event_type": "TRADE",
+            "data_json": json.dumps({
+                "action": action,
+                "ticker": trade['ticker'],
+                "shares": trade['shares'],
+                "price": round(trade['price'], 2),
+                "total": round(total, 2),
+                "reason": trade.get('reason', ''),
+                "source": "ALTERNATE_REALITY"
+            }),
+            "reason_json": json.dumps({
+                "primary": trade.get('reason_code', 'WHAT_IF_TRADE'),
+                "explanation": trade.get('reason', '')
+            }),
+            "notes": trade.get('reason', f"{action} {trade['ticker']}"),
+            "tags_json": '["alternate", "trade"]',
+            "affects_cash": True,
+            "cash_delta": cash_delta
+        })
+        event_id += 1
+
+    # Save event log
+    df = pd.DataFrame(events)
+    event_file = ALT_HISTORIES_DIR / f"{history_id}.csv"
+    df.to_csv(event_file, index=False)
+
+    # Calculate final stats
+    from reconstruct_state import reconstruct_state
+    df['data'] = df['data_json'].apply(json.loads)
+    final_state = reconstruct_state(df)
+
+    # Create metadata
+    history = {
+        "id": history_id,
+        "name": name,
+        "description": description,
+        "created_at": datetime.now().isoformat(),
+        "modified_at": datetime.now().isoformat(),
+        "seed_config": {
+            "start_date": start_date,
+            "starting_cash": starting_cash,
+            "tickers": tickers,
+            "scenario_type": scenario_type,
+            "trading_style": trading_style
+        },
+        "trade_count": len(trades),
+        "event_count": len(events),
+        "final_state": {
+            "total_value": final_state.get('total_value', 0),
+            "cash": final_state.get('cash', 0),
+            "portfolio_value": final_state.get('portfolio_value', 0),
+            "holdings": {k: v for k, v in final_state.get('holdings', {}).items() if v > 0}
+        },
+        "performance": {
+            "starting_value": starting_cash,
+            "ending_value": final_state.get('total_value', 0),
+            "total_return": final_state.get('total_value', 0) - starting_cash,
+            "return_pct": ((final_state.get('total_value', 0) - starting_cash) / starting_cash * 100) if starting_cash > 0 else 0
+        },
+        "llm_generated": use_llm,
+        "status": "ready"
+    }
+
+    # Add to index
+    index = load_index()
+    index["histories"].append(history)
+    save_index(index)
+
+    return history
+
+
+def generate_algorithmic_trades(
+    price_data: dict,
+    sorted_dates: list,
+    starting_cash: float,
+    tickers: list,
+    scenario_type: str,
+    trading_style: str
+) -> list:
+    """Generate trades using algorithmic rules.
+
+    Strategies:
+    - bull: Buy dips, hold long, sell at peaks
+    - bear: Frequent profit-taking, tight stops
+    - dca: Dollar cost average on schedule
+    - swing: Trade momentum swings
+    """
+    trades = []
+    cash = starting_cash
+    holdings = {t: 0 for t in tickers}
+
+    # Trading parameters based on style
+    style_params = {
+        "conservative": {"position_pct": 0.15, "profit_target": 0.20, "stop_loss": 0.10},
+        "moderate": {"position_pct": 0.25, "profit_target": 0.15, "stop_loss": 0.08},
+        "aggressive": {"position_pct": 0.40, "profit_target": 0.10, "stop_loss": 0.05}
+    }
+    params = style_params.get(trading_style, style_params["moderate"])
+
+    # Track cost basis for P&L
+    cost_basis = {t: 0 for t in tickers}
+
+    if scenario_type == "dca":
+        # Dollar cost averaging - buy regularly
+        buy_interval = max(5, len(sorted_dates) // (len(tickers) * 12))  # ~monthly per ticker
+        ticker_idx = 0
+
+        for i, date in enumerate(sorted_dates):
+            if i % buy_interval == 0 and cash > 1000:
+                ticker = tickers[ticker_idx % len(tickers)]
+                if ticker in price_data and date in price_data[ticker]:
+                    price = price_data[ticker][date]
+                    amount_to_invest = cash * params["position_pct"]
+                    shares = int(amount_to_invest / price)
+
+                    if shares > 0 and shares * price <= cash:
+                        trades.append({
+                            "date": date,
+                            "ticker": ticker,
+                            "action": "BUY",
+                            "shares": shares,
+                            "price": price,
+                            "reason": f"DCA buy #{len([t for t in trades if t['ticker'] == ticker and t['action'] == 'BUY']) + 1}",
+                            "reason_code": "DCA_SCHEDULE"
+                        })
+                        cash -= shares * price
+                        holdings[ticker] += shares
+                        cost_basis[ticker] += shares * price
+
+                ticker_idx += 1
+
+    elif scenario_type == "swing":
+        # Swing trading - buy low, sell high based on moving averages
+        for ticker in tickers:
+            if ticker not in price_data:
+                continue
+
+            prices = [(d, price_data[ticker].get(d)) for d in sorted_dates if price_data[ticker].get(d)]
+            if len(prices) < 20:
+                continue
+
+            # Calculate simple moving average
+            for i in range(20, len(prices)):
+                date, price = prices[i]
+                ma20 = sum(p[1] for p in prices[i-20:i]) / 20
+                ma5 = sum(p[1] for p in prices[i-5:i]) / 5
+
+                # Buy signal: price crosses above MA20, short MA above long MA
+                if holdings[ticker] == 0 and price > ma20 and ma5 > ma20 and cash > 1000:
+                    amount = cash * params["position_pct"]
+                    shares = int(amount / price)
+                    if shares > 0:
+                        trades.append({
+                            "date": date,
+                            "ticker": ticker,
+                            "action": "BUY",
+                            "shares": shares,
+                            "price": price,
+                            "reason": f"Swing buy: price {price:.2f} > MA20 {ma20:.2f}",
+                            "reason_code": "SWING_BUY"
+                        })
+                        cash -= shares * price
+                        holdings[ticker] += shares
+                        cost_basis[ticker] = shares * price
+
+                # Sell signal: price crosses below MA20 or profit target hit
+                elif holdings[ticker] > 0:
+                    avg_cost = cost_basis[ticker] / holdings[ticker] if holdings[ticker] > 0 else price
+                    gain_pct = (price - avg_cost) / avg_cost
+
+                    if price < ma20 or gain_pct >= params["profit_target"] or gain_pct <= -params["stop_loss"]:
+                        reason = "profit target" if gain_pct >= params["profit_target"] else (
+                            "stop loss" if gain_pct <= -params["stop_loss"] else "MA crossover"
+                        )
+                        trades.append({
+                            "date": date,
+                            "ticker": ticker,
+                            "action": "SELL",
+                            "shares": holdings[ticker],
+                            "price": price,
+                            "reason": f"Swing sell: {reason} ({gain_pct*100:.1f}%)",
+                            "reason_code": "SWING_SELL"
+                        })
+                        cash += holdings[ticker] * price
+                        holdings[ticker] = 0
+                        cost_basis[ticker] = 0
+
+    elif scenario_type in ["bull", "bear"]:
+        # Bull: Aggressive buying, patient selling
+        # Bear: Quick profits, tight stops
+        buy_threshold = 0.95 if scenario_type == "bull" else 0.98  # Buy when price is X% of recent high
+        sell_threshold = params["profit_target"] if scenario_type == "bull" else params["profit_target"] * 0.5
+
+        for ticker in tickers:
+            if ticker not in price_data:
+                continue
+
+            prices = [(d, price_data[ticker].get(d)) for d in sorted_dates if price_data[ticker].get(d)]
+            if len(prices) < 10:
+                continue
+
+            recent_high = max(p[1] for p in prices[:10])
+
+            for i in range(10, len(prices)):
+                date, price = prices[i]
+                recent_high = max(recent_high, price)
+                recent_low = min(p[1] for p in prices[max(0, i-10):i])
+
+                # Buy on dips
+                if holdings[ticker] == 0 and price <= recent_high * buy_threshold and cash > 1000:
+                    amount = cash * params["position_pct"]
+                    shares = int(amount / price)
+                    if shares > 0:
+                        trades.append({
+                            "date": date,
+                            "ticker": ticker,
+                            "action": "BUY",
+                            "shares": shares,
+                            "price": price,
+                            "reason": f"{scenario_type.title()} buy: dip to {price:.2f}",
+                            "reason_code": f"{scenario_type.upper()}_BUY"
+                        })
+                        cash -= shares * price
+                        holdings[ticker] += shares
+                        cost_basis[ticker] = shares * price
+                        recent_high = price  # Reset after buy
+
+                # Sell on target or stop
+                elif holdings[ticker] > 0:
+                    avg_cost = cost_basis[ticker] / holdings[ticker]
+                    gain_pct = (price - avg_cost) / avg_cost
+
+                    should_sell = (
+                        gain_pct >= sell_threshold or
+                        gain_pct <= -params["stop_loss"] or
+                        (scenario_type == "bear" and price < recent_low * 1.02)  # Quick exit in bear
+                    )
+
+                    if should_sell:
+                        reason = "profit target" if gain_pct >= sell_threshold else "stop loss"
+                        trades.append({
+                            "date": date,
+                            "ticker": ticker,
+                            "action": "SELL",
+                            "shares": holdings[ticker],
+                            "price": price,
+                            "reason": f"{scenario_type.title()} sell: {reason} ({gain_pct*100:.1f}%)",
+                            "reason_code": f"{scenario_type.upper()}_SELL"
+                        })
+                        cash += holdings[ticker] * price
+                        holdings[ticker] = 0
+                        cost_basis[ticker] = 0
+
+    else:  # custom - do initial buys then occasional rebalancing
+        # Initial allocation
+        allocation_per_ticker = starting_cash / len(tickers) * params["position_pct"]
+
+        for ticker in tickers:
+            if ticker in price_data and sorted_dates[0] in price_data[ticker]:
+                price = price_data[ticker][sorted_dates[0]]
+                shares = int(allocation_per_ticker / price)
+                if shares > 0 and shares * price <= cash:
+                    trades.append({
+                        "date": sorted_dates[0],
+                        "ticker": ticker,
+                        "action": "BUY",
+                        "shares": shares,
+                        "price": price,
+                        "reason": "Initial allocation",
+                        "reason_code": "INITIAL_BUY"
+                    })
+                    cash -= shares * price
+                    holdings[ticker] += shares
+                    cost_basis[ticker] = shares * price
+
+        # Periodic rebalancing every ~quarter
+        rebalance_interval = max(60, len(sorted_dates) // 4)
+        for i in range(rebalance_interval, len(sorted_dates), rebalance_interval):
+            date = sorted_dates[i]
+
+            # Calculate current values
+            total_value = cash
+            for ticker in tickers:
+                if ticker in price_data and date in price_data[ticker]:
+                    total_value += holdings[ticker] * price_data[ticker][date]
+
+            target_per_ticker = total_value / len(tickers) * 0.8  # 80% in stocks
+
+            for ticker in tickers:
+                if ticker not in price_data or date not in price_data[ticker]:
+                    continue
+
+                price = price_data[ticker][date]
+                current_value = holdings[ticker] * price
+                diff = target_per_ticker - current_value
+
+                if abs(diff) > target_per_ticker * 0.1:  # >10% off target
+                    if diff > 0 and cash > diff:  # Need to buy
+                        shares = int(diff / price)
+                        if shares > 0:
+                            trades.append({
+                                "date": date,
+                                "ticker": ticker,
+                                "action": "BUY",
+                                "shares": shares,
+                                "price": price,
+                                "reason": "Rebalance buy",
+                                "reason_code": "REBALANCE"
+                            })
+                            cash -= shares * price
+                            holdings[ticker] += shares
+                            cost_basis[ticker] += shares * price
+                    elif diff < 0 and holdings[ticker] > 0:  # Need to sell
+                        shares = min(holdings[ticker], int(-diff / price))
+                        if shares > 0:
+                            trades.append({
+                                "date": date,
+                                "ticker": ticker,
+                                "action": "SELL",
+                                "shares": shares,
+                                "price": price,
+                                "reason": "Rebalance sell",
+                                "reason_code": "REBALANCE"
+                            })
+                            cash += shares * price
+                            holdings[ticker] -= shares
+                            if holdings[ticker] > 0:
+                                cost_basis[ticker] *= (holdings[ticker] / (holdings[ticker] + shares))
+                            else:
+                                cost_basis[ticker] = 0
+
+    return trades
+
+
+def generate_llm_trading_history(
+    price_data: dict,
+    sorted_dates: list,
+    starting_cash: float,
+    tickers: list,
+    scenario_type: str,
+    trading_style: str,
+    description: str
+) -> list:
+    """Use LLM to generate intelligent trading decisions."""
+    try:
+        from llm.config import get_llm_config
+        from llm.client import get_llm_response
+
+        config = get_llm_config()
+        if not config.enabled:
+            return generate_algorithmic_trades(price_data, sorted_dates, starting_cash, tickers, scenario_type, trading_style)
+
+        # Build price summary for LLM
+        price_summary = []
+        sample_dates = sorted_dates[::max(1, len(sorted_dates) // 20)]  # ~20 sample points
+
+        for date in sample_dates:
+            prices_on_date = {t: price_data[t].get(date) for t in tickers if t in price_data and date in price_data[t]}
+            if prices_on_date:
+                price_summary.append(f"{date}: " + ", ".join(f"{t}=${p:.2f}" for t, p in prices_on_date.items()))
+
+        prompt = f"""You are a portfolio manager creating a trading history for an alternate reality simulation.
+
+SCENARIO: {description}
+TYPE: {scenario_type}
+STYLE: {trading_style}
+STARTING CASH: ${starting_cash:,.0f}
+TICKERS TO TRADE: {', '.join(tickers)}
+
+HISTORICAL PRICES (sample dates):
+{chr(10).join(price_summary[:15])}
+...
+{chr(10).join(price_summary[-5:])}
+
+Generate a realistic trading history with 10-30 trades spread throughout the timeline.
+Include both BUY and SELL trades with realistic reasoning.
+
+Respond ONLY in JSON format:
+{{
+    "trades": [
+        {{
+            "date": "YYYY-MM-DD",
+            "ticker": "TICK",
+            "action": "BUY" or "SELL",
+            "shares": 100,
+            "reason": "Brief explanation"
+        }},
+        ...
+    ]
+}}
+
+Rules:
+1. First trades should be BUYs to establish positions
+2. Don't sell more shares than owned
+3. Space trades realistically (not all on same day)
+4. Match the scenario type ({scenario_type}) and style ({trading_style})
+5. Use realistic share quantities based on price and available cash
+6. Include profit-taking sells and loss-cutting sells
+"""
+
+        response = get_llm_response(prompt, max_tokens=2000)
+        if not response:
+            return generate_algorithmic_trades(price_data, sorted_dates, starting_cash, tickers, scenario_type, trading_style)
+
+        # Parse response
+        import re
+        clean_response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+        json_start = clean_response.find('{')
+        json_end = clean_response.rfind('}') + 1
+
+        if json_start >= 0 and json_end > json_start:
+            result = json.loads(clean_response[json_start:json_end])
+            llm_trades = result.get("trades", [])
+
+            # Validate and enrich trades with actual prices
+            validated_trades = []
+            for trade in llm_trades:
+                ticker = trade.get("ticker")
+                date = trade.get("date")
+
+                if ticker in price_data and date in price_data[ticker]:
+                    trade["price"] = price_data[ticker][date]
+                    trade["reason_code"] = "LLM_GENERATED"
+                    validated_trades.append(trade)
+
+            if validated_trades:
+                return validated_trades
+
+        return generate_algorithmic_trades(price_data, sorted_dates, starting_cash, tickers, scenario_type, trading_style)
+
+    except Exception as e:
+        print(f"LLM trade generation failed: {e}")
+        return generate_algorithmic_trades(price_data, sorted_dates, starting_cash, tickers, scenario_type, trading_style)
 
 
 def build_historical_timeline(events1: pd.DataFrame, events2: pd.DataFrame,

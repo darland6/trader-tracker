@@ -363,7 +363,8 @@ class TestDataIntegrity:
         valid_types = [
             'TRADE', 'OPTION_OPEN', 'OPTION_CLOSE', 'OPTION_EXPIRE', 'OPTION_ASSIGN',
             'DIVIDEND', 'DEPOSIT', 'WITHDRAWAL', 'PRICE_UPDATE', 'SPLIT',
-            'NOTE', 'GOAL_UPDATE', 'STRATEGY_UPDATE', 'ADJUSTMENT', 'INSIGHT_LOG'
+            'NOTE', 'GOAL_UPDATE', 'STRATEGY_UPDATE', 'ADJUSTMENT', 'INSIGHT_LOG',
+            'IDEA_SEED', 'IDEA_ACTION', 'IDEA_STATUS'  # Ideas Lab event types
         ]
 
         script_dir = Path(__file__).parent.parent
