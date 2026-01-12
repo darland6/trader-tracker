@@ -3,9 +3,26 @@
 import pytest
 from playwright.sync_api import Page, expect
 import json
+import subprocess
 
 
 BASE_URL = "http://localhost:8000"
+
+# Track test options created during tests for cleanup
+TEST_TICKERS = ['TESTSEL', 'TESTBUY', 'FORMTEST', 'BUYFORM', 'ETEST']
+
+
+def cleanup_test_events():
+    """Remove any test events from the CSV after tests run."""
+    script = '''
+import pandas as pd
+df = pd.read_csv('data/event_log_enhanced.csv')
+test_tickers = ['TESTSEL', 'TESTBUY', 'FORMTEST', 'BUYFORM', 'ETEST']
+mask = df['data_json'].apply(lambda x: not any(t in str(x) for t in test_tickers))
+df = df[mask]
+df.to_csv('data/event_log_enhanced.csv', index=False)
+'''
+    subprocess.run(['./venv/bin/python3', '-c', script], cwd='/Users/cory/projects/trader-tracker')
 
 
 @pytest.fixture(scope="module")
@@ -14,6 +31,8 @@ def browser_context(browser):
     context = browser.new_context()
     yield context
     context.close()
+    # Cleanup test events after all tests in module complete
+    cleanup_test_events()
 
 
 @pytest.fixture
