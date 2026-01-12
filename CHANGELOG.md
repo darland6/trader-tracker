@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Ideas Lab & Projection Integration (2026-01-11)
+
+#### Ideas Lab - Seed Investment Ideas System
+- **New Event Types** - `IDEA_SEED`, `IDEA_ACTION`, `IDEA_STATUS` for tracking idea lifecycle
+- **Full Ideas API** (`/api/ideas/`):
+  - Create seed ideas with title, description, tickers, category, priority
+  - Manifest ideas into concrete actions via LLM
+  - Approve/reject/execute generated actions
+  - Archive completed or abandoned ideas
+- **LLM Manifestation** - AI analyzes your idea and generates 2-5 specific trade recommendations
+  - Considers current portfolio context (cash, holdings, active options)
+  - Generates sell put, sell call, buy stock, or research actions
+  - Includes reasoning and risk assessment
+- **Ideas Lab Panel** in dashboard:
+  - Purple-themed UI matching the cosmic aesthetic
+  - Create new ideas with category selection
+  - View all ideas with status filtering
+  - Manifest ideas with one click
+  - Archive old ideas
+
+#### Ideas as Toggleable Mods in Projections
+- **Toggle Ideas in Future Tab** - When generating projections, toggle seed ideas on/off
+- **Ideas affect projections**:
+  - Income ideas boost projected premium income
+  - Growth ideas boost growth rates for related tickers
+  - Opportunity ideas add positions to projections
+- **Visual feedback** - Loading indicator shows which ideas are being applied
+- **`/api/ideas/as-mods`** - Get all ideas formatted for projection integration
+- **`idea_ids` parameter** on `/api/alt-history/projections/generate`
+
+#### Options Scanner Improvements
+- **Granular Scoring (0-100)** - Continuous scoring instead of step increments
+  - Premium yield: 0-40 points (linear scale 5-60% annualized)
+  - Delta/risk: 0-30 points (prefers 0.15-0.35 delta)
+  - DTE: 0-20 points (prefers 21-60 days)
+  - Volume: 0-10 points (min 100 contracts)
+  - Bonus: +10 for covered positions
+- **Contract Recommendations** - Suggested, conservative, aggressive quantities
+  - Based on income goal and position sizing rules
+- **New Metrics Displayed**:
+  - Assignment risk % (based on delta)
+  - Break-even price (strike ± premium)
+  - Time decay (theta per contract)
+
+#### Settings Page Improvements
+- **API Key Input** - Enter/update Anthropic API key from settings UI
+- **Learning Files Section** - View all files used for learning/memory:
+  - llm_memory.json, llm_usage.json, agent_context.json, etc.
+  - Shows file descriptions and categories
+
+#### Bug Fixes
+- **Mixed Date Formats** - Fixed timestamp parsing to handle both ISO8601 and standard formats
+- **Route Ordering** - Fixed `/as-mods` being captured by `/{idea_id}` route
+
 ### Added - Dashboard UI Testing & Chat Improvements (2026-01-11)
 
 #### Playwright E2E Test Suite (`tests/test_dashboard_ui.py`)
@@ -45,6 +99,27 @@ All notable changes to this project will be documented in this file.
   - User messages align right, assistant messages align left
   - Larger padding and font sizes in fullscreen mode
   - Border accent around fullscreen panel
+- **Fixed Fullscreen Scroll** - Chat messages now properly scrollable in fullscreen mode
+  - CSS flex layout fix: `flex: 1 1 0` with `height: 0` for proper overflow
+  - Added Playwright test suite (`tests/test_chat_scroll.py`) to verify scroll functionality
+- **Fixed LLM Response Cutoff** - Increased max_tokens from 1024 to 4096
+  - Applies to all LLM calls: initial response, search follow-up, research follow-up
+  - Prevents long AI responses from being truncated
+
+#### Settings Page Enhancements
+- **Learning & Memory Files Display** - New section in settings page showing all AI learning files:
+  - `llm_memory.json` - Chat memory & conversation summaries
+  - `llm_usage.json` - Token usage tracking
+  - `agent_context.json` - Agent context & knowledge
+  - `skill_cache.json` - Installed skills cache
+  - `reason_taxonomy.json` - Decision reason categories
+  - `agent_context_reason_analysis.json` - Reason analysis data
+- **File Stats Display**:
+  - Size in KB
+  - Number of entries
+  - Last modified date
+  - Grouped by category (Memory, Analytics, Config, Skills)
+- **New API Endpoint**: `GET /api/config/learning-files` returns file statistics
 
 #### Development Workflow & Tooling
 - **Playwright Browser Testing** - Used for visual verification and automated bug detection
@@ -62,6 +137,14 @@ All notable changes to this project will be documented in this file.
   - `DEXTER_MCP_HOST` - Override MCP server host (auto-detected from LLM URL)
   - `DEXTER_MCP_PORT` - MCP server port (default: 3000)
 - **Mandatory Dexter** - Chat system automatically uses Dexter for all financial queries
+- **Fixed MCP SSE Bidirectional Protocol** (2026-01-11):
+  - MCP SSE requires bidirectional communication: SSE for responses, POST for requests
+  - POST returns `202 Accepted`, actual responses come via SSE stream
+  - Rewrote `query_dexter_mcp()` to use raw sockets for proper bidirectional handling
+  - Added proper MCP session initialization before tool calls
+  - Added intelligent ticker extraction from natural language questions
+  - Added tool selection based on question context (price, metrics, news, etc.)
+  - Available tools: `get_price_snapshot`, `get_financial_metrics_snapshot`, `get_income_statements`, `get_balance_sheets`, `get_cash_flow_statements`, `get_news`, `get_insider_trades`, crypto endpoints
 
 #### Realized/Unrealized Gains Tracking
 - **Realized Gains/Losses** - Calculated from cost basis when gain_loss is 0 in imported data
