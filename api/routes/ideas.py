@@ -23,15 +23,16 @@ class IdeaSeed(BaseModel):
     """A seed idea to explore and manifest into actions."""
     title: str
     description: str
-    tickers: list[str] = []
-    category: str = "opportunity"  # opportunity, income, hedge, growth, experiment
+    tags: list[str] = []  # Optional tags for organization
+    category: str = "general"  # general, strategy, experiment, research, goal
     priority: str = "medium"  # low, medium, high
+    enabled: bool = True  # Whether this idea is active for logic (scanner, projections)
 
 
 class IdeaAction(BaseModel):
     """An action to execute for an idea."""
-    action_type: str  # sell_put, sell_call, buy_stock, research, etc.
-    ticker: str
+    action_type: str  # Any action type relevant to the idea
+    target: str = ""  # What the action targets (optional)
     details: dict = {}
     approved: bool = False
 
@@ -94,10 +95,11 @@ def get_ideas(status_filter: str = None) -> list:
                 'created_at': event['timestamp'],
                 'title': data.get('title'),
                 'description': data.get('description'),
-                'tickers': data.get('tickers', []),
-                'category': data.get('category', 'opportunity'),
+                'tags': data.get('tags', data.get('tickers', [])),  # Support legacy 'tickers' field
+                'category': data.get('category', 'general'),
                 'priority': data.get('priority', 'medium'),
                 'status': data.get('status', 'seed'),
+                'enabled': data.get('enabled', True),  # Default to enabled
                 'actions': [],
                 'manifested_at': None,
                 'executed_at': None
@@ -115,7 +117,7 @@ def get_ideas(status_filter: str = None) -> list:
                 'event_id': event['event_id'],
                 'created_at': event['timestamp'],
                 'action_type': data.get('action_type'),
-                'ticker': data.get('ticker'),
+                'target': data.get('target', data.get('ticker', '')),  # Support legacy 'ticker' field
                 'details': data.get('details', {}),
                 'llm_generated': data.get('llm_generated', False),
                 'approved': data.get('approved', False),
@@ -129,11 +131,14 @@ def get_ideas(status_filter: str = None) -> list:
             data = json.loads(event['data_json'])
             idea_id = data.get('idea_id')
             if idea_id in ideas:
-                ideas[idea_id]['status'] = data.get('status')
-                if data.get('status') == 'manifested':
-                    ideas[idea_id]['manifested_at'] = event['timestamp']
-                elif data.get('status') == 'executed':
-                    ideas[idea_id]['executed_at'] = event['timestamp']
+                if 'status' in data:
+                    ideas[idea_id]['status'] = data.get('status')
+                    if data.get('status') == 'manifested':
+                        ideas[idea_id]['manifested_at'] = event['timestamp']
+                    elif data.get('status') == 'executed':
+                        ideas[idea_id]['executed_at'] = event['timestamp']
+                if 'enabled' in data:
+                    ideas[idea_id]['enabled'] = data.get('enabled')
 
     # Attach actions to ideas
     for idea_id, idea in ideas.items():
@@ -209,10 +214,11 @@ async def create_idea(idea: IdeaSeed):
         'idea_id': idea_id,
         'title': idea.title,
         'description': idea.description,
-        'tickers': [t.upper() for t in idea.tickers],
+        'tags': idea.tags,
         'category': idea.category,
         'priority': idea.priority,
-        'status': 'seed'
+        'status': 'seed',
+        'enabled': idea.enabled
     }
 
     append_event_to_csv(
@@ -242,60 +248,55 @@ async def manifest_idea(idea_id: str, request: ManifestRequest = None):
         raise HTTPException(status_code=400, detail="LLM is disabled")
 
     # Build context for LLM
-    tickers_str = ", ".join(idea['tickers']) if idea['tickers'] else "No specific tickers"
+    tags_str = ", ".join(idea['tags']) if idea['tags'] else "None"
 
-    # Get current portfolio state for context
+    # Get current portfolio state for context (useful if idea relates to trading)
     from api.routes.state import build_portfolio_state
     state = build_portfolio_state()
 
     cash = state.get('cash', 0)
     holdings = state.get('holdings', {})
-    active_options = state.get('active_options', [])
 
-    prompt = f"""You are a financial advisor helping manifest a trading idea into concrete, actionable steps.
+    prompt = f"""You are helping to manifest an idea into concrete, actionable steps.
 
 ## The Idea
 **Title**: {idea['title']}
 **Description**: {idea['description']}
 **Category**: {idea['category']}
-**Tickers**: {tickers_str}
+**Tags**: {tags_str}
 **Priority**: {idea['priority']}
 
-## Current Portfolio Context
+## Context
+This is a portfolio management application. If the idea relates to trading or investing, you have this context:
 - Available Cash: ${cash:,.0f}
 - Current Holdings: {json.dumps(holdings, indent=2)}
-- Active Options: {len(active_options)} positions
 
 ## Additional Context
 {request.context if request and request.context else "None provided"}
 
 ## Your Task
-Generate 2-5 specific, actionable trading recommendations to implement this idea.
+Generate 2-5 specific, actionable steps to implement this idea.
 For each action, provide:
-1. Action type (sell_put, sell_call, buy_stock, sell_stock, research)
-2. Ticker symbol
-3. Specific details (strike price, expiration, quantity, etc.)
+1. Action type (e.g., research, trade, analyze, monitor, review, create, implement)
+2. Target (what the action applies to - could be a ticker, topic, goal, etc.)
+3. Specific details
 4. Brief reasoning (1-2 sentences)
-
-Focus on the income-generation strategy: selling cash-secured puts on stocks the user is willing to own.
 
 Respond in this exact JSON format:
 {{
     "summary": "Brief summary of the manifestation strategy",
     "actions": [
         {{
-            "action_type": "sell_put",
-            "ticker": "TSLA",
+            "action_type": "research",
+            "target": "market sector",
             "details": {{
-                "strike": 400,
-                "expiration": "2026-02-21",
-                "contracts": 1,
-                "estimated_premium": 500
+                "focus": "specific area to research",
+                "output": "expected deliverable"
             }},
-            "reasoning": "TSLA is trading at X, selling a put at 400 strike gives Y% downside protection while generating premium."
+            "reasoning": "Why this action helps achieve the idea."
         }}
     ],
-    "risks": "Key risks to consider",
+    "risks": "Key risks or considerations",
     "timeline": "Suggested execution timeline"
 }}"""
 
@@ -346,7 +347,7 @@ Respond in this exact JSON format:
                 'idea_id': idea_id,
                 'action_id': action_id,
                 'action_type': action.get('action_type'),
-                'ticker': action.get('ticker', '').upper(),
+                'target': action.get('target', action.get('ticker', '')),  # Support legacy 'ticker'
                 'details': action.get('details', {}),
                 'reasoning': action.get('reasoning', ''),
                 'llm_generated': True,
@@ -611,6 +612,37 @@ async def delete_idea(idea_id: str):
     return await archive_idea(idea_id)
 
 
+@router.post("/{idea_id}/toggle")
+async def toggle_idea(idea_id: str, enabled: bool = None):
+    """Toggle an idea's enabled state.
+
+    If enabled is not provided, it will toggle the current state.
+    """
+    idea = get_idea_by_id(idea_id)
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    # Determine new enabled state
+    current_enabled = idea.get('enabled', True)
+    new_enabled = not current_enabled if enabled is None else enabled
+
+    # Create status event to record the change
+    event_id = get_next_event_id()
+    append_event_to_csv(
+        event_id=event_id,
+        event_type='IDEA_STATUS',
+        data={'idea_id': idea_id, 'enabled': new_enabled},
+        notes=f"Idea {'enabled' if new_enabled else 'disabled'}"
+    )
+
+    return {
+        "success": True,
+        "idea_id": idea_id,
+        "enabled": new_enabled,
+        "message": f"Idea {'enabled' if new_enabled else 'disabled'}"
+    }
+
+
 def get_ideas_as_mods() -> list:
     """Get all active ideas formatted as toggleable modifications for projections.
 
@@ -618,8 +650,8 @@ def get_ideas_as_mods() -> list:
     - id: idea_id
     - name: idea title
     - description: idea description
-    - tickers: related tickers
-    - mod_type: type of modification (income_strategy, growth_strategy, etc.)
+    - tags: idea tags
+    - category: idea category
     - projected_impact: estimated impact on projections
     - actions: concrete actions that would be applied
     """
@@ -627,78 +659,56 @@ def get_ideas_as_mods() -> list:
     mods = []
 
     for idea in ideas:
-        # Skip archived ideas
+        # Skip archived or disabled ideas
         if idea.get('status') == 'archived':
             continue
+
+        idea_enabled = idea.get('enabled', True)
 
         # Build modification based on idea category and actions
         mod = {
             'id': idea['id'],
             'name': idea['title'],
             'description': idea['description'],
-            'tickers': idea.get('tickers', []),
-            'category': idea.get('category', 'opportunity'),
+            'tags': idea.get('tags', []),
+            'category': idea.get('category', 'general'),
             'priority': idea.get('priority', 'medium'),
             'status': idea.get('status', 'seed'),
-            'enabled': False,  # Default to not enabled in projections
+            'idea_enabled': idea_enabled,  # Whether the idea itself is enabled
+            'projection_enabled': False,  # Default to not enabled in projections
             'actions': [],
             'projected_impact': {}
         }
 
         # Calculate projected impact based on actions
         if idea.get('actions'):
-            total_premium = 0
-            total_cost = 0
-            tickers_affected = set()
+            action_count = len(idea['actions'])
+            targets_affected = set()
 
             for action in idea['actions']:
                 action_type = action.get('action_type', '')
                 details = action.get('details', {})
-                ticker = action.get('ticker', '')
+                target = action.get('target', '')
 
-                if ticker:
-                    tickers_affected.add(ticker)
+                if target:
+                    targets_affected.add(target)
 
-                if action_type in ['sell_put', 'sell_call']:
-                    premium = details.get('estimated_premium', 0) * details.get('contracts', 1)
-                    total_premium += premium
-                    mod['actions'].append({
-                        'type': action_type,
-                        'ticker': ticker,
-                        'strike': details.get('strike'),
-                        'premium': premium,
-                        'contracts': details.get('contracts', 1)
-                    })
-                elif action_type == 'buy_stock':
-                    cost = details.get('price', 0) * details.get('shares', 0)
-                    total_cost += cost
-                    mod['actions'].append({
-                        'type': action_type,
-                        'ticker': ticker,
-                        'shares': details.get('shares'),
-                        'cost': cost
-                    })
+                mod['actions'].append({
+                    'type': action_type,
+                    'target': target,
+                    'details': details
+                })
 
             mod['projected_impact'] = {
-                'premium_income': total_premium,
-                'capital_required': total_cost,
-                'tickers_affected': list(tickers_affected),
-                'net_cash_impact': total_premium - total_cost
+                'action_count': action_count,
+                'targets_affected': list(targets_affected)
             }
         else:
-            # For unmanifestedideas, estimate based on category
-            if idea.get('category') == 'income':
-                mod['projected_impact'] = {
-                    'type': 'income_boost',
-                    'estimated_annual': 5000,  # Placeholder
-                    'confidence': 'low'
-                }
-            elif idea.get('category') == 'growth':
-                mod['projected_impact'] = {
-                    'type': 'growth_boost',
-                    'estimated_multiplier': 1.1,
-                    'confidence': 'low'
-                }
+            # For unmanifested ideas, just note it's pending
+            mod['projected_impact'] = {
+                'status': 'pending_manifestation',
+                'note': 'Manifest this idea to see projected impact'
+            }
 
         mods.append(mod)
 

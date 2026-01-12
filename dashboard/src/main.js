@@ -1958,14 +1958,12 @@ async function loadIdeasForProjection() {
 
         container.innerHTML = mods.map(mod => {
             const impact = mod.projected_impact || {};
-            const impactText = impact.premium_income
-                ? `+$${impact.premium_income.toLocaleString()} premium income`
-                : impact.estimated_annual
-                    ? `~$${impact.estimated_annual.toLocaleString()}/yr`
-                    : '';
+            const impactText = impact.action_count
+                ? `${impact.action_count} action${impact.action_count > 1 ? 's' : ''}`
+                : impact.note || '';
 
-            const tickersHtml = mod.tickers.length > 0
-                ? `<div class="idea-toggle-tickers">${mod.tickers.map(t => `<span>${t}</span>`).join('')}</div>`
+            const tagsHtml = mod.tags && mod.tags.length > 0
+                ? `<div class="idea-toggle-tickers">${mod.tags.map(t => `<span>${t}</span>`).join('')}</div>`
                 : '';
 
             return `
@@ -1978,7 +1976,7 @@ async function loadIdeasForProjection() {
                             <span>${mod.status}</span>
                             ${mod.actions.length > 0 ? `<span>${mod.actions.length} actions</span>` : ''}
                         </div>
-                        ${tickersHtml}
+                        ${tagsHtml}
                         ${impactText ? `<div class="idea-toggle-impact">${impactText}</div>` : ''}
                     </div>
                 </label>
@@ -6420,7 +6418,10 @@ function displayScannerResults(data) {
     if (data.recommendations && data.recommendations.length > 0) {
         resultsList.innerHTML = data.recommendations.map((rec, idx) => `
             <div class="scanner-rec" data-rec-index="${idx}" onclick="showTradePreview(${idx})">
-                <div class="scanner-rec-ticker">${rec.ticker}</div>
+                <div class="scanner-rec-ticker">
+                    ${rec.ticker}
+                    ${rec.matches_idea ? '<span class="idea-match-badge active" title="Matches a seed idea">💡</span>' : '<span class="idea-match-badge faded" title="No idea match">💡</span>'}
+                </div>
                 <div class="scanner-rec-strategy ${rec.type.toLowerCase()}">${rec.strategy}</div>
                 <div class="scanner-rec-details">
                     <div>
@@ -6673,14 +6674,19 @@ async function loadIdeas() {
         }
 
         listEl.innerHTML = ideasData.map(idea => `
-            <div class="idea-item" onclick="showIdeaDetail('${idea.id}')">
+            <div class="idea-item ${idea.enabled === false ? 'disabled' : ''}" onclick="showIdeaDetail('${idea.id}')">
                 <div class="idea-item-header">
                     <span class="idea-item-title">${idea.title}</span>
-                    <span class="idea-item-status ${idea.status}">${idea.status}</span>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button class="idea-toggle-btn ${idea.enabled === false ? 'off' : 'on'}" onclick="event.stopPropagation(); toggleIdea('${idea.id}')" title="${idea.enabled === false ? 'Enable idea' : 'Disable idea'}">
+                            ${idea.enabled === false ? '○' : '●'}
+                        </button>
+                        <span class="idea-item-status ${idea.status}">${idea.status}</span>
+                    </div>
                 </div>
-                ${idea.tickers.length > 0 ? `
+                ${idea.tags && idea.tags.length > 0 ? `
                     <div class="idea-item-tickers">
-                        ${idea.tickers.map(t => `<span class="idea-ticker-badge">${t}</span>`).join('')}
+                        ${idea.tags.map(t => `<span class="idea-ticker-badge">${t}</span>`).join('')}
                     </div>
                 ` : ''}
                 <div class="idea-item-actions">
@@ -6711,9 +6717,6 @@ async function createIdea() {
         return;
     }
 
-    // Extract tickers from title (any CAPS words 2-5 letters)
-    const tickerMatches = title.match(/\b[A-Z]{2,5}\b/g) || [];
-
     try {
         const response = await fetch('/api/ideas/', {
             method: 'POST',
@@ -6721,8 +6724,8 @@ async function createIdea() {
             body: JSON.stringify({
                 title: title,
                 description: '',
-                tickers: tickerMatches,
-                category: 'opportunity',
+                tags: [],
+                category: 'general',
                 priority: 'medium'
             })
         });
@@ -6804,6 +6807,18 @@ async function archiveIdea(ideaId) {
     }
 }
 window.archiveIdea = archiveIdea;
+
+async function toggleIdea(ideaId) {
+    try {
+        await fetch(`/api/ideas/${ideaId}/toggle`, { method: 'POST' });
+        loadIdeas();
+        // Also reload projection ideas if Future tab is open
+        loadIdeasForProjection();
+    } catch (error) {
+        console.error('Failed to toggle idea:', error);
+    }
+}
+window.toggleIdea = toggleIdea;
 
 function showIdeaDetail(ideaId) {
     const idea = ideasData.find(i => i.id === ideaId);

@@ -72,7 +72,7 @@ def generate_projection(
                     "id": idea_id,
                     "title": idea.get("title", ""),
                     "category": idea.get("category", ""),
-                    "tickers": idea.get("tickers", []),
+                    "tags": idea.get("tags", []),
                     "actions": idea.get("actions", [])
                 })
 
@@ -80,7 +80,7 @@ def generate_projection(
             idea_context = {
                 "ideas": applied_ideas,
                 "idea_count": len(applied_ideas),
-                "idea_tickers": list(set(t for i in applied_ideas for t in i.get("tickers", [])))
+                "idea_tags": list(set(t for i in applied_ideas for t in i.get("tags", [])))
             }
 
     # Load current state
@@ -210,20 +210,16 @@ Apply the user's intent to ALL growth rate estimates and analysis.
         if idea_context and idea_context.get("ideas"):
             ideas_summary = []
             for idea in idea_context["ideas"]:
-                tickers = ", ".join(idea.get("tickers", [])) or "N/A"
+                tags = ", ".join(idea.get("tags", [])) or "None"
                 actions = len(idea.get("actions", []))
-                ideas_summary.append(f"- {idea['title']} ({idea['category']}): Tickers: {tickers}, Actions: {actions}")
+                ideas_summary.append(f"- {idea['title']} ({idea['category']}): Tags: {tags}, Actions: {actions}")
 
             ideas_context = f"""
 SEED IDEAS APPLIED TO PROJECTION:
-The following investment ideas are being factored into this projection:
+The following ideas are being factored into this projection:
 {chr(10).join(ideas_summary)}
 
-These ideas represent potential strategies the user wants to explore. Factor them into the projection:
-- For income-focused ideas: Add expected premium income to projections
-- For growth-focused ideas: Boost growth rates for related tickers
-- For opportunity ideas: Consider buying positions in those tickers
-- Ideas with manifested actions should have stronger weight than seed-only ideas
+These ideas represent potential strategies or goals the user wants to explore. Factor them into the projection as appropriate based on their content and category.
 """
 
         prompt = f"""Analyze these portfolio holdings and provide a {years}-year projection:
@@ -316,7 +312,6 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
     # Parse description to get adjustment multipliers
     growth_multiplier = 1.0
     volatility_multiplier = 1.0
-    income_boost = 0  # Annual income boost from ideas
     scenario_note = "Statistical projection"
     idea_notes = []
 
@@ -350,35 +345,10 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
             elif mod.get("type") == "remove_ticker":
                 scenario_note = f"Removed {mod.get('ticker', 'ticker')} - portfolio rebalanced"
 
-    # Apply idea modifiers
-    idea_tickers_boost = {}  # Ticker-specific growth boosts from ideas
+    # Apply idea modifiers (generic - not tied to specific tickers)
     if idea_context and idea_context.get("ideas"):
         for idea in idea_context["ideas"]:
-            category = idea.get("category", "")
-            tickers = idea.get("tickers", [])
-
-            # Calculate income from actions
-            for action in idea.get("actions", []):
-                action_type = action.get("action_type", "")
-                details = action.get("details", {})
-
-                if action_type in ["sell_put", "sell_call"]:
-                    # Add premium income (assume repeatable monthly)
-                    premium = details.get("estimated_premium", 0) * details.get("contracts", 1)
-                    income_boost += premium * 12  # Annualize
-
-            # Apply category-based boosts
-            if category == "income":
-                idea_notes.append(f"Income idea: {idea['title']}")
-                # Income ideas don't boost growth but add to income
-            elif category == "growth":
-                idea_notes.append(f"Growth idea: {idea['title']}")
-                for ticker in tickers:
-                    idea_tickers_boost[ticker] = idea_tickers_boost.get(ticker, 0) + 0.1  # 10% growth boost
-            elif category == "opportunity":
-                idea_notes.append(f"Opportunity idea: {idea['title']}")
-                for ticker in tickers:
-                    idea_tickers_boost[ticker] = idea_tickers_boost.get(ticker, 0) + 0.05  # 5% growth boost
+            idea_notes.append(f"{idea.get('category', 'general').title()} idea: {idea['title']}")
 
         if idea_notes:
             scenario_note = f"{scenario_note}. Ideas applied: {len(idea_context['ideas'])}"
@@ -405,13 +375,8 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
         base_growth = profile["growth"] * growth_multiplier
         volatility = profile["volatility"] * volatility_multiplier
 
-        # Apply idea-specific boosts
-        if ticker in idea_tickers_boost:
-            idea_boost = idea_tickers_boost[ticker]
-            base_growth = base_growth * (1 + idea_boost)
-
         ticker_analysis[ticker] = {
-            "current_catalysts": [scenario_note] + ([f"Idea boost: +{idea_tickers_boost.get(ticker, 0)*100:.0f}%"] if ticker in idea_tickers_boost else []),
+            "current_catalysts": [scenario_note],
             "industry_trend": "projected based on historical patterns",
             "seasonality": f"Q1-Q4 factors: {profile['seasonality']}",
             "annual_growth_rates": {
@@ -420,10 +385,9 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
                 "optimistic": base_growth + volatility * 0.5
             },
             "key_events": ["Earnings reports", "Product launches"],
-            "confidence": "low" if growth_multiplier == 1.0 and not idea_tickers_boost else "medium",
+            "confidence": "low" if growth_multiplier == 1.0 else "medium",
             "risk_factors": ["Market volatility", "Competition", "Macro conditions"],
-            "sector": profile["sector"],
-            "idea_boost_applied": ticker in idea_tickers_boost
+            "sector": profile["sector"]
         }
 
     # Portfolio-level projections
@@ -466,8 +430,6 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
     if idea_context:
         result["idea_context"] = idea_context
         result["idea_effects"] = {
-            "annual_income_boost": income_boost,
-            "tickers_boosted": list(idea_tickers_boost.keys()),
             "idea_notes": idea_notes
         }
 

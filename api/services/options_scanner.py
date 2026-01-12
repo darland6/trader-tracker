@@ -498,6 +498,19 @@ def get_recommendations(
     cash = portfolio['cash']
     remaining_goal = portfolio['remaining_goal']
 
+    # Load idea tags for matching (only from enabled, non-archived ideas)
+    idea_tags = set()
+    try:
+        from api.routes.ideas import get_ideas
+        ideas = get_ideas()
+        for idea in ideas:
+            # Only include tags from enabled and non-archived ideas
+            if idea.get('status') != 'archived' and idea.get('enabled', True):
+                for tag in idea.get('tags', []):
+                    idea_tags.add(tag.upper())
+    except Exception:
+        pass  # Ideas not available, continue without matching
+
     all_options = []
     scan_errors = []
 
@@ -544,6 +557,8 @@ def get_recommendations(
                         opt['assignment_risk_pct'] = round(abs(opt.get('delta', 0) or 0) * 100, 1)
                         # Time decay per day (theta is negative for options, so abs)
                         opt['daily_decay'] = round(abs(opt.get('theta', 0) or 0) * 100, 2)
+                        # Check if ticker matches any idea tag
+                        opt['matches_idea'] = ticker.upper() in idea_tags
                         all_options.append(opt)
 
                 # Process puts (cash-secured puts)
@@ -567,6 +582,8 @@ def get_recommendations(
                         opt['assignment_risk_pct'] = round(abs(opt.get('delta', 0) or 0) * 100, 1)
                         # Time decay per day (theta is negative for options, so abs)
                         opt['daily_decay'] = round(abs(opt.get('theta', 0) or 0) * 100, 2)
+                        # Check if ticker matches any idea tag
+                        opt['matches_idea'] = ticker.upper() in idea_tags
                         all_options.append(opt)
 
             except Exception as e:

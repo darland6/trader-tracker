@@ -1571,6 +1571,66 @@
             font-size: 16px;
             font-weight: 600;
             color: #00ffff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .idea-match-badge {
+            font-size: 12px;
+            cursor: help;
+        }
+
+        .idea-match-badge.active {
+            opacity: 1;
+            filter: drop-shadow(0 0 3px #9b59b6);
+        }
+
+        .idea-match-badge.faded {
+            opacity: 0.2;
+        }
+
+        /* Idea toggle button */
+        .idea-toggle-btn {
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .idea-toggle-btn.on {
+            background: rgba(46, 204, 113, 0.3);
+            color: #2ecc71;
+        }
+
+        .idea-toggle-btn.on:hover {
+            background: rgba(46, 204, 113, 0.5);
+        }
+
+        .idea-toggle-btn.off {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+        }
+
+        .idea-toggle-btn.off:hover {
+            background: rgba(231, 76, 60, 0.4);
+        }
+
+        /* Disabled idea item */
+        .idea-item.disabled {
+            opacity: 0.5;
+            border-left-color: #666 !important;
+        }
+
+        .idea-item.disabled .idea-item-title {
+            text-decoration: line-through;
+            color: #888;
         }
 
         .scanner-rec-strategy {
