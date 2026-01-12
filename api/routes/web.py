@@ -64,6 +64,14 @@ async def dashboard(request: Request):
             "dividends": state.get('ytd_dividends', 0),
             "total": state.get('ytd_income', 0),
             "progress_pct": (state.get('ytd_income', 0) / 30000) * 100 if state.get('ytd_income', 0) else 0
+        },
+        "gains": {
+            "realized_gains": state.get('ytd_realized_gains', 0),
+            "realized_losses": state.get('ytd_realized_losses', 0),
+            "realized_net": state.get('ytd_trading_gains', 0),
+            "unrealized_gains": 0,  # Will be calculated from holdings
+            "unrealized_losses": 0,
+            "unrealized_net": 0
         }
     }
 
@@ -95,15 +103,26 @@ async def dashboard(request: Request):
             })
             total_holdings_value += market_value
 
-    # Calculate allocation percentages
+    # Calculate allocation percentages and unrealized gains totals
+    total_unrealized_gain = 0
+    total_unrealized_loss = 0
     for h in template_state["holdings"]:
         h["allocation_pct"] = (h["market_value"] / total_holdings_value * 100) if total_holdings_value > 0 else 0
+        if h["unrealized_gain"] >= 0:
+            total_unrealized_gain += h["unrealized_gain"]
+        else:
+            total_unrealized_loss += abs(h["unrealized_gain"])
 
     # Sort by value
     template_state["holdings"].sort(key=lambda x: x["market_value"], reverse=True)
 
     template_state["portfolio_value"] = total_holdings_value
     template_state["total_value"] = total_holdings_value + template_state["cash"]
+
+    # Update unrealized gains in state
+    template_state["gains"]["unrealized_gains"] = total_unrealized_gain
+    template_state["gains"]["unrealized_losses"] = total_unrealized_loss
+    template_state["gains"]["unrealized_net"] = total_unrealized_gain - total_unrealized_loss
 
     # Get active options
     from datetime import datetime

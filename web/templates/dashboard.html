@@ -158,6 +158,57 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Gains Summary -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Gains Summary</h2>
+
+                    <!-- Realized Gains -->
+                    <div class="mb-3">
+                        <h3 class="font-semibold text-sm opacity-70 mb-1">Realized (YTD Closed Positions)</h3>
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-success">Gains</span>
+                                <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.realized_gains) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-error">Losses</span>
+                                <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.realized_losses) }}</span>
+                            </div>
+                            <div class="flex justify-between font-semibold">
+                                <span>Net Realized</span>
+                                <span class="font-mono {% if state.gains.realized_net >= 0 %}text-success{% else %}text-error{% endif %}">
+                                    ${{ "{:,.0f}".format(state.gains.realized_net) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="divider my-1"></div>
+
+                    <!-- Unrealized Gains -->
+                    <div>
+                        <h3 class="font-semibold text-sm opacity-70 mb-1">Unrealized (Open Positions)</h3>
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-success">Gains</span>
+                                <span class="font-mono text-success">${{ "{:,.0f}".format(state.gains.unrealized_gains) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-error">Losses</span>
+                                <span class="font-mono text-error">-${{ "{:,.0f}".format(state.gains.unrealized_losses) }}</span>
+                            </div>
+                            <div class="flex justify-between font-semibold">
+                                <span>Net Unrealized</span>
+                                <span class="font-mono {% if state.gains.unrealized_net >= 0 %}text-success{% else %}text-error{% endif %}">
+                                    ${{ "{:,.0f}".format(state.gains.unrealized_net) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
