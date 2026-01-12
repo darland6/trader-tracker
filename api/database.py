@@ -1,4 +1,16 @@
-"""SQLite database setup and event synchronization."""
+"""SQLite database setup and event synchronization.
+
+IMPORTANT: CSV is the SINGLE SOURCE OF TRUTH for events.
+This module provides a READ-ONLY cache in SQLite for query performance.
+
+DATA FLOW:
+1. All event writes go to core/data.py (CSV)
+2. sync_csv_to_db() rebuilds SQLite from CSV
+3. SQLite events table is NEVER written to directly
+4. Price cache and notifications use SQLite normally (that's fine)
+
+DO NOT write to the events table directly. Use core/data.py instead.
+"""
 
 import sqlite3
 import json
@@ -109,7 +121,14 @@ def init_database():
 
 
 def sync_csv_to_db():
-    """Full sync from CSV to SQLite (CSV is authoritative source)."""
+    """
+    Full sync from CSV to SQLite (CSV is authoritative source).
+
+    This is the ONLY way the events table should be populated.
+    This function completely rebuilds the events table from CSV.
+
+    DO NOT write to events table directly - use core/data.py instead.
+    """
     if not CSV_PATH.exists():
         return
 
@@ -227,7 +246,10 @@ def get_cached_prices():
 
 def update_event(event_id: int, updates: dict) -> bool:
     """
+    DEPRECATED: Use core.data.update_event() instead.
+
     Update an event in both CSV (source of truth) and SQLite.
+    This function exists for backward compatibility.
 
     Args:
         event_id: The event ID to update
@@ -236,115 +258,50 @@ def update_event(event_id: int, updates: dict) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    if not CSV_PATH.exists():
-        return False
-
-    # Read CSV
-    df = pd.read_csv(CSV_PATH)
-
-    # Find the event
-    mask = df['event_id'] == event_id
-    if not mask.any():
-        return False
-
-    # Update fields
-    for field, value in updates.items():
-        if field in df.columns:
-            if field in ['data_json', 'reason_json', 'tags_json']:
-                # Ensure JSON fields are strings
-                df.loc[mask, field] = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
-            elif field == 'affects_cash':
-                df.loc[mask, field] = bool(value)
-            elif field == 'cash_delta':
-                df.loc[mask, field] = float(value)
-            else:
-                df.loc[mask, field] = value
-
-    # Write back to CSV
-    df.to_csv(CSV_PATH, index=False)
+    from core.data import update_event as core_update_event
+    result = core_update_event(event_id, updates)
 
     # Sync to SQLite
-    sync_csv_to_db()
+    if result:
+        sync_csv_to_db()
 
-    return True
+    return result
 
 
 def delete_event(event_id: int) -> bool:
     """
-    Soft-delete an event (marks as deleted, doesn't remove from CSV).
+    DEPRECATED: Use core.data.delete_event() instead.
 
-    For actual deletion, removes from CSV entirely.
+    Delete an event from CSV (source of truth).
+    This function exists for backward compatibility.
     """
-    if not CSV_PATH.exists():
-        return False
-
-    df = pd.read_csv(CSV_PATH)
-    mask = df['event_id'] == event_id
-
-    if not mask.any():
-        return False
-
-    # Remove from CSV
-    df = df[~mask]
-    df.to_csv(CSV_PATH, index=False)
+    from core.data import delete_event as core_delete_event
+    result = core_delete_event(event_id)
 
     # Sync to SQLite
-    sync_csv_to_db()
+    if result:
+        sync_csv_to_db()
 
-    return True
+    return result
 
 
 def compact_price_events() -> dict:
     """
+    DEPRECATED: Use core.data.compact_price_events() instead.
+
     Compact PRICE_UPDATE events - keep only first and last of each day.
+    This function exists for backward compatibility.
 
     Returns dict with count of events removed per day.
     """
-    if not CSV_PATH.exists():
-        return {}
-
-    df = pd.read_csv(CSV_PATH)
-
-    # Parse timestamps
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['date'] = df['timestamp'].dt.date
-
-    # Get only PRICE_UPDATE events
-    price_events = df[df['event_type'] == 'PRICE_UPDATE'].copy()
-
-    if len(price_events) <= 2:
-        return {}  # Nothing to compact
-
-    removed_counts = {}
-    events_to_remove = []
-
-    # Group by date
-    for date, group in price_events.groupby('date'):
-        if len(group) <= 2:
-            continue  # Keep all if only 1 or 2 events
-
-        # Sort by timestamp within the day
-        group_sorted = group.sort_values('timestamp')
-
-        # Keep first and last, mark middle ones for removal
-        middle_events = group_sorted.iloc[1:-1]
-        events_to_remove.extend(middle_events['event_id'].tolist())
-        removed_counts[str(date)] = len(middle_events)
-
-    if not events_to_remove:
-        return {}
-
-    # Remove the middle events
-    df = df[~df['event_id'].isin(events_to_remove)]
-
-    # Drop helper column and save
-    df = df.drop('date', axis=1)
-    df.to_csv(CSV_PATH, index=False)
+    from core.data import compact_price_events as core_compact
+    result = core_compact()
 
     # Sync to SQLite
-    sync_csv_to_db()
+    if result:
+        sync_csv_to_db()
 
-    return removed_counts
+    return result
 
 
 # ============== NOTIFICATION FUNCTIONS ==============

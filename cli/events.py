@@ -1,4 +1,8 @@
-"""Event creation and management for the event log."""
+"""Event creation and management for the event log.
+
+IMPORTANT: This module now uses core/data.py for all event operations.
+CSV is the single source of truth - all writes go through core/data.py.
+"""
 
 import pandas as pd
 import json
@@ -12,6 +16,14 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+# Import core data functions
+from core.data import (
+    append_event as core_append_event,
+    get_next_event_id as core_get_next_event_id,
+    load_events,
+    sync_to_cache
+)
 
 SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 EVENT_LOG = SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'
@@ -113,12 +125,13 @@ Keep it concise and actionable. Respond with just the commentary, no JSON."""
 
 def get_next_event_id():
     """Get the next available event ID."""
-    df = pd.read_csv(EVENT_LOG)
-    return int(df['event_id'].max()) + 1
+    return core_get_next_event_id()
 
 
 def append_event(event_type, data, reason=None, notes="", tags=None, affects_cash=False, cash_delta=0, skip_ai=False):
     """Append a new event to the event log.
+
+    This function now uses core/data.py for CSV writes with file locking.
 
     Args:
         event_type: Type of event (TRADE, OPTION_OPEN, etc.)
@@ -130,11 +143,6 @@ def append_event(event_type, data, reason=None, notes="", tags=None, affects_cas
         cash_delta: Change in cash (positive = inflow)
         skip_ai: Skip AI insight generation (for system events)
     """
-    df = pd.read_csv(EVENT_LOG)
-
-    event_id = int(df['event_id'].max()) + 1
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
     if reason is None:
         reason = {}
     if tags is None:
@@ -152,20 +160,19 @@ def append_event(event_type, data, reason=None, notes="", tags=None, affects_cas
             reason['ai_generated_at'] = ai_insights.get('generated_at', '')
             reason['ai_model'] = ai_insights.get('model', '')
 
-    new_row = {
-        'event_id': event_id,
-        'timestamp': timestamp,
-        'event_type': event_type,
-        'data_json': json.dumps(data),
-        'reason_json': json.dumps(reason),
-        'notes': notes,
-        'tags_json': json.dumps(tags),
-        'affects_cash': affects_cash,
-        'cash_delta': cash_delta
-    }
+    # Use core data layer for CSV write (with file locking)
+    event_id = core_append_event(
+        event_type=event_type,
+        data=data,
+        reason=reason,
+        notes=notes,
+        tags=tags,
+        affects_cash=affects_cash,
+        cash_delta=cash_delta
+    )
 
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    df.to_csv(EVENT_LOG, index=False)
+    # Sync to SQLite cache
+    sync_to_cache()
 
     return event_id
 
@@ -253,7 +260,7 @@ def create_option_event(ticker, action, strategy, strike, expiration, contracts,
 
 def get_option_by_id(option_id):
     """Get option data by event_id."""
-    df = pd.read_csv(EVENT_LOG)
+    df = load_events(parse_json=False)
     row = df[df['event_id'] == int(option_id)]
     if row.empty:
         return None
@@ -267,7 +274,7 @@ def get_option_by_id(option_id):
 
 def get_option_by_position_id(position_id):
     """Get option data by position UUID."""
-    df = pd.read_csv(EVENT_LOG)
+    df = load_events(parse_json=False)
     opens = df[df['event_type'] == 'OPTION_OPEN']
 
     for _, row in opens.iterrows():
@@ -435,7 +442,7 @@ def create_price_update_event(prices, source="yfinance", with_commentary=True):
 
 def get_active_options():
     """Get list of active options from the event log."""
-    df = pd.read_csv(EVENT_LOG)
+    df = load_events(parse_json=False)
 
     # Get all OPTION_OPEN events
     opens = df[df['event_type'] == 'OPTION_OPEN'].copy()
@@ -460,7 +467,7 @@ def get_active_options():
 
 def get_recent_events(limit=10, ticker=None):
     """Get recent events, optionally filtered by ticker."""
-    df = pd.read_csv(EVENT_LOG)
+    df = load_events(parse_json=False)
 
     if ticker:
         ticker = ticker.upper()

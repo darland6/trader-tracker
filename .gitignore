@@ -79,3 +79,4 @@ data/projections/
 
 # SSL Certificates (generated locally)
 certs/
+data/event_log_enhanced.lock

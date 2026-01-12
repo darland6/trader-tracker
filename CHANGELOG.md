@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed - Data Layer Consolidation: BEDROCK (2026-01-12)
+
+**Code Name: BEDROCK** - Consolidated data layer with CSV as single source of truth
+
+#### Architecture Changes
+- **Created `core/data.py`** - New centralized data access layer for all event operations
+  - `append_event()` - Single function for all event writes to CSV
+  - `update_event()` - Modify existing events with file locking
+  - `delete_event()` - Remove events from CSV
+  - `load_events()` - Read events with optional JSON parsing
+  - `get_event_by_id()` - Retrieve single event
+  - `sync_to_cache()` - Rebuild SQLite from CSV
+
+#### File Locking for Concurrency Safety
+- **fcntl-based file locking** - Prevents concurrent write corruption
+  - Shared locks for reads (`LOCK_SH`)
+  - Exclusive locks for writes (`LOCK_EX`)
+  - Lock file: `data/event_log_enhanced.csv.lock`
+
+#### Updated Modules
+- **`api/database.py`** - Now explicitly documented as READ-ONLY cache
+  - Added clear comments: CSV is source of truth, SQLite is cache
+  - `update_event()` and `delete_event()` marked DEPRECATED, delegate to core/data.py
+  - `sync_csv_to_db()` is the ONLY way to populate events table
+- **`cli/events.py`** - Uses core/data.py for all CSV writes
+  - `append_event()` delegates to core with file locking
+  - `load_events()` replaces direct pd.read_csv() calls
+  - All event creation functions now use centralized layer
+
+#### Data Flow (Before vs After)
+**Before BEDROCK:**
+```
+Routes → cli/events.py → CSV (no locking) → api/database.py syncs
+Routes → api/database.py → CSV + SQLite (mixed writes)
+```
+
+**After BEDROCK:**
+```
+Routes → cli/events.py → core/data.py → CSV (with locking) → sync_to_cache()
+Routes → api/database.py → core/data.py → CSV (with locking) → sync_to_cache()
+```
+
+#### Benefits
+- **Single Source of Truth** - CSV is authoritative, SQLite is rebuildable
+- **Concurrency Safety** - File locking prevents race conditions
+- **Data Integrity** - No accidental SQLite-only writes
+- **Backward Compatible** - Existing code continues to work (delegates internally)
+- **Easier Debugging** - Clear data flow path
+
+#### Testing
+- All 43 E2E tests pass after migration
+- No breaking changes to API or CLI
+- Documentation: `docs/DATA_LAYER_ARCHITECTURE.md`
+
 ### Changed - Dashboard Code Refactoring: PRISM (2026-01-12)
 
 #### Modularization of dashboard/src/main.js
