@@ -63,7 +63,8 @@ class TestOptionsPage:
         expect(page.locator("#option-strike")).to_be_visible()
         expect(page.locator("#option-expiration")).to_be_visible()
         expect(page.locator("#option-contracts")).to_be_visible()
-        expect(page.locator("#option-premium")).to_be_visible()
+        expect(page.locator("#option-premium-per-share")).to_be_visible()  # Premium per share input
+        expect(page.locator("#total-premium-display")).to_be_visible()  # Calculated total display
 
     def test_action_select_has_buy_sell(self, page: Page):
         """Test that Action select has BUY and SELL options."""
@@ -80,22 +81,24 @@ class TestOptionsPage:
         expect(options.first).to_have_attribute("value", "SELL")
         expect(options.last).to_have_attribute("value", "BUY")
 
-    def test_premium_label_changes_with_action(self, page: Page):
-        """Test that premium label changes based on action selection."""
+    def test_premium_label_and_total_display(self, page: Page):
+        """Test that premium per share and total display work correctly."""
         page.goto(f"{BASE_URL}/options")
 
-        premium_label = page.locator("#premium-label")
+        # Check premium per share input exists
+        premium_input = page.locator("#option-premium-per-share")
+        expect(premium_input).to_be_visible()
 
-        # Default (SELL) should say "Received"
-        expect(premium_label).to_contain_text("Received")
+        # Check total premium display exists
+        total_display = page.locator("#total-premium-value")
+        expect(total_display).to_be_visible()
 
-        # Change to BUY
-        page.select_option("#option-action", "BUY")
-        expect(premium_label).to_contain_text("Paid")
+        # Fill in values and verify calculation
+        page.fill("#option-contracts", "2")
+        page.fill("#option-premium-per-share", "5.00")
 
-        # Change back to SELL
-        page.select_option("#option-action", "SELL")
-        expect(premium_label).to_contain_text("Received")
+        # Total should be 5.00 * 100 * 2 = 1000
+        expect(total_display).to_have_text("1,000.00")
 
     def test_strategy_select_has_put_call(self, page: Page):
         """Test that Strategy select has Put and Call options."""
@@ -225,7 +228,7 @@ class TestOptionsForm:
         page.fill("#option-strike", "35")
         page.fill("#option-expiration", "2026-07-17")
         page.fill("#option-contracts", "3")
-        page.fill("#option-premium", "750")
+        page.fill("#option-premium-per-share", "2.50")  # 2.50 * 100 * 3 = 750
         page.fill("#option-reason", "Testing form submission")
 
         # Submit the form (use the specific form's submit button)
@@ -245,7 +248,7 @@ class TestOptionsForm:
         page.fill("#option-strike", "150")
         page.fill("#option-expiration", "2026-08-21")
         page.fill("#option-contracts", "1")
-        page.fill("#option-premium", "300")
+        page.fill("#option-premium-per-share", "3.00")  # 3.00 * 100 * 1 = 300
         page.fill("#option-reason", "Testing buy form")
 
         # Submit (use the specific form's submit button)

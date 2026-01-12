@@ -182,3 +182,141 @@ async def get_summary():
         "ytd_income": state.get('ytd_income', 0),
         "active_options_count": len(state.get('active_options', []))
     }
+
+
+@router.get("/income-breakdown")
+async def get_income_breakdown():
+    """Get detailed income breakdown with individual transactions and tax calculations."""
+    import json
+    import pandas as pd
+
+    # Load events
+    events_df = load_event_log(str(SCRIPT_DIR / 'data' / 'event_log_enhanced.csv'))
+    current_year = datetime.now().year
+
+    # Tax rate for short-term capital gains
+    TAX_RATE = 0.25
+
+    # Track individual transactions
+    trade_transactions = []
+    option_transactions = []
+    dividend_transactions = []
+
+    for _, event in events_df.iterrows():
+        try:
+            event_date = event['timestamp']  # Already datetime from load_event_log
+            if event_date.year != current_year:
+                continue
+
+            event_type = event['event_type']
+            data = event['data']  # Already parsed by load_event_log
+
+            if event_type == 'TRADE' and data.get('action') == 'SELL':
+                gain = data.get('gain_loss', 0)
+                if gain != 0:
+                    trade_transactions.append({
+                        'date': event_date.strftime('%Y-%m-%d'),
+                        'ticker': data.get('ticker', ''),
+                        'shares': data.get('shares', 0),
+                        'price': data.get('price', 0),
+                        'gain': gain,
+                        'type': 'trade'
+                    })
+
+            elif event_type == 'OPTION_OPEN':
+                action = data.get('action', 'SELL')
+                premium = data.get('total_premium', 0)
+                # SELL = income, BUY = expense (but we track it when closed)
+                if action == 'SELL':
+                    option_transactions.append({
+                        'date': event_date.strftime('%Y-%m-%d'),
+                        'ticker': data.get('ticker', ''),
+                        'strategy': data.get('strategy', ''),
+                        'strike': data.get('strike', 0),
+                        'contracts': data.get('contracts', 0),
+                        'gain': premium,
+                        'action': 'SELL',
+                        'status': 'open',
+                        'type': 'option'
+                    })
+
+            elif event_type in ['OPTION_CLOSE', 'OPTION_EXPIRE']:
+                profit = data.get('profit', 0)
+                if profit != 0:
+                    option_transactions.append({
+                        'date': event_date.strftime('%Y-%m-%d'),
+                        'ticker': data.get('ticker', ''),
+                        'strategy': data.get('strategy', ''),
+                        'gain': profit,
+                        'status': 'closed',
+                        'type': 'option'
+                    })
+
+            elif event_type == 'DIVIDEND':
+                amount = data.get('amount', 0)
+                if amount > 0:
+                    dividend_transactions.append({
+                        'date': event_date.strftime('%Y-%m-%d'),
+                        'ticker': data.get('ticker', ''),
+                        'amount': amount,
+                        'type': 'dividend'
+                    })
+
+        except Exception:
+            continue
+
+    # Calculate totals
+    trade_gains = sum(t['gain'] for t in trade_transactions if t['gain'] > 0)
+    trade_losses = sum(abs(t['gain']) for t in trade_transactions if t['gain'] < 0)
+    trade_net = trade_gains - trade_losses
+
+    option_income = sum(t['gain'] for t in option_transactions)
+    dividend_income = sum(t['amount'] for t in dividend_transactions)
+
+    total_income = trade_net + option_income + dividend_income
+
+    # Tax calculations (short-term capital gains rate)
+    trade_tax = max(0, trade_net) * TAX_RATE
+    option_tax = max(0, option_income) * TAX_RATE
+    # Qualified dividends taxed at lower rate, but simplify to same rate
+    dividend_tax = dividend_income * 0.15  # Lower rate for qualified dividends
+    total_tax = trade_tax + option_tax + dividend_tax
+
+    return {
+        "year": current_year,
+        "tax_rate": TAX_RATE,
+        "dividend_tax_rate": 0.15,
+
+        # Trade breakdown
+        "trades": {
+            "transactions": sorted(trade_transactions, key=lambda x: x['date'], reverse=True),
+            "gains": trade_gains,
+            "losses": trade_losses,
+            "net": trade_net,
+            "tax": trade_tax,
+            "count": len(trade_transactions)
+        },
+
+        # Option breakdown
+        "options": {
+            "transactions": sorted(option_transactions, key=lambda x: x['date'], reverse=True),
+            "income": option_income,
+            "tax": option_tax,
+            "count": len(option_transactions)
+        },
+
+        # Dividend breakdown
+        "dividends": {
+            "transactions": sorted(dividend_transactions, key=lambda x: x['date'], reverse=True),
+            "income": dividend_income,
+            "tax": dividend_tax,
+            "count": len(dividend_transactions)
+        },
+
+        # Totals
+        "totals": {
+            "gross_income": total_income,
+            "total_tax": total_tax,
+            "net_after_tax": total_income - total_tax
+        }
+    }

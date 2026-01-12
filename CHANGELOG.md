@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Options BUY/SELL Tracking & Income Breakdown (2026-01-12)
+
+#### Options BUY/SELL Action Field
+- **New `action` field** - Options now track whether they were BUY or SELL
+- **Pydantic validation** - Action must be "BUY" or "SELL" (case-insensitive)
+- **Cash flow handling** - SELL = receive premium (positive), BUY = pay premium (negative)
+- **Display improvements**:
+  - Badge shows BUY (warning color) or SELL (success color)
+  - Contracts shown as negative for SELL positions (matches Schwab display)
+  - Premium label changes based on action (Received vs Paid)
+- **Updated all existing options** - Migrated to include action: "SELL"
+
+#### Premium Per Share Input
+- **New input field** - Enter premium per share instead of total
+- **Auto-calculation** - Total premium = per share × 100 × contracts
+- **Live preview** - Shows calculated total before submission
+
+#### Options Form Improvements
+- **Rebuilt from scratch** - JavaScript form submission with proper validation
+- **Duplicate prevention** - `isSubmitting` flag prevents double-submissions
+- **Loading state** - Button shows spinner and "Saving..." during submission
+- **Success feedback** - Shows success message before page redirect
+- **Error handling** - Displays API errors in alert component
+
+#### Income Breakdown API (`GET /api/income-breakdown`)
+- **Individual transactions** - Lists each trade, option, and dividend separately
+- **Tax calculations**:
+  - Trades/options: 25% short-term capital gains rate
+  - Dividends: 15% qualified dividend rate
+- **Breakdown by category**:
+  - `trades.transactions[]` - Each SELL trade with gain/loss
+  - `options.transactions[]` - Each option premium received
+  - `dividends.transactions[]` - Each dividend payment
+- **Totals**: gross income, total tax, net after tax
+
+#### Playwright E2E Tests (`tests/test_options_e2e.py`)
+- **15+ comprehensive tests** for options functionality:
+  - Page load verification
+  - Form field visibility
+  - Action selector (BUY/SELL options)
+  - Premium label changes with action
+  - Strategy selector (Put/Call)
+  - API validation tests
+  - Form submission tests (SELL and BUY)
+  - Active options table verification
+  - Negative contracts display for SELL
+- **Auto-cleanup** - Test events removed from CSV after tests complete
+
+#### Bug Fixes
+- **Income breakdown empty data** - Fixed endpoint to use parsed `data` column from `load_event_log()` instead of raw `data_json`
+- **Options form not working** - Fixed submit button selector to be more specific (`#option-form button[type='submit']`)
+
 ### Added - Ideas Lab & Projection Integration (2026-01-11)
 
 #### Ideas Lab - Seed Investment Ideas System

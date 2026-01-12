@@ -263,20 +263,33 @@
                                class="input input-bordered"
                                value="1"
                                required
-                               min="1">
+                               min="1"
+                               oninput="calculateTotalPremium()">
                     </div>
 
-                    <!-- Premium -->
-                    <div class="form-control md:col-span-2">
+                    <!-- Premium per Share -->
+                    <div class="form-control">
                         <label class="label">
-                            <span class="label-text font-bold" id="premium-label">Total Premium Received</span>
+                            <span class="label-text font-bold" id="premium-label">Premium per Share</span>
                         </label>
-                        <input type="number" name="premium" id="option-premium"
+                        <input type="number" id="option-premium-per-share"
                                class="input input-bordered"
-                               placeholder="4000"
+                               placeholder="2.50"
                                required
                                min="0.01"
-                               step="0.01">
+                               step="0.01"
+                               oninput="calculateTotalPremium()">
+                    </div>
+
+                    <!-- Total Premium (calculated) -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-bold">Total Premium</span>
+                        </label>
+                        <div class="input input-bordered bg-base-200 flex items-center" id="total-premium-display">
+                            $<span id="total-premium-value">0.00</span>
+                        </div>
+                        <input type="hidden" name="premium" id="option-premium">
                     </div>
 
                     <!-- Reason -->
@@ -291,29 +304,60 @@
                 </div>
 
                 <div class="form-control mt-4">
-                    <button type="submit" class="btn btn-secondary btn-lg">
+                    <button type="submit" id="submit-btn" class="btn btn-secondary btn-lg">
                         Open Option Position
                     </button>
                 </div>
-            </form>
 
-            <div id="option-result" class="mt-4"></div>
+                <div id="option-result" class="mt-4"></div>
+            </form>
         </div>
     </div>
 
     <script>
-        function updatePremiumLabel() {
-            const action = document.getElementById('option-action').value;
-            const label = document.getElementById('premium-label');
-            label.textContent = action === 'SELL' ? 'Total Premium Received' : 'Total Premium Paid';
+        // Calculate total premium from per-share price
+        function calculateTotalPremium() {
+            const perShare = parseFloat(document.getElementById('option-premium-per-share').value) || 0;
+            const contracts = parseInt(document.getElementById('option-contracts').value) || 0;
+            const total = perShare * 100 * contracts;
+
+            document.getElementById('total-premium-value').textContent = total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('option-premium').value = total;
         }
+
+        // Prevent duplicate submissions
+        let isSubmitting = false;
 
         // Handle form submission
         document.getElementById('option-form').addEventListener('submit', async function(e) {
             e.preventDefault();
 
+            // Prevent duplicate submissions
+            if (isSubmitting) {
+                console.log('Already submitting, ignoring click');
+                return;
+            }
+
             const form = e.target;
             const resultDiv = document.getElementById('option-result');
+            const submitBtn = document.getElementById('submit-btn');
+
+            // Calculate total premium before submission
+            calculateTotalPremium();
+            const totalPremium = parseFloat(document.getElementById('option-premium').value);
+
+            if (!totalPremium || totalPremium <= 0) {
+                resultDiv.innerHTML = `<div class="alert alert-error">
+                    <span>Please enter a valid premium per share</span>
+                </div>`;
+                return;
+            }
+
+            // Disable button and show loading
+            isSubmitting = true;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading loading-spinner"></span> Saving...';
+            resultDiv.innerHTML = '';
 
             const payload = {
                 action: document.getElementById('option-action').value,
@@ -322,9 +366,11 @@
                 strike: parseFloat(document.getElementById('option-strike').value),
                 expiration: document.getElementById('option-expiration').value,
                 contracts: parseInt(document.getElementById('option-contracts').value),
-                premium: parseFloat(document.getElementById('option-premium').value),
+                premium: totalPremium,
                 reason: document.getElementById('option-reason').value
             };
+
+            console.log('Submitting option:', payload);
 
             try {
                 const response = await fetch('/api/options/open', {
@@ -334,24 +380,32 @@
                 });
 
                 const data = await response.json();
+                console.log('Response:', data);
 
                 if (response.ok && data.success) {
                     resultDiv.innerHTML = `<div class="alert alert-success">
-                        <span>${data.message}</span>
+                        <span>✓ ${data.message}</span>
                     </div>`;
-                    form.reset();
-                    updatePremiumLabel();
-                    // Reload page after short delay to show updated options
-                    setTimeout(() => window.location.reload(), 1500);
+                    // Reload page immediately to show new option
+                    setTimeout(() => { window.location.href = '/options'; }, 1000);
                 } else {
                     resultDiv.innerHTML = `<div class="alert alert-error">
                         <span>Error: ${data.detail || data.message || 'Unknown error'}</span>
                     </div>`;
+                    // Re-enable button on error
+                    isSubmitting = false;
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Open Option Position';
                 }
             } catch (error) {
+                console.error('Submit error:', error);
                 resultDiv.innerHTML = `<div class="alert alert-error">
                     <span>Error: ${error.message}</span>
                 </div>`;
+                // Re-enable button on error
+                isSubmitting = false;
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Open Option Position';
             }
         });
     </script>
