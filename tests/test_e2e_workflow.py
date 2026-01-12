@@ -405,7 +405,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_portfolio_holdings(self):
         """Test that scanner can load portfolio holdings"""
-        from api.services.options_scanner import get_portfolio_holdings
+        from core.scanner import get_portfolio_holdings
 
         portfolio = get_portfolio_holdings()
 
@@ -423,7 +423,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_portfolio_holdings_structure(self):
         """Test that holdings have the expected structure"""
-        from api.services.options_scanner import get_portfolio_holdings
+        from core.scanner import get_portfolio_holdings
 
         portfolio = get_portfolio_holdings()
 
@@ -436,7 +436,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_score_option(self):
         """Test option scoring logic"""
-        from api.services.options_scanner import score_option
+        from core.scanner import score_option
 
         # Create a mock high-quality option
         good_option = {
@@ -475,7 +475,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_score_option_call_vs_put(self):
         """Test that scoring works for both calls and puts"""
-        from api.services.options_scanner import score_option
+        from core.scanner import score_option
 
         put_option = {
             'ticker': 'TEST',
@@ -508,7 +508,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_recommendations_structure(self):
         """Test that get_recommendations returns proper structure"""
-        from api.services.options_scanner import get_recommendations
+        from core.scanner import get_recommendations
 
         # Run scanner with minimal settings
         result = get_recommendations(max_dte=30, min_premium=25, max_results=5, use_llm=False)
@@ -526,7 +526,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_recommendations_sorted(self):
         """Test that recommendations are sorted by score"""
-        from api.services.options_scanner import get_recommendations
+        from core.scanner import get_recommendations
 
         result = get_recommendations(max_dte=45, min_premium=50, max_results=10, use_llm=False)
 
@@ -538,7 +538,7 @@ class TestOptionsScannerE2E:
 
     def test_scanner_format_recommendation_text(self):
         """Test recommendation text formatting"""
-        from api.services.options_scanner import format_recommendation_text
+        from core.scanner import format_recommendation_text
 
         rec = {
             'ticker': 'TSLA',

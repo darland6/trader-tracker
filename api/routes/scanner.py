@@ -35,7 +35,7 @@ async def start_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     Scans all holdings for covered call opportunities and
     cash-secured put opportunities based on available capital.
     """
-    from api.services.options_scanner import get_recommendations
+    from core.scanner import get_recommendations
 
     try:
         # Run synchronously for now (can be made async for large portfolios)
@@ -66,7 +66,7 @@ async def get_quick_recommendations():
     Get quick options recommendations with default settings.
     Useful for the floating action button quick scan.
     """
-    from api.services.options_scanner import get_recommendations
+    from core.scanner import get_recommendations
 
     try:
         result = get_recommendations(
@@ -95,7 +95,7 @@ async def get_analyzed_recommendations():
     Get options recommendations with LLM analysis.
     Takes longer but provides reasoning and insights.
     """
-    from api.services.options_scanner import get_recommendations
+    from core.scanner import get_recommendations
 
     try:
         result = get_recommendations(
@@ -136,7 +136,7 @@ async def get_agent_analyzed_recommendations(
 
     Takes longer than /recommendations but provides intelligent analysis.
     """
-    from api.services.agent_scanner import get_agent_recommendations
+    from core.scanner import get_agent_recommendations
 
     try:
         result = await get_agent_recommendations(
@@ -158,7 +158,7 @@ async def start_agent_scan(request: ScanRequest):
 
     Uses Dexter for research and LLM for intelligent scoring.
     """
-    from api.services.agent_scanner import get_agent_recommendations
+    from core.scanner import get_agent_recommendations
 
     try:
         result = await get_agent_recommendations(
@@ -179,7 +179,7 @@ async def scan_ticker(ticker: str, max_dte: int = 45):
     Scan a specific ticker for options opportunities.
     Returns both puts and calls for the ticker.
     """
-    from api.services.options_scanner import fetch_options_chain, score_option, get_portfolio_holdings
+    from core.scanner import fetch_options_chain, score_option, get_portfolio_holdings
 
     try:
         ticker = ticker.upper()
