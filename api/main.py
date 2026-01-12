@@ -20,6 +20,14 @@ import json
 
 from api.database import init_database, sync_csv_to_db
 from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications, alt_history, scanner, ideas
+
+# NEW: Consolidated route imports (6 logical groupings)
+from api.routes import portfolio, events_trading
+# Note: Additional consolidated routers available:
+# - _consolidated_admin (config + backup + setup + notifications)
+# - _consolidated_realities (alt_history + alt_reality + history)
+# - _consolidated_ai (chat + scanner + ideas + research)
+
 from api.services.skill_discovery import create_skill_router
 
 # Static files directory
@@ -47,6 +55,9 @@ app.add_middleware(
 )
 
 # Include routers
+# ============================================================================
+# OPTION 1: Use original 18 individual routers (current/legacy)
+# ============================================================================
 app.include_router(state.router)
 app.include_router(trades.router)
 app.include_router(options.router)
@@ -65,6 +76,19 @@ app.include_router(scanner.router)  # Options scanner for income opportunities
 app.include_router(ideas.router)  # Seed ideas and manifestation
 app.include_router(create_skill_router())  # Skill discovery and management
 app.include_router(web.router)  # Web UI routes
+
+# ============================================================================
+# OPTION 2: Use new consolidated routers (6 logical groupings)
+# To switch, comment out the individual routers above and uncomment below:
+# ============================================================================
+# app.include_router(portfolio.router)        # 1. Portfolio (state + prices)
+# app.include_router(events_trading.router)   # 2. Events/Trading (events + trades + options + cash)
+# from api.routes import _consolidated_realities, _consolidated_ai, _consolidated_admin
+# app.include_router(_consolidated_realities.router)  # 3. Realities (alt_history + alt_reality + history)
+# app.include_router(_consolidated_ai.router)          # 4. AI (chat + scanner + ideas + research)
+# app.include_router(_consolidated_admin.router)       # 5. Admin (config + backup + setup + notifications)
+# app.include_router(web.router)                       # 6. Web (template serving)
+# app.include_router(create_skill_router())            # Skills (kept separate)
 
 
 @app.get("/favicon.ico")
