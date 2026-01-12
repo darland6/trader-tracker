@@ -28,7 +28,8 @@ def ensure_storage():
 def generate_projection(
     history_id: str = "reality",
     years: int = 3,
-    use_llm: bool = True
+    use_llm: bool = True,
+    idea_ids: list = None
 ) -> dict:
     """Generate a future projection for a portfolio.
 
@@ -36,6 +37,7 @@ def generate_projection(
         history_id: The history to project from ("reality" or alt history ID)
         years: Number of years to project (1-5)
         use_llm: Whether to use LLM for analysis (falls back to statistical if False)
+        idea_ids: List of idea IDs to apply as modifications to the projection
 
     Returns:
         Projection data with future frames
@@ -55,6 +57,30 @@ def generate_projection(
                 "name": history_metadata.get("name", ""),
                 "description": history_metadata.get("description", ""),
                 "modifications": history_metadata.get("modifications", [])
+            }
+
+    # Load ideas if specified
+    applied_ideas = []
+    idea_context = None
+    if idea_ids:
+        from api.routes.ideas import get_idea_by_id, get_ideas_as_mods
+
+        for idea_id in idea_ids:
+            idea = get_idea_by_id(idea_id)
+            if idea:
+                applied_ideas.append({
+                    "id": idea_id,
+                    "title": idea.get("title", ""),
+                    "category": idea.get("category", ""),
+                    "tickers": idea.get("tickers", []),
+                    "actions": idea.get("actions", [])
+                })
+
+        if applied_ideas:
+            idea_context = {
+                "ideas": applied_ideas,
+                "idea_count": len(applied_ideas),
+                "idea_tickers": list(set(t for i in applied_ideas for t in i.get("tickers", [])))
             }
 
     # Load current state
@@ -96,9 +122,9 @@ def generate_projection(
 
     # Generate analysis and projections
     if use_llm:
-        analysis = get_llm_analysis(holdings, years, history_context)
+        analysis = get_llm_analysis(holdings, years, history_context, idea_context)
     else:
-        analysis = get_statistical_analysis(holdings, years, history_context)
+        analysis = get_statistical_analysis(holdings, years, history_context, idea_context)
 
     # Generate future price frames
     projection_id = str(uuid.uuid4())[:8]
@@ -107,7 +133,8 @@ def generate_projection(
         holdings,
         analysis,
         start_date,
-        years
+        years,
+        idea_context
     )
 
     projection = {
@@ -125,7 +152,8 @@ def generate_projection(
         },
         "analysis": analysis,
         "frames": frames,
-        "projected_state": frames[-1] if frames else None
+        "projected_state": frames[-1] if frames else None,
+        "applied_ideas": applied_ideas if applied_ideas else None
     }
 
     # Save projection
@@ -134,13 +162,14 @@ def generate_projection(
     return projection
 
 
-def get_llm_analysis(holdings: list, years: int, history_context: dict = None) -> dict:
+def get_llm_analysis(holdings: list, years: int, history_context: dict = None, idea_context: dict = None) -> dict:
     """Get LLM-powered analysis of holdings and market trends.
 
     Args:
         holdings: List of portfolio holdings
         years: Number of years to project
         history_context: Optional context for alternate realities with name, description, modifications
+        idea_context: Optional context for seed ideas to apply as modifications
     """
     try:
         from llm.config import get_llm_config
@@ -148,7 +177,7 @@ def get_llm_analysis(holdings: list, years: int, history_context: dict = None) -
 
         config = get_llm_config()
         if not config.enabled:
-            return get_statistical_analysis(holdings, years, history_context)
+            return get_statistical_analysis(holdings, years, history_context, idea_context)
 
         # Build analysis prompt
         holdings_summary = "\n".join([
@@ -176,8 +205,30 @@ For example:
 Apply the user's intent to ALL growth rate estimates and analysis.
 """
 
+        # Build seed ideas context if provided
+        ideas_context = ""
+        if idea_context and idea_context.get("ideas"):
+            ideas_summary = []
+            for idea in idea_context["ideas"]:
+                tickers = ", ".join(idea.get("tickers", [])) or "N/A"
+                actions = len(idea.get("actions", []))
+                ideas_summary.append(f"- {idea['title']} ({idea['category']}): Tickers: {tickers}, Actions: {actions}")
+
+            ideas_context = f"""
+SEED IDEAS APPLIED TO PROJECTION:
+The following investment ideas are being factored into this projection:
+{chr(10).join(ideas_summary)}
+
+These ideas represent potential strategies the user wants to explore. Factor them into the projection:
+- For income-focused ideas: Add expected premium income to projections
+- For growth-focused ideas: Boost growth rates for related tickers
+- For opportunity ideas: Consider buying positions in those tickers
+- Ideas with manifested actions should have stronger weight than seed-only ideas
+"""
+
         prompt = f"""Analyze these portfolio holdings and provide a {years}-year projection:
 {reality_context}
+{ideas_context}
 CURRENT HOLDINGS:
 {holdings_summary}
 
@@ -225,7 +276,7 @@ Respond in JSON format:
 
         client = get_llm_client()
         if client is None:
-            return get_statistical_analysis(holdings, years, history_context)
+            return get_statistical_analysis(holdings, years, history_context, idea_context)
 
         response = client.generate(prompt, max_tokens=2000)
 
@@ -239,30 +290,35 @@ Respond in JSON format:
                 analysis["source"] = "llm"
                 if history_context:
                     analysis["history_context"] = history_context
+                if idea_context:
+                    analysis["idea_context"] = idea_context
                 return analysis
         except json.JSONDecodeError:
             pass
 
-        return get_statistical_analysis(holdings, years, history_context)
+        return get_statistical_analysis(holdings, years, history_context, idea_context)
 
     except Exception as e:
         print(f"LLM analysis failed: {e}")
-        return get_statistical_analysis(holdings, years, history_context)
+        return get_statistical_analysis(holdings, years, history_context, idea_context)
 
 
-def get_statistical_analysis(holdings: list, years: int, history_context: dict = None) -> dict:
+def get_statistical_analysis(holdings: list, years: int, history_context: dict = None, idea_context: dict = None) -> dict:
     """Generate statistical analysis without LLM.
 
     Args:
         holdings: List of portfolio holdings
         years: Number of years to project
         history_context: Optional context for alternate realities - used to adjust projections
+        idea_context: Optional context for seed ideas to apply as modifications
     """
 
     # Parse description to get adjustment multipliers
     growth_multiplier = 1.0
     volatility_multiplier = 1.0
+    income_boost = 0  # Annual income boost from ideas
     scenario_note = "Statistical projection"
+    idea_notes = []
 
     if history_context and history_context.get("description"):
         desc = history_context.get("description", "").lower()
@@ -294,6 +350,39 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
             elif mod.get("type") == "remove_ticker":
                 scenario_note = f"Removed {mod.get('ticker', 'ticker')} - portfolio rebalanced"
 
+    # Apply idea modifiers
+    idea_tickers_boost = {}  # Ticker-specific growth boosts from ideas
+    if idea_context and idea_context.get("ideas"):
+        for idea in idea_context["ideas"]:
+            category = idea.get("category", "")
+            tickers = idea.get("tickers", [])
+
+            # Calculate income from actions
+            for action in idea.get("actions", []):
+                action_type = action.get("action_type", "")
+                details = action.get("details", {})
+
+                if action_type in ["sell_put", "sell_call"]:
+                    # Add premium income (assume repeatable monthly)
+                    premium = details.get("estimated_premium", 0) * details.get("contracts", 1)
+                    income_boost += premium * 12  # Annualize
+
+            # Apply category-based boosts
+            if category == "income":
+                idea_notes.append(f"Income idea: {idea['title']}")
+                # Income ideas don't boost growth but add to income
+            elif category == "growth":
+                idea_notes.append(f"Growth idea: {idea['title']}")
+                for ticker in tickers:
+                    idea_tickers_boost[ticker] = idea_tickers_boost.get(ticker, 0) + 0.1  # 10% growth boost
+            elif category == "opportunity":
+                idea_notes.append(f"Opportunity idea: {idea['title']}")
+                for ticker in tickers:
+                    idea_tickers_boost[ticker] = idea_tickers_boost.get(ticker, 0) + 0.05  # 5% growth boost
+
+        if idea_notes:
+            scenario_note = f"{scenario_note}. Ideas applied: {len(idea_context['ideas'])}"
+
     # Default sector characteristics
     sector_profiles = {
         # Tech/Growth
@@ -316,8 +405,13 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
         base_growth = profile["growth"] * growth_multiplier
         volatility = profile["volatility"] * volatility_multiplier
 
+        # Apply idea-specific boosts
+        if ticker in idea_tickers_boost:
+            idea_boost = idea_tickers_boost[ticker]
+            base_growth = base_growth * (1 + idea_boost)
+
         ticker_analysis[ticker] = {
-            "current_catalysts": [scenario_note],
+            "current_catalysts": [scenario_note] + ([f"Idea boost: +{idea_tickers_boost.get(ticker, 0)*100:.0f}%"] if ticker in idea_tickers_boost else []),
             "industry_trend": "projected based on historical patterns",
             "seasonality": f"Q1-Q4 factors: {profile['seasonality']}",
             "annual_growth_rates": {
@@ -326,9 +420,10 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
                 "optimistic": base_growth + volatility * 0.5
             },
             "key_events": ["Earnings reports", "Product launches"],
-            "confidence": "low" if growth_multiplier == 1.0 else "medium",
+            "confidence": "low" if growth_multiplier == 1.0 and not idea_tickers_boost else "medium",
             "risk_factors": ["Market volatility", "Competition", "Macro conditions"],
-            "sector": profile["sector"]
+            "sector": profile["sector"],
+            "idea_boost_applied": ticker in idea_tickers_boost
         }
 
     # Portfolio-level projections
@@ -356,7 +451,7 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
         "scenario_note": scenario_note,
         "growth_multiplier": growth_multiplier,
         "macro_outlook": {
-            "summary": scenario_note if growth_multiplier != 1.0 else "Projection based on historical patterns and sector analysis",
+            "summary": scenario_note if growth_multiplier != 1.0 or idea_notes else "Projection based on historical patterns and sector analysis",
             "interest_rates": "Assumed stable",
             "inflation": "Moderate (2-3%)",
             "gdp_growth": "2-3% annually"
@@ -368,6 +463,14 @@ def get_statistical_analysis(holdings: list, years: int, history_context: dict =
     if history_context:
         result["history_context"] = history_context
 
+    if idea_context:
+        result["idea_context"] = idea_context
+        result["idea_effects"] = {
+            "annual_income_boost": income_boost,
+            "tickers_boosted": list(idea_tickers_boost.keys()),
+            "idea_notes": idea_notes
+        }
+
     return result
 
 
@@ -375,7 +478,8 @@ def generate_future_frames(
     holdings: list,
     analysis: dict,
     start_date: datetime,
-    years: int
+    years: int,
+    idea_context: dict = None
 ) -> list:
     """Generate daily/weekly frames for the projected future."""
 
@@ -385,6 +489,11 @@ def generate_future_frames(
     # Check scenario type from analysis
     growth_multiplier = analysis.get("growth_multiplier", 1.0)
     scenario_note = analysis.get("scenario_note", "").lower()
+
+    # Get idea income boost if applicable
+    idea_effects = analysis.get("idea_effects", {})
+    annual_income_boost = idea_effects.get("annual_income_boost", 0)
+    monthly_income_boost = annual_income_boost / 12 if annual_income_boost else 0
 
     # Determine noise bias based on scenario
     noise_bias = 0  # neutral
@@ -458,12 +567,16 @@ def generate_future_frames(
                 "change_from_start": round((projected_price / current_price - 1) * 100, 1)
             })
 
+        # Add cumulative income from ideas
+        cumulative_idea_income = month * monthly_income_boost
+
         frames.append({
             "date": frame_date.isoformat()[:10],
             "month": month,
             "year": round(month / 12, 2),
-            "total_value": round(total_value, 2),
+            "total_value": round(total_value + cumulative_idea_income, 2),
             "holdings": frame_holdings,
+            "idea_income": round(cumulative_idea_income, 2) if cumulative_idea_income > 0 else None,
             "is_projection": True
         })
 

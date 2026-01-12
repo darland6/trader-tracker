@@ -26,8 +26,8 @@ def load_event_log(filepath='event_log.csv'):
     df['data'] = df['data_json'].apply(json.loads)
     df = df.drop('data_json', axis=1)
     
-    # Convert timestamp to datetime
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    # Convert timestamp to datetime (handle mixed formats)
+    df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
     
     # Sort by timestamp, then by event_id for stable ordering of same-timestamp events
     df = df.sort_values(['timestamp', 'event_id'])

@@ -104,6 +104,80 @@
             100% { top: 100%; opacity: 0; }
         }
 
+        /* ==================== COLLAPSED PANEL STACK ==================== */
+        #collapsed-stack {
+            position: fixed;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 800;
+            pointer-events: auto;
+        }
+
+        .collapsed-tab {
+            background: linear-gradient(180deg, rgba(10, 20, 40, 0.95) 0%, rgba(5, 10, 25, 0.98) 100%);
+            border: 2px solid #0088ff;
+            border-radius: 4px;
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 50px;
+            box-shadow: 0 0 10px rgba(0, 136, 255, 0.3);
+        }
+
+        .collapsed-tab:hover {
+            border-color: #00ffff;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            transform: translateX(5px);
+        }
+
+        .collapsed-tab .tab-icon {
+            font-size: 16px;
+        }
+
+        .collapsed-tab .tab-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #00ffff;
+            white-space: nowrap;
+        }
+
+        /* Collapse button in panel header */
+        .panel-collapse-btn {
+            background: transparent;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            color: #00ffff;
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            margin-right: 8px;
+        }
+
+        .panel-collapse-btn:hover {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: #00ffff;
+        }
+
+        /* Panel collapsed to stack */
+        .control-panel.stacked {
+            display: none !important;
+        }
+
         /* ==================== CONTROL PANELS ==================== */
         .control-panel {
             position: absolute;
@@ -114,6 +188,7 @@
             overflow: visible;
             min-width: 200px;
             min-height: 100px;
+            transition: all 0.3s ease;
         }
 
         .control-panel.dragging {
@@ -686,19 +761,21 @@
         }
 
         #chat-console.fullscreen .panel-body {
-            flex: 1;
+            flex: 1 1 0;  /* grow, shrink, basis:0 */
+            height: 0;    /* Force flex to control height */
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-height: 0;
         }
 
         #chat-console.fullscreen .chat-messages {
-            flex: 1;
+            flex: 1 1 0;  /* grow, shrink, basis:0 - critical for flex overflow */
+            height: 0;    /* Force flex to control height, not content */
+            min-height: 0;
             max-height: none;
             overflow-y: auto;
             padding: 20px;
-            display: flex;
-            flex-direction: column;
         }
 
         #chat-console.fullscreen .chat-input-row {
@@ -1486,6 +1563,7 @@
             background: rgba(0, 255, 255, 0.1);
             border-color: #00ffff;
             transform: translateX(4px);
+            cursor: pointer;
         }
 
         .scanner-rec-ticker {
@@ -1557,6 +1635,33 @@
             text-transform: uppercase;
         }
 
+        .scanner-rec-details .contracts-hint {
+            font-size: 9px;
+            color: #00cc66;
+            margin-top: 2px;
+        }
+
+        .scanner-rec-details .metric-risk {
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        .scanner-rec-details .metric-risk.low {
+            background: rgba(0, 200, 100, 0.2);
+            color: #00cc66;
+        }
+
+        .scanner-rec-details .metric-risk.med {
+            background: rgba(255, 200, 0, 0.2);
+            color: #ffcc00;
+        }
+
+        .scanner-rec-details .metric-risk.high {
+            background: rgba(255, 80, 80, 0.2);
+            color: #ff5050;
+        }
+
         .scanner-analysis {
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
             border: 1px solid rgba(102, 126, 234, 0.3);
@@ -1582,6 +1687,384 @@
             line-height: 1.7;
             margin-top: 12px;
             white-space: pre-wrap;
+        }
+
+        /* ==================== IDEAS LAB PANEL ==================== */
+        #ideas-console {
+            position: fixed;
+            bottom: 20px;
+            left: 370px;
+            width: 320px;
+            z-index: 110;
+        }
+
+        #ideas-console.minimized .panel-body {
+            display: none;
+        }
+
+        .ideas-header {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            border-bottom: 1px solid rgba(156, 39, 176, 0.2);
+        }
+
+        .idea-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(156, 39, 176, 0.3);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #fff;
+            font-size: 12px;
+        }
+
+        .idea-input:focus {
+            outline: none;
+            border-color: #9c27b0;
+        }
+
+        .idea-btn-create {
+            background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .idea-btn-create:hover {
+            background: linear-gradient(135deg, #ab47bc, #8e24aa);
+            box-shadow: 0 0 15px rgba(156, 39, 176, 0.5);
+        }
+
+        .ideas-list {
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .ideas-empty {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+            font-size: 12px;
+        }
+
+        .idea-item {
+            background: rgba(156, 39, 176, 0.1);
+            border: 1px solid rgba(156, 39, 176, 0.2);
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .idea-item:hover {
+            background: rgba(156, 39, 176, 0.2);
+            border-color: rgba(156, 39, 176, 0.4);
+        }
+
+        .idea-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .idea-item-title {
+            font-weight: 600;
+            color: #e1bee7;
+            font-size: 12px;
+        }
+
+        .idea-item-status {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+
+        .idea-item-status.seed {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+
+        .idea-item-status.manifested {
+            background: rgba(0, 200, 83, 0.2);
+            color: #00c853;
+        }
+
+        .idea-item-status.executed {
+            background: rgba(0, 200, 255, 0.2);
+            color: #00bcd4;
+        }
+
+        .idea-item-tickers {
+            margin-top: 6px;
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .idea-ticker-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            background: rgba(0, 136, 255, 0.2);
+            border-radius: 3px;
+            color: #0088ff;
+        }
+
+        .idea-item-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 6px;
+        }
+
+        .idea-action-btn {
+            font-size: 9px;
+            padding: 4px 8px;
+            border-radius: 3px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .idea-action-btn.manifest {
+            background: linear-gradient(135deg, #9c27b0, #7b1fa2);
+            color: #fff;
+        }
+
+        .idea-action-btn.manifest:hover {
+            box-shadow: 0 0 10px rgba(156, 39, 176, 0.5);
+        }
+
+        .idea-action-btn.archive {
+            background: rgba(100, 100, 100, 0.3);
+            color: #888;
+        }
+
+        .ideas-footer {
+            padding: 8px;
+            border-top: 1px solid rgba(156, 39, 176, 0.2);
+            text-align: center;
+        }
+
+        .idea-btn-refresh {
+            background: transparent;
+            border: 1px solid rgba(156, 39, 176, 0.3);
+            color: #9c27b0;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .idea-btn-refresh:hover {
+            background: rgba(156, 39, 176, 0.1);
+            border-color: #9c27b0;
+        }
+
+        /* Trade Preview Popup */
+        .trade-preview-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .trade-preview {
+            background: linear-gradient(135deg, rgba(10, 15, 30, 0.98), rgba(5, 10, 20, 0.98));
+            border: 2px solid rgba(0, 255, 255, 0.4);
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90vw;
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.2);
+        }
+
+        .trade-preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .trade-preview-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            color: #00ffff;
+        }
+
+        .trade-preview-close {
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .trade-preview-close:hover {
+            color: #ff6b6b;
+        }
+
+        .trade-preview-body {
+            padding: 20px;
+        }
+
+        .trade-preview-option {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .trade-preview-option-info {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .trade-preview-option-info .ticker {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            color: #00ffff;
+            font-weight: 600;
+        }
+
+        .trade-preview-option-info .strategy {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin-left: 8px;
+        }
+
+        .trade-preview-option-info .strategy.put {
+            background: rgba(156, 39, 176, 0.3);
+            color: #ce93d8;
+        }
+
+        .trade-preview-option-info .strategy.call {
+            background: rgba(33, 150, 243, 0.3);
+            color: #64b5f6;
+        }
+
+        .trade-preview-contracts {
+            margin-bottom: 20px;
+        }
+
+        .trade-preview-contracts label {
+            display: block;
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .trade-preview-contracts input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .trade-preview-contracts input:focus {
+            outline: none;
+            border-color: #00ffff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        .trade-preview-calcs {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .trade-preview-calc-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .trade-preview-calc-row:last-child {
+            border-bottom: none;
+        }
+
+        .trade-preview-calc-row .label {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .trade-preview-calc-row .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            color: #fff;
+        }
+
+        .trade-preview-calc-row .value.premium {
+            color: #00ff88;
+        }
+
+        .trade-preview-calc-row .value.breakeven {
+            color: #ffaa00;
+        }
+
+        .trade-preview-calc-row .value.goal-impact {
+            color: #00ffff;
+        }
+
+        .trade-preview-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .trade-preview-actions button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .trade-preview-actions .cancel-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #888;
+        }
+
+        .trade-preview-actions .cancel-btn:hover {
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+        }
+
+        .trade-preview-actions .execute-btn {
+            background: linear-gradient(135deg, #00aa66, #00ff88);
+            border: none;
+            color: #000;
+            font-weight: 600;
+        }
+
+        .trade-preview-actions .execute-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
         }
 
         /* Income Modal */
@@ -2545,6 +3028,9 @@
 
         <!-- Command Deck Frame -->
         <div id="command-deck" style="display: none;">
+            <!-- Collapsed Panel Stack -->
+            <div id="collapsed-stack"></div>
+
             <!-- Corner Brackets -->
             <div class="corner-bracket top-left"></div>
             <div class="corner-bracket top-right"></div>
@@ -2555,8 +3041,9 @@
             <div id="scan-line"></div>
 
             <!-- Left Console - Status -->
-            <div id="left-console" class="control-panel">
+            <div id="left-console" class="control-panel" data-panel-icon="📊" data-panel-title="Status">
                 <div class="panel-header">
+                    <button class="panel-collapse-btn" onclick="event.stopPropagation(); collapsePanel('left-console')" title="Collapse to sidebar">−</button>
                     <span class="panel-title">System Status</span>
                     <span class="panel-status"></span>
                 </div>
@@ -2612,8 +3099,9 @@
             </div>
 
             <!-- Right Console - Controls -->
-            <div id="right-console" class="control-panel">
+            <div id="right-console" class="control-panel" data-panel-icon="🎛️" data-panel-title="Controls">
                 <div class="panel-header">
+                    <button class="panel-collapse-btn" onclick="event.stopPropagation(); collapsePanel('right-console')" title="Collapse to sidebar">−</button>
                     <span class="panel-title">Controls</span>
                     <span class="panel-status"></span>
                 </div>
@@ -2662,8 +3150,9 @@
             </div>
 
             <!-- Bottom Console - Holdings -->
-            <div id="bottom-console" class="control-panel">
+            <div id="bottom-console" class="control-panel" data-panel-icon="💼" data-panel-title="Holdings">
                 <div class="panel-header">
+                    <button class="panel-collapse-btn" onclick="event.stopPropagation(); collapsePanel('bottom-console')" title="Collapse to sidebar">−</button>
                     <span class="panel-title">Holdings Array</span>
                     <span class="panel-status"></span>
                 </div>
@@ -2789,6 +3278,27 @@
                         <div class="chat-input-controls">
                             <button class="chat-send" id="chat-send" onclick="sendChatMessage()">Send</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ideas Lab Console -->
+            <div id="ideas-console" class="control-panel minimized">
+                <div class="panel-header" onclick="toggleIdeas()" style="cursor: pointer;">
+                    <span class="panel-title">💡 Ideas Lab</span>
+                    <span id="ideas-count" class="badge" style="background: #9c27b0; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 8px;">0</span>
+                    <span id="ideas-toggle-icon" style="color: #00ffff; margin-left: auto;">+</span>
+                </div>
+                <div class="panel-body" id="ideas-body">
+                    <div class="ideas-header">
+                        <input type="text" id="idea-title-input" placeholder="New idea title..." class="idea-input" style="flex: 1;">
+                        <button onclick="createIdea()" class="idea-btn-create">+ Add</button>
+                    </div>
+                    <div id="ideas-list" class="ideas-list">
+                        <div class="ideas-empty">No ideas yet. Plant a seed!</div>
+                    </div>
+                    <div class="ideas-footer">
+                        <button onclick="loadIdeas()" class="idea-btn-refresh">↻ Refresh</button>
                     </div>
                 </div>
             </div>

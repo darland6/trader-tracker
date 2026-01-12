@@ -7,6 +7,10 @@ Serves both the management web UI and the Three.js dashboard.
 Run with: uvicorn api.main:app --reload --port 8000
 """
 
+# Load environment variables FIRST before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +19,7 @@ from pathlib import Path
 import json
 
 from api.database import init_database, sync_csv_to_db
-from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications, alt_history, scanner
+from api.routes import state, trades, options, cash, prices, events, web, backup, chat, research, config, history, setup, notifications, alt_history, scanner, ideas
 from api.services.skill_discovery import create_skill_router
 
 # Static files directory
@@ -58,6 +62,7 @@ app.include_router(setup.router)  # Setup and initialization
 app.include_router(notifications.router)  # Agent notifications
 app.include_router(alt_history.router)  # Alternate history / what-if scenarios
 app.include_router(scanner.router)  # Options scanner for income opportunities
+app.include_router(ideas.router)  # Seed ideas and manifestation
 app.include_router(create_skill_router())  # Skill discovery and management
 app.include_router(web.router)  # Web UI routes
 

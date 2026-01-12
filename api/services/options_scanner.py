@@ -139,12 +139,18 @@ def fetch_options_chain(ticker: str, max_dte: int = 45) -> list:
                 if mid <= 0:
                     continue
 
-                # Greeks (may not always be available)
+                # Greeks (may not always be available, handle NaN)
+                import math
                 delta = abs(row.get('delta', 0) or 0)
+                if math.isnan(delta): delta = 0
                 theta = row.get('theta', 0) or 0
+                if math.isnan(theta): theta = 0
                 iv = row.get('impliedVolatility', 0) or 0
+                if math.isnan(iv): iv = 0
                 volume = row.get('volume', 0) or 0
+                if math.isnan(volume): volume = 0
                 open_interest = row.get('openInterest', 0) or 0
+                if math.isnan(open_interest): open_interest = 0
 
                 # Calculate premium metrics
                 premium_per_contract = mid * 100
@@ -195,10 +201,15 @@ def fetch_options_chain(ticker: str, max_dte: int = 45) -> list:
                     continue
 
                 delta = row.get('delta', 0) or 0
+                if math.isnan(delta): delta = 0
                 theta = row.get('theta', 0) or 0
+                if math.isnan(theta): theta = 0
                 iv = row.get('impliedVolatility', 0) or 0
+                if math.isnan(iv): iv = 0
                 volume = row.get('volume', 0) or 0
+                if math.isnan(volume): volume = 0
                 open_interest = row.get('openInterest', 0) or 0
+                if math.isnan(open_interest): open_interest = 0
 
                 premium_per_contract = mid * 100
                 premium_yield = (mid / current_price) * 100 if current_price > 0 else 0
@@ -243,93 +254,190 @@ def score_option(option: dict, context: dict) -> float:
     Score an option for income generation suitability.
 
     Higher scores = better candidates for selling.
+    Uses continuous scoring for better granularity.
 
     Factors:
-    - Premium yield (annualized)
-    - Safety margin (OTM distance)
-    - Theta decay rate
-    - Probability of profit
-    - Liquidity (volume, open interest)
+    - Premium yield (annualized) - 40 points max
+    - Safety margin (OTM distance) - 25 points max
+    - Theta decay rate - 10 points max
+    - Probability of profit (delta) - 20 points max
+    - DTE sweet spot - 10 points max
+    - Liquidity (volume, open interest) - 5 points max
+
+    Total: 110 points max, normalized to 100
     """
-    score = 0
+    score = 0.0
 
-    # Premium yield (0-40 points)
+    # Premium yield (0-40 points) - continuous scoring
     ann_yield = option.get('annualized_yield_pct', 0)
-    if ann_yield >= 50:
+    if ann_yield >= 60:
         score += 40
-    elif ann_yield >= 30:
-        score += 30
-    elif ann_yield >= 20:
-        score += 25
-    elif ann_yield >= 15:
-        score += 20
-    elif ann_yield >= 10:
-        score += 15
     elif ann_yield >= 5:
-        score += 10
+        # Linear scaling from 5% (10 pts) to 60% (40 pts)
+        score += 10 + (ann_yield - 5) * (30 / 55)
+    else:
+        score += ann_yield * 2  # 0-5% gets 0-10 points
 
-    # Safety margin / OTM distance (0-25 points)
+    # Safety margin / OTM distance (0-25 points) - continuous
     otm_pct = option.get('otm_pct', 0)
     if option['type'] == 'PUT':
         # For puts, want good cushion below current price
-        if otm_pct >= 15:
+        if otm_pct >= 20:
             score += 25
-        elif otm_pct >= 10:
-            score += 20
-        elif otm_pct >= 7:
-            score += 15
-        elif otm_pct >= 5:
-            score += 10
         elif otm_pct >= 3:
-            score += 5
+            # Linear scaling from 3% (5 pts) to 20% (25 pts)
+            score += 5 + (otm_pct - 3) * (20 / 17)
+        else:
+            score += otm_pct * (5 / 3)  # 0-3% gets 0-5 points
     else:
         # For calls, want room for upside
-        if otm_pct >= 10:
+        if otm_pct >= 15:
             score += 25
-        elif otm_pct >= 7:
-            score += 20
-        elif otm_pct >= 5:
-            score += 15
         elif otm_pct >= 3:
-            score += 10
+            score += 5 + (otm_pct - 3) * (20 / 12)
+        else:
+            score += otm_pct * (5 / 3)
 
-    # Delta-based probability (0-20 points)
-    delta = option.get('delta', 0)
+    # Theta decay bonus (0-10 points) - more theta = faster decay = better
+    theta = abs(option.get('theta', 0) or 0)
+    if theta > 0:
+        # Theta typically ranges from 0.01 to 0.10 for most options
+        # Higher theta means faster time decay (good for sellers)
+        theta_score = min(10, theta * 100)  # Cap at 10 points
+        score += theta_score
+
+    # Delta-based probability (0-20 points) - continuous
+    delta = abs(option.get('delta', 0) or 0)
     prob_otm = option.get('prob_otm')
     if prob_otm:
-        if prob_otm >= 85:
+        if prob_otm >= 90:
             score += 20
-        elif prob_otm >= 80:
-            score += 17
-        elif prob_otm >= 75:
-            score += 14
-        elif prob_otm >= 70:
-            score += 10
-        elif prob_otm >= 65:
-            score += 5
+        elif prob_otm >= 60:
+            # Linear scaling from 60% (5 pts) to 90% (20 pts)
+            score += 5 + (prob_otm - 60) * (15 / 30)
+        else:
+            score += max(0, prob_otm - 50) * 0.5  # Below 60% gets minimal points
 
-    # DTE sweet spot (0-10 points) - 30-45 days ideal for theta
+    # DTE sweet spot (0-10 points) - continuous with peak at 35 days
     dte = option.get('dte', 0)
-    if 30 <= dte <= 45:
-        score += 10
-    elif 21 <= dte < 30:
-        score += 8
+    # Peak at 35 days, taper off on both sides
+    if 28 <= dte <= 42:
+        score += 10  # Sweet spot
+    elif 21 <= dte < 28:
+        score += 7 + (dte - 21) * (3 / 7)  # 7-10 points
+    elif 42 < dte <= 50:
+        score += 10 - (dte - 42) * (3 / 8)  # 7-10 points
     elif 14 <= dte < 21:
-        score += 5
+        score += 4 + (dte - 14) * (3 / 7)  # 4-7 points
     elif 7 <= dte < 14:
-        score += 3
+        score += 2 + (dte - 7) * (2 / 7)  # 2-4 points
+    elif dte > 50:
+        score += max(0, 7 - (dte - 50) * 0.1)  # Diminishing returns
 
-    # Liquidity (0-5 points)
-    volume = option.get('volume', 0)
-    oi = option.get('open_interest', 0)
-    if volume >= 100 and oi >= 500:
-        score += 5
-    elif volume >= 50 and oi >= 200:
-        score += 3
-    elif volume >= 10 and oi >= 50:
-        score += 1
+    # Liquidity (0-5 points) - continuous
+    volume = option.get('volume', 0) or 0
+    oi = option.get('open_interest', 0) or 0
 
-    return score
+    # Volume component (0-2.5 points)
+    if volume >= 200:
+        score += 2.5
+    else:
+        score += min(2.5, volume / 80)  # Linear up to 200
+
+    # Open interest component (0-2.5 points)
+    if oi >= 1000:
+        score += 2.5
+    else:
+        score += min(2.5, oi / 400)  # Linear up to 1000
+
+    # Normalize to 100-point scale (max theoretical is 110)
+    normalized_score = min(100, score * (100 / 110))
+
+    return round(normalized_score, 1)
+
+
+def calculate_contract_recommendation(option: dict, context: dict) -> dict:
+    """
+    Calculate recommended number of contracts based on risk and goal.
+
+    Returns dict with:
+    - suggested_contracts: recommended qty
+    - conservative_contracts: low-risk qty
+    - aggressive_contracts: higher-risk qty
+    - rationale: explanation
+    """
+    cash = context.get('cash', 0)
+    remaining_goal = context.get('remaining_goal', 10000)
+    premium_per_contract = option.get('premium_per_contract', 0)
+    collateral = option.get('collateral_required', 0)
+    delta = abs(option.get('delta', 0) or 0)
+
+    if premium_per_contract <= 0 or collateral <= 0:
+        return {
+            'suggested_contracts': 1,
+            'conservative_contracts': 1,
+            'aggressive_contracts': 1,
+            'rationale': 'Minimum position'
+        }
+
+    # Calculate max contracts by capital
+    if option['type'] == 'PUT':
+        # For puts, need collateral = strike * 100
+        max_by_capital = int(cash * 0.5 / collateral) if collateral > 0 else 1
+    else:
+        # For calls, need to own shares (contracts_available already set)
+        max_by_capital = option.get('contracts_available', 1)
+
+    max_by_capital = max(1, max_by_capital)
+
+    # Calculate contracts needed to hit a meaningful portion of remaining goal
+    # Target: each trade contributes 5-10% of remaining goal
+    target_premium_low = remaining_goal * 0.03  # 3% of goal = conservative
+    target_premium_mid = remaining_goal * 0.05  # 5% of goal = suggested
+    target_premium_high = remaining_goal * 0.08  # 8% of goal = aggressive
+
+    contracts_for_low = max(1, int(target_premium_low / premium_per_contract))
+    contracts_for_mid = max(1, int(target_premium_mid / premium_per_contract))
+    contracts_for_high = max(1, int(target_premium_high / premium_per_contract))
+
+    # Adjust by delta (risk-based)
+    # Higher delta = higher assignment risk = fewer contracts
+    risk_multiplier = 1.0 - (delta * 0.5)  # 0.30 delta -> 0.85 multiplier
+    risk_multiplier = max(0.5, min(1.0, risk_multiplier))
+
+    conservative = min(max_by_capital, max(1, int(contracts_for_low * risk_multiplier)))
+    suggested = min(max_by_capital, max(1, int(contracts_for_mid * risk_multiplier)))
+    aggressive = min(max_by_capital, contracts_for_high)
+
+    # Build rationale
+    if suggested == max_by_capital:
+        rationale = f"Limited by {'cash' if option['type'] == 'PUT' else 'shares'} ({max_by_capital} max)"
+    elif delta > 0.25:
+        rationale = f"Reduced due to higher delta ({delta:.0%} assignment risk)"
+    else:
+        rationale = f"Based on {5}% of remaining ${remaining_goal:,.0f} goal"
+
+    return {
+        'suggested_contracts': suggested,
+        'conservative_contracts': conservative,
+        'aggressive_contracts': aggressive,
+        'max_by_capital': max_by_capital,
+        'rationale': rationale
+    }
+
+
+def calculate_break_even(option: dict) -> float:
+    """Calculate break-even price for the option seller."""
+    strike = option.get('strike', 0)
+    mid = option.get('mid', 0)
+
+    if option['type'] == 'PUT':
+        # For selling puts: break-even = strike - premium received
+        return round(strike - mid, 2)
+    else:
+        # For selling calls: break-even = strike + premium received
+        # (but you keep shares if assigned, so this is where you'd be called away)
+        return round(strike + mid, 2)
 
 
 def scan_ticker_options(ticker: str, max_dte: int, holding_info: dict = None) -> Tuple[str, List[dict], str]:
@@ -424,6 +532,18 @@ def get_recommendations(
                 for opt in calls:
                     opt['score'] = score_option(opt, portfolio)
                     if opt['premium_per_contract'] >= min_premium:
+                        # Add enhanced metrics
+                        opt['break_even'] = calculate_break_even(opt)
+                        contract_rec = calculate_contract_recommendation(opt, portfolio)
+                        opt['suggested_contracts'] = contract_rec['suggested_contracts']
+                        opt['conservative_contracts'] = contract_rec['conservative_contracts']
+                        opt['aggressive_contracts'] = contract_rec['aggressive_contracts']
+                        opt['max_contracts'] = contract_rec['max_by_capital']
+                        opt['contract_rationale'] = contract_rec['rationale']
+                        # Assignment risk is delta as percentage
+                        opt['assignment_risk_pct'] = round(abs(opt.get('delta', 0) or 0) * 100, 1)
+                        # Time decay per day (theta is negative for options, so abs)
+                        opt['daily_decay'] = round(abs(opt.get('theta', 0) or 0) * 100, 2)
                         all_options.append(opt)
 
                 # Process puts (cash-secured puts)
@@ -435,6 +555,18 @@ def get_recommendations(
                     opt['cash_available'] = cash
                     opt['score'] = score_option(opt, portfolio)
                     if opt['premium_per_contract'] >= min_premium:
+                        # Add enhanced metrics
+                        opt['break_even'] = calculate_break_even(opt)
+                        contract_rec = calculate_contract_recommendation(opt, portfolio)
+                        opt['suggested_contracts'] = contract_rec['suggested_contracts']
+                        opt['conservative_contracts'] = contract_rec['conservative_contracts']
+                        opt['aggressive_contracts'] = contract_rec['aggressive_contracts']
+                        opt['max_contracts'] = contract_rec['max_by_capital']
+                        opt['contract_rationale'] = contract_rec['rationale']
+                        # Assignment risk is delta as percentage
+                        opt['assignment_risk_pct'] = round(abs(opt.get('delta', 0) or 0) * 100, 1)
+                        # Time decay per day (theta is negative for options, so abs)
+                        opt['daily_decay'] = round(abs(opt.get('theta', 0) or 0) * 100, 2)
                         all_options.append(opt)
 
             except Exception as e:

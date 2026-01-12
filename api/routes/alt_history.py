@@ -33,6 +33,7 @@ class CreateHistoryRequest(BaseModel):
     name: str
     description: str = ""
     modifications: list = []
+    use_llm: bool = True  # Whether to use LLM to interpret description
 
 
 class ModificationRequest(BaseModel):
@@ -58,6 +59,9 @@ async def list_alternate_histories():
 async def create_alternate_history(request: CreateHistoryRequest):
     """Create a new alternate history.
 
+    If description is provided without modifications, the LLM will analyze the
+    description and generate appropriate modifications automatically.
+
     Example modifications:
     - {"type": "remove_ticker", "ticker": "TSLA"}
     - {"type": "add_trade", "ticker": "NVDA", "action": "BUY", "shares": 100, "price": 500, "timestamp": "2024-01-15"}
@@ -67,9 +71,15 @@ async def create_alternate_history(request: CreateHistoryRequest):
     history = create_history(
         name=request.name,
         description=request.description,
-        modifications=request.modifications
+        modifications=request.modifications if request.modifications else None,
+        use_llm=request.use_llm
     )
-    return {"success": True, "history": history}
+    return {
+        "success": True,
+        "history": history,
+        "llm_processed": history.get("llm_generated", False),
+        "llm_analysis": history.get("llm_analysis")
+    }
 
 
 # ============ Future Projection Endpoints ============
@@ -79,6 +89,7 @@ class ProjectionRequest(BaseModel):
     history_id: str = "reality"
     years: int = 3
     use_llm: bool = True
+    idea_ids: list[str] = []  # Ideas to toggle on as mods in projection
 
 
 @router.get("/projections")
@@ -97,6 +108,7 @@ async def create_future_projection(request: ProjectionRequest):
         history_id: "reality" or an alternate history ID
         years: 1-5 years to project
         use_llm: Use LLM for analysis (more accurate but slower)
+        idea_ids: List of idea IDs to toggle on as mods in the projection
 
     Returns:
         Projection with analysis and future frames
@@ -107,7 +119,8 @@ async def create_future_projection(request: ProjectionRequest):
     projection = generate_projection(
         history_id=request.history_id,
         years=request.years,
-        use_llm=request.use_llm
+        use_llm=request.use_llm,
+        idea_ids=request.idea_ids
     )
 
     if "error" in projection:

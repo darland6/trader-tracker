@@ -773,6 +773,13 @@ function showAlternateRealityModal() {
                                 </label>
                             </div>
                         </div>
+
+                        <div class="ideas-toggle-section">
+                            <h4>🌱 Seed Ideas to Apply</h4>
+                            <p class="ideas-hint">Toggle ideas on/off to see how they affect your future projection</p>
+                            <div id="ideas-toggles">Loading ideas...</div>
+                        </div>
+
                         <button class="alt-btn primary" onclick="generateFutureProjection()">Generate Projection</button>
                         <div id="future-loading" style="display: none; text-align: center; padding: 40px;">
                             <div class="loading-spinner"></div>
@@ -893,6 +900,20 @@ function showAlternateRealityModal() {
             .saved-projection-item h4 { margin: 0; color: #627eea; font-size: 14px; }
             .saved-projection-item p { margin: 5px 0 0 0; font-size: 12px; opacity: 0.6; }
             .saved-projection-item .actions { display: flex; gap: 8px; }
+            .ideas-toggle-section { background: linear-gradient(135deg, #9b59b622, #9b59b608); border: 1px solid #9b59b644; border-radius: 12px; padding: 15px; margin: 20px 0; }
+            .ideas-toggle-section h4 { color: #9b59b6; margin: 0 0 8px 0; font-size: 14px; }
+            .ideas-hint { margin: 0 0 15px 0; font-size: 12px; opacity: 0.6; }
+            .idea-toggle { background: #ffffff08; border: 1px solid #ffffff15; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s; }
+            .idea-toggle:hover { background: #9b59b622; border-color: #9b59b644; }
+            .idea-toggle.active { background: #9b59b633; border-color: #9b59b6; }
+            .idea-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: #9b59b6; cursor: pointer; }
+            .idea-toggle-content { flex: 1; }
+            .idea-toggle-title { font-weight: 500; color: #fff; margin: 0 0 4px 0; font-size: 14px; }
+            .idea-toggle-meta { font-size: 12px; opacity: 0.6; display: flex; gap: 15px; }
+            .idea-toggle-impact { font-size: 11px; color: #9b59b6; margin-top: 6px; }
+            .idea-toggle-tickers { display: flex; gap: 6px; flex-wrap: wrap; }
+            .idea-toggle-tickers span { background: #627eea33; color: #627eea; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+            .no-ideas-msg { text-align: center; padding: 20px; opacity: 0.5; font-size: 13px; }
 
             /* Cluster View Button */
             .alt-header-actions { display: flex; align-items: center; gap: 10px; }
@@ -924,6 +945,7 @@ function showAltTab(tabName) {
     if (tabName === 'future') {
         loadFutureSourceOptions();
         loadSavedProjections();
+        loadIdeasForProjection();
     }
 }
 window.showAltTab = showAltTab;
@@ -1919,6 +1941,63 @@ function loadFutureSourceOptions() {
     select.innerHTML = `<option value="reality">Current Reality</option>${options}`;
 }
 
+// Load ideas as toggleable mods for projections
+async function loadIdeasForProjection() {
+    const container = document.getElementById('ideas-toggles');
+    if (!container) return;
+
+    try {
+        const response = await fetch('/api/ideas/as-mods');
+        const data = await response.json();
+        const mods = data.mods || [];
+
+        if (mods.length === 0) {
+            container.innerHTML = '<p class="no-ideas-msg">No seed ideas yet. Create ideas in the Ideas Lab to apply them to projections.</p>';
+            return;
+        }
+
+        container.innerHTML = mods.map(mod => {
+            const impact = mod.projected_impact || {};
+            const impactText = impact.premium_income
+                ? `+$${impact.premium_income.toLocaleString()} premium income`
+                : impact.estimated_annual
+                    ? `~$${impact.estimated_annual.toLocaleString()}/yr`
+                    : '';
+
+            const tickersHtml = mod.tickers.length > 0
+                ? `<div class="idea-toggle-tickers">${mod.tickers.map(t => `<span>${t}</span>`).join('')}</div>`
+                : '';
+
+            return `
+                <label class="idea-toggle" data-idea-id="${mod.id}">
+                    <input type="checkbox" name="projection-idea" value="${mod.id}">
+                    <div class="idea-toggle-content">
+                        <div class="idea-toggle-title">${mod.name}</div>
+                        <div class="idea-toggle-meta">
+                            <span>${mod.category}</span>
+                            <span>${mod.status}</span>
+                            ${mod.actions.length > 0 ? `<span>${mod.actions.length} actions</span>` : ''}
+                        </div>
+                        ${tickersHtml}
+                        ${impactText ? `<div class="idea-toggle-impact">${impactText}</div>` : ''}
+                    </div>
+                </label>
+            `;
+        }).join('');
+
+        // Add toggle active class on checkbox change
+        container.querySelectorAll('.idea-toggle input').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                this.closest('.idea-toggle').classList.toggle('active', this.checked);
+            });
+        });
+    } catch (error) {
+        console.error('Failed to load ideas:', error);
+        container.innerHTML = '<p style="color: #ff4444;">Failed to load ideas</p>';
+    }
+}
+window.loadIdeasForProjection = loadIdeasForProjection;
+
 async function loadSavedProjections() {
     const container = document.getElementById('saved-projections');
     try {
@@ -1955,16 +2034,24 @@ async function generateFutureProjection() {
     const years = parseInt(document.getElementById('future-years').value);
     const useLlm = document.getElementById('future-use-llm').checked;
 
+    // Collect selected idea IDs
+    const selectedIdeaIds = [];
+    document.querySelectorAll('input[name="projection-idea"]:checked').forEach(checkbox => {
+        selectedIdeaIds.push(checkbox.value);
+    });
+
     const loading = document.getElementById('future-loading');
     const results = document.getElementById('future-results');
 
     // Show detailed loading state
     const sourceName = historyId === 'reality' ? 'Current Reality' : historyId;
+    const ideasApplied = selectedIdeaIds.length > 0 ? ` | ${selectedIdeaIds.length} ideas applied` : '';
     loading.innerHTML = `
         <div class="loading-spinner"></div>
         <p style="font-weight: 500; margin-bottom: 10px;">${useLlm ? 'AI is building your future projection...' : 'Generating statistical projection...'}</p>
-        <p style="font-size: 13px; opacity: 0.7;">Source: ${sourceName} | ${years} years</p>
+        <p style="font-size: 13px; opacity: 0.7;">Source: ${sourceName} | ${years} years${ideasApplied}</p>
         ${useLlm ? '<p style="font-size: 12px; opacity: 0.5; margin-top: 10px;">Analyzing catalysts, trends, and market conditions...</p>' : ''}
+        ${selectedIdeaIds.length > 0 ? '<p style="font-size: 12px; color: #9b59b6; margin-top: 5px;">🌱 Integrating seed ideas into projection...</p>' : ''}
     `;
     loading.style.display = 'block';
     results.innerHTML = '';
@@ -1976,7 +2063,8 @@ async function generateFutureProjection() {
             body: JSON.stringify({
                 history_id: historyId,
                 years: years,
-                use_llm: useLlm
+                use_llm: useLlm,
+                idea_ids: selectedIdeaIds
             })
         });
 
@@ -5376,6 +5464,74 @@ function toggleLegend() {
 }
 window.toggleLegend = toggleLegend;
 
+// ==================== PANEL COLLAPSE STACK ====================
+
+// Track collapsed panels
+let collapsedPanels = new Set();
+
+// Collapse a panel to the sidebar stack
+function collapsePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+
+    // Add to collapsed set
+    collapsedPanels.add(panelId);
+
+    // Hide the panel
+    panel.classList.add('stacked');
+
+    // Create a tab for the collapsed stack
+    const stack = document.getElementById('collapsed-stack');
+    const icon = panel.dataset.panelIcon || '📋';
+    const title = panel.dataset.panelTitle || panelId;
+
+    const tab = document.createElement('div');
+    tab.className = 'collapsed-tab';
+    tab.id = `tab-${panelId}`;
+    tab.onclick = () => restorePanel(panelId);
+    tab.innerHTML = `
+        <span class="tab-icon">${icon}</span>
+        <span class="tab-title">${title}</span>
+    `;
+
+    stack.appendChild(tab);
+}
+window.collapsePanel = collapsePanel;
+
+// Restore a panel from the stack
+function restorePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    const tab = document.getElementById(`tab-${panelId}`);
+
+    if (panel) {
+        panel.classList.remove('stacked');
+    }
+
+    if (tab) {
+        tab.remove();
+    }
+
+    collapsedPanels.delete(panelId);
+}
+window.restorePanel = restorePanel;
+
+// Collapse all panels to stack
+function collapseAllPanels() {
+    const panels = ['left-console', 'right-console', 'bottom-console'];
+    panels.forEach(id => {
+        if (!collapsedPanels.has(id)) {
+            collapsePanel(id);
+        }
+    });
+}
+window.collapseAllPanels = collapseAllPanels;
+
+// Restore all panels from stack
+function restoreAllPanels() {
+    [...collapsedPanels].forEach(id => restorePanel(id));
+}
+window.restoreAllPanels = restoreAllPanels;
+
 // ==================== AI INSIGHTS FUNCTIONALITY ====================
 
 let insightsMinimized = false;
@@ -6262,8 +6418,8 @@ function displayScannerResults(data) {
 
     // Display recommendations
     if (data.recommendations && data.recommendations.length > 0) {
-        resultsList.innerHTML = data.recommendations.map(rec => `
-            <div class="scanner-rec">
+        resultsList.innerHTML = data.recommendations.map((rec, idx) => `
+            <div class="scanner-rec" data-rec-index="${idx}" onclick="showTradePreview(${idx})">
                 <div class="scanner-rec-ticker">${rec.ticker}</div>
                 <div class="scanner-rec-strategy ${rec.type.toLowerCase()}">${rec.strategy}</div>
                 <div class="scanner-rec-details">
@@ -6272,9 +6428,14 @@ function displayScannerResults(data) {
                         <span class="exp">exp ${rec.expiration} (${rec.dte}d)</span>
                     </div>
                     <div class="metrics">
-                        Delta: ${rec.delta.toFixed(2)} |
-                        OTM: ${rec.otm_pct.toFixed(1)}% |
-                        ${rec.prob_otm ? `Win Rate: ${rec.prob_otm.toFixed(0)}%` : ''}
+                        <span class="metric-risk ${rec.assignment_risk_pct > 25 ? 'high' : rec.assignment_risk_pct > 15 ? 'med' : 'low'}">
+                            ${rec.assignment_risk_pct?.toFixed(0) || rec.delta?.toFixed(2) * 100}% risk
+                        </span> |
+                        BE: $${rec.break_even?.toFixed(2) || '—'} |
+                        θ: $${rec.daily_decay?.toFixed(2) || '—'}/day
+                    </div>
+                    <div class="contracts-hint">
+                        ${rec.suggested_contracts || 1}x suggested (${rec.max_contracts || 1} max)
                     </div>
                 </div>
                 <div class="scanner-rec-premium">
@@ -6282,7 +6443,7 @@ function displayScannerResults(data) {
                     <div class="yield">${rec.annualized_yield_pct.toFixed(1)}% ann.</div>
                 </div>
                 <div class="scanner-rec-score">
-                    <div class="score-value">${rec.score.toFixed(0)}</div>
+                    <div class="score-value">${rec.score.toFixed(1)}</div>
                     <div class="score-label">score</div>
                 </div>
             </div>
@@ -6318,6 +6479,349 @@ function closeOptionsScanner() {
     document.getElementById('options-scanner-modal').style.display = 'none';
 }
 window.closeOptionsScanner = closeOptionsScanner;
+
+// ==================== TRADE PREVIEW ====================
+let currentTradePreview = null;
+
+function showTradePreview(recIndex) {
+    if (!scannerData || !scannerData.recommendations || !scannerData.recommendations[recIndex]) {
+        return;
+    }
+
+    const rec = scannerData.recommendations[recIndex];
+    currentTradePreview = rec;
+
+    // Get YTD income for goal calculation
+    const ytdIncome = scannerData.portfolio_summary?.ytd_income || 0;
+    const remainingGoal = 30000 - ytdIncome;
+
+    // Create the preview overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'trade-preview-overlay';
+    overlay.id = 'trade-preview-overlay';
+    overlay.onclick = (e) => {
+        if (e.target === overlay) closeTradePreview();
+    };
+
+    const strategyClass = rec.type.toLowerCase();
+    const isPut = rec.type.toLowerCase() === 'put';
+    const suggestedContracts = rec.suggested_contracts || 1;
+    const maxContracts = rec.max_contracts || 10;
+    const assignmentRisk = rec.assignment_risk_pct || (rec.delta * 100);
+    const breakEven = rec.break_even || (isPut ? rec.strike - rec.mid : rec.strike + rec.mid);
+    const dailyDecay = rec.daily_decay || 0;
+
+    overlay.innerHTML = `
+        <div class="trade-preview">
+            <div class="trade-preview-header">
+                <span class="trade-preview-title">Trade Preview</span>
+                <button class="trade-preview-close" onclick="closeTradePreview()">&times;</button>
+            </div>
+            <div class="trade-preview-body">
+                <div class="trade-preview-option">
+                    <div class="trade-preview-option-info">
+                        <span class="ticker">${rec.ticker}</span>
+                        <span class="strategy ${strategyClass}">${rec.strategy}</span>
+                        <div style="margin-top: 8px;">
+                            $${rec.strike.toFixed(2)} strike • exp ${rec.expiration} (${rec.dte}d)
+                        </div>
+                        <div style="margin-top: 4px; font-size: 11px; color: #888;">
+                            ${assignmentRisk.toFixed(0)}% assignment risk • θ $${dailyDecay.toFixed(2)}/day decay
+                        </div>
+                    </div>
+                </div>
+
+                <div class="trade-preview-contracts">
+                    <label>Number of Contracts</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="number" id="contract-count" value="${suggestedContracts}" min="1" max="${maxContracts}"
+                               onchange="updateTradeCalcs()" oninput="updateTradeCalcs()">
+                        <span style="font-size: 10px; color: #666;">
+                            ${rec.contract_rationale || `max ${maxContracts}`}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="trade-preview-calcs">
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Premium per Contract</span>
+                        <span class="value">$${rec.premium_per_contract.toFixed(0)}</span>
+                    </div>
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Total Premium</span>
+                        <span class="value premium" id="calc-total-premium">$${rec.premium_per_contract.toFixed(0)}</span>
+                    </div>
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Breakeven Price</span>
+                        <span class="value breakeven" id="calc-breakeven">$${isPut ? (rec.strike - rec.premium_per_contract/100).toFixed(2) : (rec.strike + rec.premium_per_contract/100).toFixed(2)}</span>
+                    </div>
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Cash Required (${isPut ? 'CSP' : 'shares'})</span>
+                        <span class="value" id="calc-cash-required">$${(rec.strike * 100).toLocaleString()}</span>
+                    </div>
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Goal Progress After</span>
+                        <span class="value goal-impact" id="calc-goal-progress">${((ytdIncome + rec.premium_per_contract) / 30000 * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="trade-preview-calc-row">
+                        <span class="label">Remaining to $30K Goal</span>
+                        <span class="value" id="calc-remaining">${remainingGoal > 0 ? '$' + (remainingGoal - rec.premium_per_contract).toLocaleString('en-US', {maximumFractionDigits: 0}) : 'Goal Met!'}</span>
+                    </div>
+                </div>
+
+                <div class="trade-preview-actions">
+                    <button class="cancel-btn" onclick="closeTradePreview()">Cancel</button>
+                    <button class="execute-btn" onclick="executeFromPreview()">Log This Trade</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+}
+window.showTradePreview = showTradePreview;
+
+function updateTradeCalcs() {
+    if (!currentTradePreview) return;
+
+    const rec = currentTradePreview;
+    const contracts = parseInt(document.getElementById('contract-count')?.value) || 1;
+    const ytdIncome = scannerData?.portfolio_summary?.ytd_income || 0;
+    const isPut = rec.type.toLowerCase() === 'put';
+
+    const totalPremium = rec.premium_per_contract * contracts;
+    const breakeven = isPut
+        ? rec.strike - (rec.premium_per_contract / 100)
+        : rec.strike + (rec.premium_per_contract / 100);
+    const cashRequired = rec.strike * 100 * contracts;
+    const newTotal = ytdIncome + totalPremium;
+    const remaining = 30000 - newTotal;
+
+    document.getElementById('calc-total-premium').textContent = '$' + totalPremium.toLocaleString('en-US', {maximumFractionDigits: 0});
+    document.getElementById('calc-breakeven').textContent = '$' + breakeven.toFixed(2);
+    document.getElementById('calc-cash-required').textContent = '$' + cashRequired.toLocaleString('en-US', {maximumFractionDigits: 0});
+    document.getElementById('calc-goal-progress').textContent = (newTotal / 30000 * 100).toFixed(1) + '%';
+    document.getElementById('calc-remaining').textContent = remaining > 0
+        ? '$' + remaining.toLocaleString('en-US', {maximumFractionDigits: 0})
+        : 'Goal Met!';
+}
+window.updateTradeCalcs = updateTradeCalcs;
+
+function closeTradePreview() {
+    const overlay = document.getElementById('trade-preview-overlay');
+    if (overlay) overlay.remove();
+    currentTradePreview = null;
+}
+window.closeTradePreview = closeTradePreview;
+
+async function executeFromPreview() {
+    if (!currentTradePreview) return;
+
+    const rec = currentTradePreview;
+    const contracts = parseInt(document.getElementById('contract-count')?.value) || 1;
+
+    // Close previews
+    closeTradePreview();
+    closeOptionsScanner();
+
+    // Navigate to options page with prefilled data
+    const params = new URLSearchParams({
+        ticker: rec.ticker,
+        strategy: rec.type.toLowerCase(),
+        strike: rec.strike,
+        expiration: rec.expiration,
+        contracts: contracts,
+        premium: rec.premium_per_contract * contracts
+    });
+
+    window.location.href = `/options?${params.toString()}`;
+}
+window.executeFromPreview = executeFromPreview;
+
+// ==================== IDEAS LAB ====================
+let ideasData = [];
+
+function toggleIdeas() {
+    const panel = document.getElementById('ideas-console');
+    const icon = document.getElementById('ideas-toggle-icon');
+
+    if (panel.classList.contains('minimized')) {
+        panel.classList.remove('minimized');
+        icon.textContent = '−';
+        loadIdeas();  // Load ideas when opening
+    } else {
+        panel.classList.add('minimized');
+        icon.textContent = '+';
+    }
+}
+window.toggleIdeas = toggleIdeas;
+
+async function loadIdeas() {
+    const listEl = document.getElementById('ideas-list');
+    const countEl = document.getElementById('ideas-count');
+
+    try {
+        const response = await fetch('/api/ideas/');
+        const data = await response.json();
+        ideasData = data.ideas || [];
+
+        countEl.textContent = ideasData.length;
+
+        if (ideasData.length === 0) {
+            listEl.innerHTML = '<div class="ideas-empty">No ideas yet. Plant a seed!</div>';
+            return;
+        }
+
+        listEl.innerHTML = ideasData.map(idea => `
+            <div class="idea-item" onclick="showIdeaDetail('${idea.id}')">
+                <div class="idea-item-header">
+                    <span class="idea-item-title">${idea.title}</span>
+                    <span class="idea-item-status ${idea.status}">${idea.status}</span>
+                </div>
+                ${idea.tickers.length > 0 ? `
+                    <div class="idea-item-tickers">
+                        ${idea.tickers.map(t => `<span class="idea-ticker-badge">${t}</span>`).join('')}
+                    </div>
+                ` : ''}
+                <div class="idea-item-actions">
+                    ${idea.status === 'seed' ? `
+                        <button class="idea-action-btn manifest" onclick="event.stopPropagation(); manifestIdea('${idea.id}')">✨ Manifest</button>
+                    ` : ''}
+                    ${idea.actions?.length > 0 ? `
+                        <span style="font-size: 9px; color: #888;">${idea.actions.length} actions</span>
+                    ` : ''}
+                    <button class="idea-action-btn archive" onclick="event.stopPropagation(); archiveIdea('${idea.id}')">Archive</button>
+                </div>
+            </div>
+        `).join('');
+
+    } catch (error) {
+        console.error('Failed to load ideas:', error);
+        listEl.innerHTML = '<div class="ideas-empty" style="color: #ff5555;">Failed to load ideas</div>';
+    }
+}
+window.loadIdeas = loadIdeas;
+
+async function createIdea() {
+    const titleInput = document.getElementById('idea-title-input');
+    const title = titleInput.value.trim();
+
+    if (!title) {
+        alert('Enter an idea title');
+        return;
+    }
+
+    // Extract tickers from title (any CAPS words 2-5 letters)
+    const tickerMatches = title.match(/\b[A-Z]{2,5}\b/g) || [];
+
+    try {
+        const response = await fetch('/api/ideas/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                description: '',
+                tickers: tickerMatches,
+                category: 'opportunity',
+                priority: 'medium'
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            titleInput.value = '';
+            loadIdeas();
+        } else {
+            alert('Failed to create idea: ' + (result.detail || 'Unknown error'));
+        }
+
+    } catch (error) {
+        console.error('Failed to create idea:', error);
+        alert('Failed to create idea: ' + error.message);
+    }
+}
+window.createIdea = createIdea;
+
+async function manifestIdea(ideaId) {
+    const listEl = document.getElementById('ideas-list');
+    const originalContent = listEl.innerHTML;
+
+    listEl.innerHTML = `
+        <div class="ideas-empty">
+            <div style="color: #9c27b0;">✨ Manifesting idea...</div>
+            <div style="font-size: 10px; color: #666; margin-top: 8px;">Using AI to generate concrete actions</div>
+        </div>
+    `;
+
+    try {
+        const response = await fetch(`/api/ideas/${ideaId}/manifest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ context: '' })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Show the actions
+            const actionsHtml = result.actions.map(a => `
+                <div style="background: rgba(156, 39, 176, 0.15); padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                    <div style="font-weight: 600; color: #e1bee7;">${a.ticker} ${a.action_type}</div>
+                    <div style="font-size: 10px; color: #888; margin-top: 4px;">${a.reasoning}</div>
+                </div>
+            `).join('');
+
+            listEl.innerHTML = `
+                <div style="padding: 12px;">
+                    <div style="color: #00c853; margin-bottom: 12px;">✓ Manifested ${result.action_count} actions!</div>
+                    <div style="color: #888; font-size: 11px; margin-bottom: 12px;">${result.summary}</div>
+                    ${actionsHtml}
+                    <button onclick="loadIdeas()" style="margin-top: 12px; width: 100%;" class="idea-btn-refresh">Back to Ideas</button>
+                </div>
+            `;
+        } else {
+            listEl.innerHTML = originalContent;
+            alert('Manifestation failed: ' + (result.detail || 'Unknown error'));
+        }
+
+    } catch (error) {
+        console.error('Failed to manifest idea:', error);
+        listEl.innerHTML = originalContent;
+        alert('Failed to manifest idea: ' + error.message);
+    }
+}
+window.manifestIdea = manifestIdea;
+
+async function archiveIdea(ideaId) {
+    if (!confirm('Archive this idea?')) return;
+
+    try {
+        await fetch(`/api/ideas/${ideaId}/archive`, { method: 'POST' });
+        loadIdeas();
+    } catch (error) {
+        console.error('Failed to archive idea:', error);
+    }
+}
+window.archiveIdea = archiveIdea;
+
+function showIdeaDetail(ideaId) {
+    const idea = ideasData.find(i => i.id === ideaId);
+    if (!idea) return;
+
+    // For now, just alert the details. Could open a modal in future.
+    const details = `
+Title: ${idea.title}
+Status: ${idea.status}
+Tickers: ${idea.tickers.join(', ') || 'None'}
+Category: ${idea.category}
+Actions: ${idea.actions?.length || 0}
+Created: ${new Date(idea.created_at).toLocaleDateString()}
+    `.trim();
+
+    alert(details);
+}
+window.showIdeaDetail = showIdeaDetail;
 
 // Main initialization
 async function main() {

@@ -70,6 +70,21 @@
         </div>
     </div>
 
+    <!-- Learning Files Section -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="card-title">Learning & Memory Files</h2>
+                <button onclick="loadLearningFiles()" class="btn btn-sm btn-ghost">Refresh</button>
+            </div>
+            <p class="text-base-content/60 mb-4">Files used by the AI agent to remember conversations, learn patterns, and track usage.</p>
+
+            <div id="learning-files-list">
+                <div class="text-center py-4 text-base-content/60">Loading...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- LLM Settings -->
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
@@ -81,7 +96,26 @@
                     <strong>{{ llm_config.provider|upper }}</strong> |
                     Model: <code>{% if llm_config.provider == 'local' %}{{ llm_config.local_model }}{% else %}{{ llm_config.claude_model }}{% endif %}</code> |
                     {% if llm_config.enabled %}Enabled{% else %}Disabled{% endif %}
+                    {% if llm_config.provider == 'claude' %}
+                    | API Key: <span id="api-key-status">{% if llm_config.has_api_key %}Set{% else %}Not Set{% endif %}</span>
+                    {% endif %}
                 </div>
+            </div>
+
+            <!-- API Key Input (for Claude) -->
+            <div class="form-control mb-4" id="api-key-section">
+                <label class="label">
+                    <span class="label-text font-semibold">Anthropic API Key</span>
+                    <span class="label-text-alt text-info">Required for Claude provider</span>
+                </label>
+                <div class="join w-full">
+                    <input type="password" id="api-key-input" placeholder="sk-ant-..."
+                           class="input input-bordered join-item flex-1 font-mono text-sm">
+                    <button onclick="saveApiKey()" class="btn btn-primary join-item">Save Key</button>
+                </div>
+                <label class="label">
+                    <span class="label-text-alt text-base-content/60">Get your key from <a href="https://console.anthropic.com/" target="_blank" class="link">console.anthropic.com</a></span>
+                </label>
             </div>
 
             <!-- JSON Editor - populated by Jinja2 -->
@@ -109,6 +143,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     loadBackups();
+    loadLearningFiles();
 });
 
 async function loadBackups() {
@@ -166,6 +201,65 @@ async function deleteBackup(filename) {
         loadBackups();
     } catch (error) {
         alert('Delete failed: ' + error.message);
+    }
+}
+
+async function loadLearningFiles() {
+    const container = document.getElementById('learning-files-list');
+    try {
+        const response = await fetch('/api/config/learning-files');
+        const data = await response.json();
+
+        if (data.files.length === 0) {
+            container.innerHTML = '<p class="text-base-content/60">No learning files found.</p>';
+            return;
+        }
+
+        // Group by category
+        const byCategory = {};
+        data.files.forEach(f => {
+            if (!byCategory[f.category]) byCategory[f.category] = [];
+            byCategory[f.category].push(f);
+        });
+
+        let html = '';
+        for (const [category, files] of Object.entries(byCategory)) {
+            html += `<div class="mb-4">
+                <h3 class="font-semibold text-sm text-base-content/70 mb-2">${category}</h3>
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Description</th>
+                                <th>Size</th>
+                                <th>Entries</th>
+                                <th>Modified</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+            files.forEach(f => {
+                const modified = f.modified ? new Date(f.modified).toLocaleString() : '-';
+                const statusBadge = f.exists
+                    ? `<span class="badge badge-success badge-xs">exists</span>`
+                    : `<span class="badge badge-ghost badge-xs">missing</span>`;
+                html += `<tr class="${!f.exists ? 'opacity-50' : ''}">
+                    <td class="font-mono text-xs">${f.name} ${statusBadge}</td>
+                    <td class="text-xs">${f.description}</td>
+                    <td>${f.exists ? f.size_kb + ' KB' : '-'}</td>
+                    <td>${f.exists ? f.entries : '-'}</td>
+                    <td class="text-xs">${modified}</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div></div>`;
+        }
+
+        html += `<p class="text-xs text-base-content/50 mt-2">Data directory: <code>${data.data_dir}</code></p>`;
+        container.innerHTML = html;
+    } catch (error) {
+        container.innerHTML = '<p class="text-error">Failed to load learning files: ' + error.message + '</p>';
     }
 }
 
@@ -233,6 +327,46 @@ async function testLLM() {
             msg.innerHTML = '<div class="alert alert-success">Connected! Provider: ' + d.provider + ', Model: ' + d.model + '</div>';
         } else {
             msg.innerHTML = '<div class="alert alert-error">Failed: ' + d.error + '</div>';
+        }
+    } catch (e) {
+        msg.innerHTML = '<div class="alert alert-error">Error: ' + e.message + '</div>';
+    }
+}
+
+async function saveApiKey() {
+    const input = document.getElementById('api-key-input');
+    const msg = document.getElementById('llm-msg');
+    const apiKey = input.value.trim();
+
+    if (!apiKey) {
+        msg.innerHTML = '<div class="alert alert-warning">Please enter an API key</div>';
+        return;
+    }
+
+    if (!apiKey.startsWith('sk-ant-')) {
+        msg.innerHTML = '<div class="alert alert-warning">API key should start with sk-ant-</div>';
+        return;
+    }
+
+    msg.innerHTML = '<div class="alert"><span class="loading loading-spinner loading-sm"></span> Saving API key...</div>';
+
+    try {
+        const r = await fetch('/api/config/llm/api-key', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({api_key: apiKey})
+        });
+        const d = await r.json();
+        if (d.success) {
+            msg.innerHTML = '<div class="alert alert-success">API key saved! Testing connection...</div>';
+            input.value = '';
+            // Update status display
+            const statusEl = document.getElementById('api-key-status');
+            if (statusEl) statusEl.textContent = 'Set';
+            // Auto-test the connection
+            setTimeout(testLLM, 500);
+        } else {
+            msg.innerHTML = '<div class="alert alert-error">Failed: ' + (d.detail || 'Unknown error') + '</div>';
         }
     } catch (e) {
         msg.innerHTML = '<div class="alert alert-error">Error: ' + e.message + '</div>';
