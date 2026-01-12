@@ -577,7 +577,7 @@ def prepare_alt_history_playback(
     Returns:
         Same structure as prepare_full_playback
     """
-    from api.services.alt_history import get_history_events, get_history
+    from core.realities import get_history_events, get_history
 
     # Load alternate history events
     events_df = get_history_events(history_id)

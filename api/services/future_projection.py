@@ -46,7 +46,7 @@ def generate_projection(
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
     from reconstruct_state import load_event_log, reconstruct_state
-    from api.services.alt_history import get_history_events, get_history
+    from core.realities import get_history_events, get_history
 
     # Get alternate history metadata if not reality
     history_context = None

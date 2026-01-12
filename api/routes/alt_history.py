@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from api.services.alt_history import (
+from core.realities import (
     list_histories,
     get_history,
     create_history,
@@ -18,7 +18,7 @@ from api.services.alt_history import (
     get_history_events,
     apply_modifications
 )
-from api.services.future_projection import (
+from core.realities import (
     generate_projection,
     load_projection,
     list_projections,

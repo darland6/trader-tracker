@@ -35,7 +35,7 @@ class CreateRealityResponse(BaseModel):
 @router.get("/")
 async def list_realities():
     """List all alternate realities."""
-    from api.services.alternate_reality import list_alternate_realities
+    from core.realities import list_alternate_realities
 
     realities = list_alternate_realities()
     return {
@@ -63,7 +63,7 @@ async def create_reality(request: CreateRealityRequest):
         "scenario_type": "bull"
     }
     """
-    from api.services.alternate_reality import create_alternate_reality
+    from core.realities import create_alternate_reality
 
     try:
         purchases = [
@@ -98,7 +98,7 @@ async def create_reality(request: CreateRealityRequest):
 @router.get("/{reality_id}")
 async def get_reality(reality_id: str):
     """Get full details of an alternate reality including timeline snapshots."""
-    from api.services.alternate_reality import get_alternate_reality
+    from core.realities import get_alternate_reality
 
     reality = get_alternate_reality(reality_id)
 
@@ -111,7 +111,7 @@ async def get_reality(reality_id: str):
 @router.delete("/{reality_id}")
 async def delete_reality(reality_id: str):
     """Delete an alternate reality."""
-    from api.services.alternate_reality import delete_alternate_reality
+    from core.realities import delete_alternate_reality
 
     if delete_alternate_reality(reality_id):
         return {"message": f"Reality '{reality_id}' deleted"}
@@ -122,7 +122,7 @@ async def delete_reality(reality_id: str):
 @router.post("/{reality_id}/refresh")
 async def refresh_reality(reality_id: str):
     """Refresh an alternate reality with latest prices."""
-    from api.services.alternate_reality import refresh_alternate_reality
+    from core.realities import refresh_alternate_reality
 
     reality = refresh_alternate_reality(reality_id)
 
@@ -144,7 +144,7 @@ async def get_combined_timeline():
 
     Returns main reality + all alternate realities with their snapshots.
     """
-    from api.services.alternate_reality import get_combined_timeline_data
+    from core.realities import get_combined_timeline_data
 
     return get_combined_timeline_data()
 
@@ -165,7 +165,7 @@ async def quick_create_scenario(
     - space: Space/aerospace focused
     - ai-play: AI/ML companies
     """
-    from api.services.alternate_reality import create_alternate_reality
+    from core.realities import create_alternate_reality
 
     scenarios = {
         "tech-bull": {

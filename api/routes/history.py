@@ -328,7 +328,7 @@ async def get_reality_projections(
     Returns:
         Structured projection data with realities, snapshots, and events
     """
-    from api.services.reality_projections import generate_projections
+    from core.realities import generate_projections
 
     try:
         result = await generate_projections(
@@ -356,7 +356,7 @@ async def generate_new_projections(
     This endpoint always uses the LLM to generate fresh projections,
     useful when you want to get new scenarios.
     """
-    from api.services.reality_projections import generate_projections
+    from core.realities import generate_projections
 
     try:
         result = await generate_projections(
